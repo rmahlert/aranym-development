@@ -31,7 +31,7 @@
 #include "debug.h"
 
 # include <cstdlib>
-# include <ShlObj.h>
+# include <shlobj.h>
 
 #define ARADATA		"aranym"
 

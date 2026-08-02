@@ -681,13 +681,7 @@ extern long double exp10l(long double);
 # ifdef HAVE_POWL
 #  define fp_pow	powl
 # endif
-# if defined(HAVE_EXP10L)
-#  define fp_pow10	exp10l
-# elif defined(HAVE_POW10L)
-#  define fp_pow10	pow10l
-# else
-#  define fp_pow10(x)	fp_pow(LD(10.0), x)
-# endif
+# define fp_pow10(x)	fp_pow(LD(10.0), x)
 # if defined(HAVE_EXP2L)
 #  define fp_pow2	exp2l
 # elif defined(HAVE_POW2L)
@@ -767,13 +761,7 @@ extern long double exp10l(long double);
 # define fp_pow		pow
 #endif
 #ifndef fp_pow10
-# if defined(HAVE_EXP10)
-#   define fp_pow10	exp10
-# elif defined(HAVE_POW10)
-#   define fp_pow10	pow10
-# else
-#   define fp_pow10(x)	fp_pow(LD(10.0), x)
-# endif
+# define fp_pow10(x)	fp_pow(LD(10.0), x)
 #endif
 #ifndef fp_pow2
 # ifdef HAVE_POW2

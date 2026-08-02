@@ -15,12 +15,12 @@ if SDL_GUI
 AM_CPPFLAGS += -I$(srcdir)/gui-sdl
 endif
 
-CFLAGS_NOWARN = $(DBGSP) $(ARCHFLAGS) $(SDL_CFLAGS) $(ZLIB_CFLAGS) $(DISASM_CFLAGS)
+CFLAGS_NOWARN = $(DBGSP) $(ARCHFLAGS) $(SDL_CFLAGS) $(ZLIB_CFLAGS) $(DISASM_CFLAGS) $(SLIRP_CFLAGS)
 AM_CFLAGS = $(CFLAGS_NOWARN) $(WFLAGS)
 AM_CXXFLAGS = $(CFLAGS_NOWARN) $(WFLAGS)
 AM_LDFLAGS = $(ARCHFLAGS)
 
-LIBS = @LIBS@ $(SDL_LIBS) $(JPEG_LIBS) $(ZLIB_LIBS) $(DISASM_LIBS)
+LIBS = @LIBS@ $(SDL_LIBS) $(JPEG_LIBS) $(ZLIB_LIBS) $(DISASM_LIBS) $(SLIRP_LIBS)
 
 BEOS_RESOURCES = $(srcdir)/Unix/beos/aranym.rdef
 
@@ -243,10 +243,16 @@ aranym_SOURCES += midi_sequencer.cpp Unix/linux/parameters_linux.cpp Unix/linux/
 else
 if OS_TYPE_cygwin
 aranym_SOURCES += Unix/cygwin/parameters_cygwin.cpp Unix/cygwin/tools_cygwin.cpp Unix/cygwin/ethernet_cygwin.cpp Unix/cygwin/ethernet_cygwin.h Unix/cygwin/win32_supp.cpp Unix/win32_supp.h Unix/windows_ver.h
+if HAVE_SLIRP
+aranym_SOURCES += Unix/cygwin/ethernet_slirp.cpp Unix/cygwin/ethernet_slirp.h
+endif
 aranym_LDADD += $(WIN32_RC_OBJS)
 else
 if OS_TYPE_mingw
 aranym_SOURCES += Unix/cygwin/parameters_cygwin.cpp Unix/cygwin/tools_cygwin.cpp Unix/cygwin/ethernet_cygwin.cpp Unix/cygwin/ethernet_cygwin.h Unix/cygwin/win32_supp.cpp Unix/win32_supp.h Unix/windows_ver.h
+if HAVE_SLIRP
+aranym_SOURCES += Unix/cygwin/ethernet_slirp.cpp Unix/cygwin/ethernet_slirp.h
+endif
 aranym_LDADD += $(WIN32_RC_OBJS)
 else
 if OS_TYPE_irix
@@ -434,9 +440,15 @@ if OS_TYPE_cygwin
 if CPU_TYPE_x86
 aranym_SOURCES += Unix/cygwin/sigsegv_cygwin.cpp
 endif
+if CPU_TYPE_x86_64
+aranym_SOURCES += Unix/cygwin/sigsegv_cygwin.cpp
+endif
 endif
 if OS_TYPE_mingw
 if CPU_TYPE_x86
+aranym_SOURCES += Unix/cygwin/sigsegv_cygwin.cpp
+endif
+if CPU_TYPE_x86_64
 aranym_SOURCES += Unix/cygwin/sigsegv_cygwin.cpp
 endif
 endif
@@ -593,6 +605,9 @@ $(APP_BUNDLE): $(APP)
 
 EXTRA_DIST += \
 	include \
+	$(top_srcdir)/data/config \
+	$(top_srcdir)/data/emutos-aranym.img \
+	$(top_srcdir)/data/installer_welcome.bmp \
 	natfeat/doc \
 	natfeat/atari_example.c \
 	natfeat/atari_example_gfa.lst \

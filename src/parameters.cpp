@@ -149,7 +149,11 @@ static struct option const long_options[] =
 };
 
 #define TOS_FILENAME		"ROM"
+#if defined(OS_mingw)
+#define EMUTOS_FILENAME		"*/emutos-aranym.img"
+#else
 #define EMUTOS_FILENAME		"emutos-aranym.img"
+#endif
 #define FREEMINT_FILENAME	"mintara.prg"
 
 #ifndef DEFAULT_SERIAL
@@ -734,6 +738,7 @@ static void presave_startup()
 /*************************************************************************/
 struct Config_Tag jit_conf[]={
 	{ "JIT", Bool_Tag, &bx_options.jit.jit, 0, 0},
+	{ "JITSafe", Bool_Tag, &bx_options.jit.jitsafe, 0, 0},
 	{ "JITFPU", Bool_Tag, &bx_options.jit.jitfpu, 0, 0},
 	{ "JITCacheSize", Int_Tag, &bx_options.jit.jitcachesize, 0, 0},
 	{ "JITLazyFlush", Int_Tag, &bx_options.jit.jitlazyflush, 0, 0},
@@ -747,6 +752,7 @@ struct Config_Tag jit_conf[]={
 static void preset_jit()
 {
 	bx_options.jit.jit = true;
+	bx_options.jit.jitsafe = true;
 	bx_options.jit.jitfpu = true;
 	bx_options.jit.jitcachesize = 8192;
 	bx_options.jit.jitlazyflush = 1;
@@ -756,6 +762,12 @@ static void preset_jit()
 
 static void postload_jit()
 {
+	if (bx_options.jit.jitsafe) {
+		bx_options.jit.jitfpu = false;
+		bx_options.jit.jitlazyflush = 0;
+		bx_options.jit.jitinline = false;
+		bx_options.jit.jit_update_pc = true;
+	}
 }
 
 static void presave_jit()
@@ -1714,6 +1726,9 @@ Options:\n\
 }
 
 static void preset_cfg() {
+	#if defined(OS_mingw)
+	boot_emutos = true;
+	#endif
 	for (const struct Config_Section *section = all_sections; section->name; section++)
 	{
 		if (section->skip_if_empty)

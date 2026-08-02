@@ -76,7 +76,7 @@
 #define str(x)		_stringify (x)
 #define _stringify(x)	#x
 
-#define VERSION_STRING	NAME_STRING " " str (VER_MAJOR) "." str (VER_MINOR) "." str (VER_MICRO) VERSION_DATE 
+#define VERSION_STRING	NAME_STRING " " str (VER_MAJOR) "." str (VER_MINOR) "." str (VER_MICRO) BUILD_LABEL VERSION_DATE
 
 
 char const name_string[] = NAME_STRING;

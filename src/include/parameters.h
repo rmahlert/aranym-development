@@ -32,7 +32,11 @@
 #include "SDL_compat.h"
 
 #ifndef ARANYMHOME
-# define ARANYMHOME	".aranym"
+# if defined(OS_mingw)
+#  define ARANYMHOME	"aranym"
+# else
+#  define ARANYMHOME	".aranym"
+# endif
 #endif
 #ifndef ARANYMCONFIG
 # define ARANYMCONFIG	"config"
@@ -134,6 +138,7 @@ typedef struct {
 // JIT compiler options
 typedef struct {
   bool jit;
+  bool jitsafe;
   bool jitfpu;
   bool jitinline;
   bool jitdebug;

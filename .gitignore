@@ -58,3 +58,9 @@ src/Unix/MacOSX/external
 /out
 appimage/appimagetool
 *.exe
+
+# local build/output trees (not for upstream)
+/build/
+/dist/
+/lan-share/
+configure~

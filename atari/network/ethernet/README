@@ -6,6 +6,15 @@ The MiNT-Net xif driver for the ARAnyM ethernet interface.
 Installation and usage
 ----------------------
 
+Windows package:
+----------------
+
+The unofficial Windows installer places the compatible driver at
+`<ARAnyM install>\network\nfeth.xif`.  Copy it into the MiNT `mint` folder
+on the boot drive, then configure the `ETH0` interface with `nfeth.xif`.
+The host-side SLIRP transport alone is not a TCP/IP stack; MiNT-Net and this
+guest driver are required.
+
  On host side (linux):
  ---------------------
 
@@ -70,4 +79,3 @@ Compilation
 
  ARAnyM itself:
  * run configure with --enable-ethernet
-

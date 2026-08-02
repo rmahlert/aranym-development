@@ -8,12 +8,21 @@
 #
 AUTOMAKE_OPTIONS = -Wno-gnu
 
+if OS_TYPE_mingw
+AM_CPPFLAGS = $(subst -DOS_mingw,,$(DEFINES)) -DOS_linux \
+	"-I$(srcdir)/../include" \
+	"-I$(srcdir)/../Unix" \
+	"-I$(builddir)/.." \
+	"-I$(builddir)" \
+	"-I$(srcdir)"
+else
 AM_CPPFLAGS = $(DEFINES) \
 	"-I$(srcdir)/../include" \
 	"-I$(srcdir)/../Unix" \
 	"-I$(builddir)/.." \
 	"-I$(builddir)" \
 	"-I$(srcdir)"
+endif
 
 CC = $(CC_FOR_BUILD)
 CXX = $(CXX_FOR_BUILD)
@@ -58,7 +67,7 @@ endif
 
 
 cpudefs.cpp: build68k$(EXEEXT) $(srcdir)/table68k
-	$(AM_V_GEN)./build68k <$(srcdir)/table68k > $@
+	$(AM_V_GEN)./build68k$(EXEEXT) <$(srcdir)/table68k > $@
 cpuemu.cpp: gencpu$(EXEEXT)
 	$(AM_V_GEN)./gencpu$(EXEEXT)
 cpustbl.cpp cpufunctbl.cpp cputbl.h: cpuemu.cpp

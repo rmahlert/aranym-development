@@ -138,9 +138,18 @@ function mkdist() {
 	for f in config; do
 		cp -a doc/$f "$distdir/doc/$f.txt" || exit 1
 	done
-	for f in logo.bmp wm_icon.bmp; do
+	for f in logo.bmp wm_icon.bmp installer_welcome.bmp config emutos-aranym.img; do
 		cp -a data/$f "$distdir/aranym/$f" || exit 1
 	done
+	if test -n "${EASYARAMINT_DIR:-}" && test -f "$EASYARAMINT_DIR/config"; then
+		mkdir -p "$distdir/aranym/atari"
+		for f in config emutos-aranym.img EasyMint host_fs nfeth.xif; do
+			if test -e "$EASYARAMINT_DIR/$f"; then
+				cp -a "$EASYARAMINT_DIR/$f" "$distdir/aranym/atari/" || exit 1
+			fi
+		done
+		echo "including optional EasyARAnyM Atari drives from $EASYARAMINT_DIR"
+	fi
 	
 	(cd "$distdir"
 	  for f in doc/* *.txt; do
@@ -154,32 +163,90 @@ function mkdist() {
 	rm -f $MINGW_DLLS
 	for dll in $MINGW_DLLS; do cp -a "$MINGW_ROOT/bin/$dll" .; done
 
-	unset dlls
-	declare -a dlls
-	save_IFS=$IFS
-	IFS='
-'
 	for f in aranym.exe aranym-jit.exe aranym-mmu.exe; do
 		cp -a "$f" "$distdir" || exit 1
-		dlls+=(`./ldd.exe --path $f`)
-	done
-	IFS=$save_IFS
-	unset copydlls
-	declare -a copydlls
-	for dll in "${dlls[@]}"; do
-		lower="`echo $dll | tr '[A-Z]' '[a-z]'`"
-		case $lower in
-		*/system32/* | */syswow64/* )
-			continue ;;
-		*)
-			;;
-		esac
-		copydlls+=("$dll")
 	done
 
-	for f in "${copydlls[@]}"; do
-		cp -a "$f" "$distdir" || exit 1
+	# Collect the transitive DLL dependencies of the built binaries.
+	#
+	# This used to shell out to ./ldd.exe, which exists only inside a
+	# Cygwin/MSYS environment.  Cross-building from Linux it is absent,
+	# the walk yielded nothing without erroring, and only the hardcoded
+	# MINGW_DLLS above were shipped.  That is how libslirp and its glib
+	# chain went missing from the 1.1.1 packages, leaving an aranym.exe
+	# that Windows refuses to load at all.  Read the PE import tables
+	# directly so new dependencies are picked up without editing a list.
+	OBJDUMP="${OBJDUMP:-${MINGW_TOOL_PREFIX:-x86_64-w64-mingw32}-objdump}"
+	if ! type "$OBJDUMP" > /dev/null 2>&1; then
+		if type ldd.exe > /dev/null 2>&1; then
+			OBJDUMP=
+		else
+			echo "error: no $OBJDUMP to resolve DLL dependencies with" >&2
+			exit 1
+		fi
+	fi
+
+	depdir=`mktemp -d` || exit 1
+	: > "$depdir/seen"
+	: > "$depdir/todo"
+	: > "$depdir/missing"
+	for f in aranym.exe aranym-jit.exe aranym-mmu.exe; do
+		test -f "$f" && echo "$f" >> "$depdir/todo"
 	done
+
+	while test -s "$depdir/todo"; do
+		cur=`head -n 1 "$depdir/todo"`
+		sed -i '1d' "$depdir/todo"
+		if test -n "$OBJDUMP"; then
+			imports=`"$OBJDUMP" -p "$cur" 2>/dev/null | sed -n 's/^[[:space:]]*DLL Name:[[:space:]]*//p'`
+		else
+			imports=`./ldd.exe --path "$cur" 2>/dev/null | sed -e 's|.*[/\\]||'`
+		fi
+		for dep in $imports; do
+			lower="`echo \"$dep\" | tr '[A-Z]' '[a-z]'`"
+			# Anything shipped by Windows itself must not be bundled.
+			case $lower in
+			advapi32.dll | kernel32.dll | user32.dll | gdi32.dll | \
+			shell32.dll | shlwapi.dll | ole32.dll | oleaut32.dll | \
+			ws2_32.dll | wsock32.dll | iphlpapi.dll | msvcrt.dll | \
+			winmm.dll | imm32.dll | version.dll | comdlg32.dll | \
+			comctl32.dll | setupapi.dll | rpcrt4.dll | dwmapi.dll | \
+			uxtheme.dll | crypt32.dll | secur32.dll | bcrypt.dll | \
+			ntdll.dll | opengl32.dll | glu32.dll | winspool.drv | \
+			dnsapi.dll | mswsock.dll | hid.dll | usp10.dll | \
+			d3d9.dll | dsound.dll | dxgi.dll | avicap32.dll | \
+			api-ms-win-* | ext-ms-win-* )
+				continue ;;
+			esac
+			grep -qxF "$lower" "$depdir/seen" && continue
+			echo "$lower" >> "$depdir/seen"
+
+			found=
+			for d in "$MINGW_ROOT/bin" "$MINGW_ROOT/lib" .; do
+				if test -f "$d/$dep"; then
+					found="$d/$dep"
+					break
+				fi
+			done
+			if test -z "$found"; then
+				echo "$dep" >> "$depdir/missing"
+				continue
+			fi
+			cp -a "$found" "$distdir" || exit 1
+			# Walk it too: libslirp pulls in glib, which pulls in
+			# intl/iconv/pcre2/ffi.
+			echo "$found" >> "$depdir/todo"
+		done
+	done
+
+	if test -s "$depdir/missing"; then
+		echo "error: unresolved DLL dependencies (not found under $MINGW_ROOT):" >&2
+		sort -u "$depdir/missing" | sed -e 's/^/  /' >&2
+		echo "the resulting package would not start on a clean Windows system" >&2
+		rm -rf "$depdir"
+		exit 1
+	fi
+	rm -rf "$depdir"
 	rm -f $MINGW_DLLS
 	
 	ARCHIVE="${PROJECT_LOWER}-${ATAG}${sdlname}.zip"
@@ -197,7 +264,11 @@ function mkdist() {
 	    echo "creating Windows installer"
 	    find . -type d | sed -e 's|^./\(.*\)$|${CreateDirectory} "$INSTDIR\\\1"|' -e '/^\.$/d' | tr '/' '\\' > ../aranym.files
 	    find . -type f | sed -e 's|^./\(.*\)$|${File} "\1"|' | tr '/' '\\' >> ../aranym.files
-	    "$nsis" -V2 -NOCD -DVER_MAJOR=$major -DVER_MINOR=$minor -DVER_MICRO=$micro $sdldef -DOUTFILE=../${SETUP_EXE} `cygpath -m $cwd/tools/aranym.nsi` || exit 1
+	    easy_define=
+	    if test -d aranym/atari && test -f aranym/atari/config; then
+		easy_define=-DEASY_DRIVES
+	    fi
+	    "$nsis" -V2 -NOCD -DVER_MAJOR=$major -DVER_MINOR=$minor -DVER_MICRO=$micro $sdldef $easy_define -DOUTFILE=../${SETUP_EXE} `cygpath -m $cwd/tools/aranym.nsi` || exit 1
 	    rm -f ../aranym.files
 	    cd $cwd
 	    echo "$tmpdir/${SETUP_EXE} ready for release"

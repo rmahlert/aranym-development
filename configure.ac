@@ -238,6 +238,7 @@ AC_ARG_ENABLE(jit-fpu,
 AC_ARG_ENABLE(jit-debug,       [AS_HELP_STRING([--enable-jit-debug],[activate native code disassemblers (default=no)])], [WANT_JIT_DEBUG=$enableval], [WANT_JIT_DEBUG=no])
 
 AC_ARG_ENABLE(ethernet,        [AS_HELP_STRING([--enable-ethernet],[enable ethernet card emulation (default=yes)])], [WANT_ETHERNET=$enableval], [WANT_ETHERNET=yes])
+AC_ARG_ENABLE(slirp,           [AS_HELP_STRING([--enable-slirp],[enable user-mode SLIRP networking on Windows (default=auto)])], [WANT_SLIRP=$enableval], [WANT_SLIRP=auto])
 
 AC_ARG_ENABLE(bpf-ethernet,    [AS_HELP_STRING([--enable-bpf-ethernet],[enable ethernet card emulation using BPF (default=no)])], [WANT_BFP_ETHERNET=$enableval], [WANT_BFP_ETHERNET=no])
 
@@ -280,6 +281,25 @@ AM_CONDITIONAL([OS_TYPE_mingw], test "$OS_TYPE" = "mingw")
 AM_CONDITIONAL([OS_TYPE_unknown], test "$OS_TYPE" = "unknown")
 AM_CONDITIONAL([ANDROID_OS], test "$ANDROID_OS" = "yes")
 AM_CONDITIONAL([WITH_FINK], test "$WITH_FINK" = "yes")
+
+have_slirp=no
+if test "$WANT_SLIRP" != no; then
+	case "$host_os" in
+		cygwin*|mingw*)
+			PKG_CHECK_MODULES([SLIRP], [slirp >= 4.0], [have_slirp=yes], [have_slirp=no])
+			;;
+	esac
+fi
+if test "$WANT_SLIRP" = yes && test "$have_slirp" != yes; then
+	AC_MSG_ERROR([SLIRP requested but libslirp was not found])
+fi
+if test "$have_slirp" = yes; then
+	case "$host_os" in
+		mingw*) SLIRP_LIBS="$SLIRP_LIBS -lws2_32 -liphlpapi" ;;
+	esac
+	AC_DEFINE([HAVE_SLIRP], 1, [Define if libslirp is available])
+fi
+AM_CONDITIONAL([HAVE_SLIRP], test "$have_slirp" = yes)
 if test "$OS_TYPE" = "unknown"; then
   OS_TYPE=`echo $host_os | sed -e 's/-/_/g' | sed -e 's/\./_/g'`
 fi
@@ -1488,7 +1508,7 @@ for fpe in $FPE_CORE_TEST_ORDER; do
       dnl Math functions required by C99 standard, but probably not
       dnl implemented everywhere. In that case, we fall back to the
       dnl regular variant for doubles.
-      AC_CHECK_FUNCS(logl log10l expl powl exp2l pow2l exp10l pow10l fabsl sqrtl log1pl expm1l exp2 pow2 exp10 pow10)
+      AC_CHECK_FUNCS(logl log10l expl powl exp2l pow2l fabsl sqrtl log1pl expm1l exp2 pow2)
       AC_CHECK_FUNCS(sinl cosl tanl sinhl coshl tanhl)
       AC_CHECK_FUNCS(asinl acosl atanl asinhl acoshl atanhl)
       AC_CHECK_FUNCS(floorl ceill truncl roundl rintl)
@@ -1878,12 +1898,10 @@ else
 			fi
 			;;
 		*-*-mingw*)
-			have_sdlimage_lib=yes
-			have_sdlimage_h=yes
-			if test "$enable_sdl2" = yes; then
+			AC_CHECK_HEADER(SDL_image.h, have_sdlimage_h=yes, have_sdlimage_h=no)
+			AC_CHECK_LIB(SDL2_image, IMG_isJPG, have_sdlimage_lib=yes, have_sdlimage_lib=no)
+			if test "$have_sdlimage_h" = yes -a "$have_sdlimage_lib" = yes; then
 				SDL_LIBS="$SDL_LIBS -lSDL2_image"
-			else
-				SDL_LIBS="$SDL_LIBS -lSDL_image"
 			fi
 			;;
 		*)

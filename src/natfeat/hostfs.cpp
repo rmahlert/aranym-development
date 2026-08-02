@@ -1974,8 +1974,17 @@ static int cyg_lstat(const char *fpathName, struct stat *statBuf)
 	safe_strncpy(path, fpathName, sizeof(path));
 	return lstat(cygwin_path_to_posix(path, sizeof(path)), statBuf);
 }
+
+static int cyg_chmod(const char *fpathName, mode_t mode)
+{
+	char path[1024];
+
+	safe_strncpy(path, fpathName, sizeof(path));
+	return chmod(cygwin_path_to_posix(path, sizeof(path)), mode);
+}
 #else
 #define cyg_lstat lstat
+#define cyg_chmod chmod
 #endif
 
 int32 HostFs::host_stat64( XfsCookie *fc, const char *fpathName, struct stat *statBuf ) {
@@ -2168,7 +2177,7 @@ int32 HostFs::xfs_chattr( XfsCookie *fc, int16 attr )
     else
 		newmode = statBuf.st_mode | ( S_IWUSR | S_IWGRP | S_IWOTH );
     if ( newmode != statBuf.st_mode &&
-		 chmod( fpathName, newmode ) )
+			 cyg_chmod( fpathName, newmode ) )
 		return errnoHost2Mint( errno, TOS_EACCDN );
 
 	return TOS_E_OK;
@@ -2185,7 +2194,7 @@ int32 HostFs::xfs_chmod( XfsCookie *fc, uint16 mode )
     D(bug( "HOSTFS: fs_chmod (NOT TESTED)\n"
 		   "  CANNOT WORK CORRECTLY UNTIL uid AND gid AT MiNT ARE SAME LIKE AT UNIX!)\n" ));
 
-    if ( chmod( fpathName, modeMint2Host(mode) ) )
+	if ( cyg_chmod( fpathName, modeMint2Host(mode) ) )
 		return errnoHost2Mint( errno, TOS_EACCDN );
 
 	return TOS_E_OK;

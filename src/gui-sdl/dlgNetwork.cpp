@@ -50,11 +50,14 @@ void DlgNetwork::init_options(int ethX, int type)
 
 	dlg[type + 0].state = 0; /* ETH0_TYP_NONE */
 	dlg[type + 1].state = 0; /* ETH0_TYP_PTP */
-	dlg[type + 2].state = 0; /* ETH0_TYP_BRIDGE */
+	dlg[type + 2].state = 0; /* ETH0_TYP_SLIRP */
+	dlg[type + 3].state = 0; /* ETH0_TYP_BRIDGE */
 
 	if (strlen(eth[ethX].config.type) == 0 || strcmp(eth[ethX].config.type, "none") == 0)
 		dlg[type + 0].state = SG_SELECTED;
 	else if (eth[ethX].bridge)
+		dlg[type + 3].state = SG_SELECTED;
+	else if (strstr(eth[ethX].config.type, "slirp") != NULL)
 		dlg[type + 2].state = SG_SELECTED;
 	else
 		dlg[type + 1].state = SG_SELECTED;
@@ -99,9 +102,15 @@ int DlgNetwork::processDialog(void)
 
 void DlgNetwork::save_options(int ethX, int type)
 {
-	eth[ethX].bridge = (dlg[type + 2].state & SG_SELECTED);
+	eth[ethX].bridge = (dlg[type + 3].state & SG_SELECTED);
 	if (dlg[type + 0].state & SG_SELECTED) {
 		eth[ethX].config.type[0] = '\0';
+	}
+	else if (dlg[type + 2].state & SG_SELECTED) {
+		safe_strncpy(eth[ethX].config.type, "slirp", sizeof(eth[ethX].config.type));
+		safe_strncpy(eth[ethX].config.ip_host, "10.0.2.2", sizeof(eth[ethX].config.ip_host));
+		safe_strncpy(eth[ethX].config.ip_atari, "10.0.2.15", sizeof(eth[ethX].config.ip_atari));
+		safe_strncpy(eth[ethX].config.netmask, "255.255.255.0", sizeof(eth[ethX].config.netmask));
 	}
 	else {
 		safe_strncpy(eth[ethX].config.type, eth[ethX].bridge ? "bridge" : "ptp", sizeof(eth[ethX].config.type));

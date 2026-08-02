@@ -40,7 +40,7 @@
  * Configuration zone begins
  */
 
-#ifdef OS_cygwin
+#if defined(OS_cygwin) || defined(OS_mingw)
 #include "cygwin/ethernet_cygwin.h"
 #else
 #  ifdef OS_darwin
@@ -401,7 +401,13 @@ bool ETHERNETDriver::init(void)
 	pending_interrupts = 0;
 
 	for(int i=0; i<MAX_ETH; i++) {
-		Handler *handler = new ETHERNET_HANDLER_CLASSNAME(i);
+		Handler *handler;
+#ifdef HAVE_SLIRP
+		if (strncmp(bx_options.ethernet[i].type, "slirp", 5) == 0)
+			handler = new WinSlirpEthernetHandler(i);
+		else
+#endif
+			handler = new ETHERNET_HANDLER_CLASSNAME(i);
 		if ( handler->open() ) {
 			handlers[i] = handler;
 		}

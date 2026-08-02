@@ -12,6 +12,10 @@
 #include "ethernet.h"
 #include "windows_ver.h"
 
+#ifdef HAVE_SLIRP
+#include "ethernet_slirp.h"
+#endif
+
 class WinTapEthernetHandler : public ETHERNETDriver::Handler {
 	OVERLAPPED read_overlapped;
 	OVERLAPPED write_overlapped;
