@@ -43,7 +43,14 @@ cp "$source_root/emutos-aranym.img" "$output_dir/emutos-aranym.img"
 mkdir -p "$output_dir/host_fs/Applications/floppy"
 cp "$root/data/network/nfeth.xif" "$output_dir/nfeth.xif"
 cp "$root/data/network/nfeth.xif" "$output_dir/host_fs/nfeth.xif"
-cp "$root/data/network/nfeth.xif" "$output_dir/nfeth.xif"
+
+# The Atari-side setup tools go on host_fs so the guest can reach them as
+# drive H: without modifying the disk image -- which also means they are
+# available to someone using their own MiNT install.
+mkdir -p "$output_dir/host_fs/Network"
+for f in nfeth.xif nfeth-config eth0-config.sh; do
+	cp "$root/data/network/$f" "$output_dir/host_fs/Network/$f"
+done
 
 sed -i 's/\r$//' "$output_dir/config"
 sed -i \
@@ -59,12 +66,13 @@ if [ -f "$exe" ]; then
 	cp "$exe" "$output_dir/aranym.exe"
 fi
 
-runtime_dir=${ARANYM_RUNTIME_DIR:-/tmp/aranym-nsis-root}
-for file in SDL2.dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll; do
-	if [ -f "$runtime_dir/$file" ]; then
-		cp "$runtime_dir/$file" "$output_dir/$file"
-	fi
-done
+# Resolve the DLLs from the exe's own import tables.  A hardcoded list used
+# to be copied here, which silently omitted libslirp-0.dll and the glib
+# chain behind it -- the resulting bundle could not start at all.
+if [ -f "$output_dir/aranym.exe" ]; then
+	MINGW_ROOT=${MINGW_ROOT:-/tmp/mingw} \
+		"$root/tools/collect-mingw-dlls.sh" "$output_dir" "$output_dir/aranym.exe"
+fi
 
 cat > "$output_dir/start-aranym.bat" <<'EOF'
 @echo off
@@ -74,11 +82,38 @@ EOF
 
 cat > "$output_dir/README-Network.txt" <<'EOF'
 EasyARAnyM network package
+==========================
 
-This package boots the included EasyARAnyM MiNT environment and includes
-nfeth.xif. The ARAnyM host configuration uses SLIRP at 10.0.2.15 with gateway
-10.0.2.2. The host_fs directory is the guest host filesystem. Run aranym.exe
-with -c config from this directory, or use start-aranym.bat.
+Start with start-aranym.bat, or aranym.exe -c config from this directory.
+
+The Windows side is configured already: SLIRP user-mode NAT, Atari 10.0.2.15,
+gateway 10.0.2.2, DNS 10.0.2.3. No TAP adapter, bridge, or administrator
+rights are needed.
+
+Atari side (one time)
+---------------------
+
+The MiNT image still carries its old static network settings, so the guest
+has to be told the new ones once.  From a MiNT shell:
+
+    cd h:/Network
+    ./eth0-config.sh
+
+That configures eth0, adds the default route, and writes /etc/resolv.conf.
+It does not hardcode any addresses -- nfeth-config asks ARAnyM what it was
+configured with, so this stays correct if you change the addresses on the
+installer's network page.
+
+If eth0 does not exist at all, copy nfeth.xif from this directory into the
+MiNT folder on the boot drive and reboot first.  MiNT-Net must be running:
+SLIRP on the host is a transport, not a TCP/IP stack.
+
+Testing
+-------
+
+Test with TCP, not ping.  SLIRP does not carry ICMP unless the host permits
+raw sockets, so a failing ping is expected and does not mean networking is
+broken.
 EOF
 
 (cd "$output_dir/.." && zip -qr "$(basename "$output_dir").zip" "$(basename "$output_dir")")

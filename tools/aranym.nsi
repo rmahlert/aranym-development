@@ -356,8 +356,12 @@ Section -defaultconfig
 SectionEnd
 
 Section -networkdriver
+  ; The Atari-side driver and the setup tool that configures the guest from
+  ; whatever was chosen on the network page above.
   SetOutPath "$INSTDIR\network"
   File "aranym\network\nfeth.xif"
+  File "aranym\network\nfeth-config"
+  File "aranym\network\eth0-config.sh"
 SectionEnd
 
 !ifdef EASY_DRIVES
