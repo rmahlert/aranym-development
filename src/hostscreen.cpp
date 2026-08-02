@@ -405,6 +405,15 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 	else
 		mode.format = SDL_BITSPERPIXEL(oldmode.format) >= 24 ? oldmode.format : (Uint32)SDL_PIXELFORMAT_RGBX8888;
 
+#ifdef DEBUG_VIDEO_FORMAT
+	panicbug("videofmt: request %dx%d %dbpp -> mode.format=%s (desktop %s, driver %s, %s)",
+		width, height, bpp,
+		SDL_GetPixelFormatName(mode.format),
+		SDL_GetPixelFormatName(oldmode.format),
+		SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "?",
+		bx_options.video.fullscreen ? "fullscreen" : "windowed");
+#endif
+
 	if (window == NULL ||
 		width != oldmode.w ||
 		height != oldmode.h ||
@@ -448,6 +457,11 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 		{
 			if (SDL_SetWindowDisplayMode(window, &mode) < 0)
 			{
+#ifdef DEBUG_VIDEO_FORMAT
+				panicbug("videofmt: SetWindowDisplayMode(%s) failed: %s; falling back to %s",
+					SDL_GetPixelFormatName(mode.format), SDL_GetError(),
+					SDL_GetPixelFormatName(oldmode.format));
+#endif
 				mode.format = oldmode.format;
 				SDL_SetWindowDisplayMode(window, &mode);
 			}
@@ -458,6 +472,27 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 	}
 	screen = SDL_GetWindowSurface(window);
 	// texture = SDL_CreateTextureFromSurface(renderer, screen);
+
+#ifdef DEBUG_VIDEO_FORMAT
+	/*
+	 * The window surface format is chosen by the OS, not by mode.format
+	 * above -- SDL_SetWindowDisplayMode only applies to fullscreen.  This
+	 * is where a truecolour mismatch would become visible.
+	 */
+	if (screen == NULL) {
+		panicbug("videofmt: SDL_GetWindowSurface failed: %s", SDL_GetError());
+	} else {
+		panicbug("videofmt: actual surface %dx%d %dbpp pitch=%d format=%s "
+			"masks R=%08x G=%08x B=%08x A=%08x",
+			screen->w, screen->h, screen->format->BitsPerPixel,
+			screen->pitch, SDL_GetPixelFormatName(screen->format->format),
+			(unsigned)screen->format->Rmask, (unsigned)screen->format->Gmask,
+			(unsigned)screen->format->Bmask, (unsigned)screen->format->Amask);
+		if (bpp > 8 && screen->format->BitsPerPixel != bpp)
+			panicbug("videofmt: MISMATCH requested %dbpp, got %dbpp",
+				bpp, screen->format->BitsPerPixel);
+	}
+#endif
 	
 #else
 
