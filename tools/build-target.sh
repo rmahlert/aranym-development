@@ -11,7 +11,8 @@ prepare_tree()
 	tree="$root/build/source-$1"
 	rm -rf "$tree"
 	mkdir -p "$tree"
-	tar -C "$root" --exclude=.git --exclude=build -cf - . | tar -C "$tree" -xf -
+	tar -C "$root" --exclude=.git --exclude=build --exclude=dist \
+		--exclude=lan-share -cf - . | tar -C "$tree" -xf -
 	echo "$tree"
 }
 

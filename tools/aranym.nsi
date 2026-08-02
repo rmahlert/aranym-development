@@ -145,7 +145,11 @@ Function PageNetwork
 
   ${NSD_CreateLabel} 0 0 100% 24u "Choose how ARAnyM should connect the Atari system to Windows. SLIRP requires no TAP adapter and is recommended for Internet access."
   Pop $0
-  ${NSD_CreateLabel} 0 27u 100% 12u "Detected Windows user: $%USERNAME% on $%COMPUTERNAME%"
+  ; $%VAR% is expanded when the installer is compiled, which would bake in
+  ; the build machine's environment.  Read it on the user's machine instead.
+  ReadEnvStr $R0 USERNAME
+  ReadEnvStr $R1 COMPUTERNAME
+  ${NSD_CreateLabel} 0 27u 100% 12u "Detected Windows user: $R0 on $R1"
   Pop $0
 
   ${NSD_CreateRadioButton} 0 47u 100% 12u "SLIRP (recommended: user-mode NAT)"

@@ -257,8 +257,19 @@ function mkdist() {
 	
 	echo "$tmpdir/$ARCHIVE ready for release"
 	
-	nsis=`cygpath "$PROGRAMFILES"`/NSIS/makensis.exe
-	if test -x "$nsis"; then
+	# NSIS may be a native Linux makensis (cross-packaging) or the
+	# Windows build under Program Files (Cygwin/MSYS).
+	nsis=
+	if type makensis > /dev/null 2>&1; then
+		nsis=`command -v makensis`
+	elif type cygpath > /dev/null 2>&1; then
+		nsis=`cygpath "$PROGRAMFILES"`/NSIS/makensis.exe
+		test -x "$nsis" || nsis=
+	fi
+	if test -z "$nsis"; then
+	    echo "warning: no makensis found, skipping the installer" >&2
+	fi
+	if test -n "$nsis"; then
 	    cwd=`pwd`
 	    cd "$distdir"
 	    echo "creating Windows installer"
@@ -268,7 +279,12 @@ function mkdist() {
 	    if test -d aranym/atari && test -f aranym/atari/config; then
 		easy_define=-DEASY_DRIVES
 	    fi
-	    "$nsis" -V2 -NOCD -DVER_MAJOR=$major -DVER_MINOR=$minor -DVER_MICRO=$micro $sdldef $easy_define -DOUTFILE=../${SETUP_EXE} `cygpath -m $cwd/tools/aranym.nsi` || exit 1
+	    if type cygpath > /dev/null 2>&1; then
+		nsi=`cygpath -m $cwd/tools/aranym.nsi`
+	    else
+		nsi="$cwd/tools/aranym.nsi"
+	    fi
+	    "$nsis" -V2 -NOCD -DVER_MAJOR=$major -DVER_MINOR=$minor -DVER_MICRO=$micro $sdldef $easy_define -DOUTFILE=../${SETUP_EXE} "$nsi" || exit 1
 	    rm -f ../aranym.files
 	    cd $cwd
 	    echo "$tmpdir/${SETUP_EXE} ready for release"
@@ -277,7 +293,10 @@ function mkdist() {
 }
 
 
-gcc -O2 -mwin32 tools/ldd.c -o ldd.exe || exit 1
+# ldd.exe is only usable under Cygwin/MSYS.  Cross-building from Linux the
+# dependency walk uses objdump instead, so a failure here is not fatal.
+gcc -O2 -mwin32 tools/ldd.c -o ldd.exe 2>/dev/null || \
+	echo "note: no ldd.exe (not a Cygwin host); using objdump for DLL deps" >&2
 
 SDL=1
 build
