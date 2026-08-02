@@ -121,6 +121,7 @@ Function ".onInstSuccess"
 FunctionEnd
 
 Var NetworkType
+Var NetworkSetupDrive
 Var NetworkSave
 Var NetworkAtariIP
 Var NetworkGateway
@@ -357,11 +358,62 @@ SectionEnd
 
 Section -networkdriver
   ; The Atari-side driver and the setup tool that configures the guest from
-  ; whatever was chosen on the network page above.
-  SetOutPath "$INSTDIR\network"
+  ; whatever was chosen on the network page above.  These live in a folder
+  ; that gets mapped as a HOSTFS drive below, so the Atari side can reach
+  ; them without the disk image being touched.
+  SetOutPath "$INSTDIR\setup"
   File "aranym\network\nfeth.xif"
   File "aranym\network\nfeth-config"
+  File "aranym\network\netsetup.prg"
   File "aranym\network\eth0-config.sh"
+  File "aranym\network\README-setup.txt"
+SectionEnd
+
+;
+; Map $INSTDIR\setup as a HOSTFS drive so the Atari side can reach the setup
+; tools.  On an upgrade the user's own mappings are left alone: we only claim
+; a letter that has no value.  Scanning from Z down because AHDI hands out
+; partition letters from C: up, and those are not recorded in the config.
+;
+Section -hostfsmapping
+  StrCpy $R9 "ZYXWVUTSRQPONMLKJIHGFEDCBA"
+  StrCpy $NetworkSetupDrive ""
+
+  ; Reuse our own mapping if a previous install already made one, rather
+  ; than claiming another letter on every upgrade.
+  StrCpy $R8 0
+  reuse_loop:
+    StrCpy $R7 $R9 1 $R8
+    StrCmp $R7 "" reuse_done
+    ReadINIStr $R6 "$PROFILE\aranym\config" "HOSTFS" "$R7"
+    StrCmp $R6 "$INSTDIR\setup" 0 reuse_next
+      StrCpy $NetworkSetupDrive $R7
+      Goto reuse_done
+    reuse_next:
+    IntOp $R8 $R8 + 1
+    Goto reuse_loop
+  reuse_done:
+  StrCmp $NetworkSetupDrive "" 0 mapping_done
+
+  StrCpy $R8 0
+  free_loop:
+    StrCpy $R7 $R9 1 $R8
+    StrCmp $R7 "" no_free_letter
+    ReadINIStr $R6 "$PROFILE\aranym\config" "HOSTFS" "$R7"
+    StrCmp $R6 "" 0 free_next
+      StrCpy $NetworkSetupDrive $R7
+      WriteINIStr "$PROFILE\aranym\config" "HOSTFS" "$R7" "$INSTDIR\setup"
+      Goto mapping_done
+    free_next:
+    IntOp $R8 $R8 + 1
+    Goto free_loop
+
+  no_free_letter:
+    MessageBox MB_ICONEXCLAMATION|MB_OK "Every HOSTFS drive letter is already in use, so the network setup folder could not be mapped.$\r$\n$\r$\nMap $INSTDIR\setup to a free letter in the ARAnyM setup GUI, then run NETSETUP.PRG from that drive."
+    Return
+
+  mapping_done:
+    MessageBox MB_ICONINFORMATION|MB_OK "Network setup files were installed and mapped as Atari drive $NetworkSetupDrive:$\r$\n$\r$\nTo finish, start ARAnyM and run NETSETUP.PRG from drive $NetworkSetupDrive: on the Atari side.$\r$\n$\r$\nThat configures the Atari network from the settings chosen here. The disk image is not modified."
 SectionEnd
 
 !ifdef EASY_DRIVES

@@ -71,7 +71,7 @@ done
 for f in config logo.bmp wm_icon.bmp installer_welcome.bmp emutos-aranym.img; do
 	test -f "$root/data/$f" && cp -a "$root/data/$f" "$stage/aranym/$f"
 done
-for f in nfeth.xif nfeth-config eth0-config.sh; do
+for f in nfeth.xif nfeth-config netsetup.prg eth0-config.sh README-setup.txt; do
 	cp -a "$root/data/network/$f" "$stage/aranym/network/$f"
 done
 
