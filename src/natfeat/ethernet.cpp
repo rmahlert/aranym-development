@@ -22,6 +22,8 @@
  */
 
 #include <cassert>
+#include <cerrno>
+#include <sys/time.h>
 #include "cpu_emulation.h"
 #include "main.h"
 #include "ethernet.h"
@@ -145,8 +147,16 @@ int32 ETHERNETDriver::dispatch(uint32 fncode)
 						return 0;
 					}
 					D(bug("ETH%d: IRQ acknowledged", ethX));
-					// Acknowledge interrupt to reception thread
+					/*
+					 * Acknowledge interrupt to reception thread.  The flag
+					 * records the ack under the lock so it is not lost if
+					 * the guest finishes its interrupt routine before that
+					 * thread has started waiting.
+					 */
+					pthread_mutex_lock(&handler->intLock);
+					handler->intAcked = true;
 					pthread_cond_signal(&handler->intAck);
+					pthread_mutex_unlock(&handler->intLock);
 					ret = 0;
 				}
 			}
@@ -496,8 +506,11 @@ bool ETHERNETDriver::startThread(int ethX)
 
 		pthread_attr_init(&attr);
 		pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-		if (pthread_create(&handler->handlingThread, &attr, receiveFunc, handler) < 0)
+		int error = pthread_create(&handler->handlingThread, &attr, receiveFunc, handler);
+		pthread_attr_destroy(&attr);
+		if (error != 0)
 		{
+			handler->handlingThread = 0;
 			D(bug("ETH%d: WARNING: Cannot start ETHERNETDriver thread", ethX));
 			return false;
 		}
@@ -522,6 +535,34 @@ void ETHERNETDriver::stopThread(Handler *handler)
 #endif
 		handler->handlingThread = 0;
 	}
+}
+
+
+/*
+ *  Raise the Ethernet interrupt at the configured level
+ */
+void ETHERNETDriver::triggerInterrupt()
+{
+	// Ethernet runs at interrupt level 3 by default but can be reconfigured
+	switch (bx_options.ethernet[0].intLevel)
+	{
+	default:
+	case 3:
+		TriggerInt3();
+		break;
+	case 4:
+		TriggerVBL();
+		break;
+	case 5:
+		TriggerInt5();
+		break;
+	}
+}
+
+
+void ETHERNETDriver::unlockIntLock(void *arg)
+{
+	pthread_mutex_unlock(&((Handler *)arg)->intLock);
 }
 
 
@@ -554,26 +595,38 @@ void *ETHERNETDriver::receiveFunc(void *arg)
 		
 		/* but needs to be triggered, anyway */
 		pthread_mutex_lock(&handler->intLock);
+		/* stopThread() cancels us inside the wait, which reacquires intLock */
+		pthread_cleanup_push(unlockIntLock, handler);
+		handler->intAcked = false;
 		pending_interrupts |= (1 << handler->ethX);
-		// Ethernet runs at interrupt level 3 by default but can be reconfigured
-		switch (bx_options.ethernet[0].intLevel)
-		{
-		default:
-		case 3:
-			TriggerInt3();
-			break;
-		case 4:
-			TriggerVBL();
-			break;
-		case 5:
-			TriggerInt5();
-			break;
-		}
+		triggerInterrupt();
 		// Wait for interrupt acknowledge (m68k network driver read interrupt to finish)
 		D(bug("ETH%d: waiting for int acknowledge with pending irq mask %02x", handler->ethX, pending_interrupts));
-		pthread_cond_wait(&handler->intAck, &handler->intLock);
+		bool reported = false;
+		while (!handler->intAcked) {
+			struct timeval now;
+			struct timespec deadline;
+			gettimeofday(&now, NULL);
+			deadline.tv_sec = now.tv_sec + 1;
+			deadline.tv_nsec = now.tv_usec * 1000;
+			if (pthread_cond_timedwait(&handler->intAck, &handler->intLock, &deadline) != ETIMEDOUT)
+				continue;
+			/*
+			 * The guest driver can drop an interrupt without acking it
+			 * (nfeth ignores one that arrives while its handler is
+			 * already running).  Raise it again rather than stall
+			 * reception forever.  The interrupt flag is not counted, so
+			 * this cannot queue up duplicates for a guest that is
+			 * merely slow.
+			 */
+			if (!reported) {
+				panicbug("ETH%d: interrupt not acknowledged after 1s, raising it again", handler->ethX);
+				reported = true;
+			}
+			triggerInterrupt();
+		}
 		pending_interrupts &= ~(1 << handler->ethX);
-		pthread_mutex_unlock(&handler->intLock);
+		pthread_cleanup_pop(1);
 		D(bug("ETH%d: int acknowledged, pending irq mask now %02x", handler->ethX, pending_interrupts));
 	}
 

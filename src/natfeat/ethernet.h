@@ -41,12 +41,14 @@ public:
 		pthread_t handlingThread;	// Packet reception thread
 		pthread_cond_t intAck;			// Interrupt acknowledge semaphore
 		pthread_mutex_t intLock;
+		bool intAcked;				// guarded by intLock
 		bool debug;
 
 		Handler(int eth_idx) {
 			ethX = eth_idx;
 			packet_length = 0;
 			handlingThread = 0;
+			intAcked = false;
 			pthread_cond_init(&intAck, NULL);
 			pthread_mutex_init(&intLock, NULL);
 			debug = false;
@@ -77,6 +79,8 @@ private:
 	bool startThread(int ethX);
 	void stopThread(Handler *handler);
 	static void *receiveFunc(void *arg);
+	static void triggerInterrupt();
+	static void unlockIntLock(void *arg);
 
 protected:
 	typedef enum {HOST_IP, ATARI_IP, NETMASK} GET_PAR;
