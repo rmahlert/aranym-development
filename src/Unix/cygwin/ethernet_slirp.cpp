@@ -1,3 +1,12 @@
+/*
+ * Winsock's fd_set holds only 64 sockets by default and FD_SET() silently
+ * ignores any beyond that, which would leave those connections unpolled.
+ * This must precede every include that can pull in winsock2.h.
+ */
+#ifdef _WIN32
+#define FD_SETSIZE 1024
+#endif
+
 #include "cpu_emulation.h"
 #include "main.h"
 #include "ethernet_slirp.h"
@@ -5,15 +14,20 @@
 
 #if defined(OS_mingw)
 #include <winsock2.h>
-#include <windows.h>
+#include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
 #include <sys/select.h>
+#include <sys/socket.h>
 #include <sys/time.h>
+#include <unistd.h>
 #endif
 
 WinSlirpEthernetHandler::WinSlirpEthernetHandler(int eth_idx)
-	: ETHERNETDriver::Handler(eth_idx), slirp(NULL), winsock_started(false)
+	: ETHERNETDriver::Handler(eth_idx), slirp(NULL), winsock_started(false),
+	  wake_socket(SLIRP_INVALID_SOCKET), fd_limit_reported(false)
 {
 	pthread_mutex_init(&slirp_lock, NULL);
 }
@@ -86,10 +100,72 @@ void WinSlirpEthernetHandler::unregister_poll_fd(int fd, void *opaque)
 void WinSlirpEthernetHandler::notify(void *opaque)
 {
 	/*
-	 * Guest input and libslirp polling are serialized on the receive thread.
-	 * Its bounded select timeout means there is no separate I/O thread to wake.
+	 * libslirp only calls this from within slirp_input() or
+	 * slirp_pollfds_poll(), i.e. on the receive thread, which rebuilds the
+	 * poll set straight afterwards.
 	 */
 	(void)opaque;
+}
+
+bool WinSlirpEthernetHandler::open_wake_socket()
+{
+	struct sockaddr_in addr;
+	socklen_t addr_len = sizeof(addr);
+
+	wake_socket = socket(AF_INET, SOCK_DGRAM, 0);
+	if (wake_socket == SLIRP_INVALID_SOCKET)
+		return false;
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	addr.sin_port = 0;
+	/* Connect the socket to itself so wake() can use a plain send(). */
+	if (bind(wake_socket, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
+		getsockname(wake_socket, (struct sockaddr *)&addr, &addr_len) != 0 ||
+		connect(wake_socket, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+	{
+		close_wake_socket();
+		return false;
+	}
+#if defined(OS_mingw)
+	u_long nonblocking = 1;
+	if (ioctlsocket(wake_socket, FIONBIO, &nonblocking) != 0)
+#else
+	int flags = fcntl(wake_socket, F_GETFL, 0);
+	if (flags < 0 || fcntl(wake_socket, F_SETFL, flags | O_NONBLOCK) != 0)
+#endif
+	{
+		close_wake_socket();
+		return false;
+	}
+	return true;
+}
+
+void WinSlirpEthernetHandler::close_wake_socket()
+{
+	if (wake_socket == SLIRP_INVALID_SOCKET)
+		return;
+#if defined(OS_mingw)
+	closesocket(wake_socket);
+#else
+	::close(wake_socket);
+#endif
+	wake_socket = SLIRP_INVALID_SOCKET;
+}
+
+void WinSlirpEthernetHandler::wake()
+{
+	/* A full socket buffer already guarantees a wakeup, so errors are moot. */
+	char byte = 0;
+	if (wake_socket != SLIRP_INVALID_SOCKET)
+		(void)::send(wake_socket, &byte, 1, 0);
+}
+
+void WinSlirpEthernetHandler::drain_wake_socket()
+{
+	char buffer[64];
+	while (::recv(wake_socket, buffer, sizeof(buffer), 0) > 0)
+		;
 }
 
 int WinSlirpEthernetHandler::add_poll(slirp_os_socket fd, int events, void *opaque)
@@ -169,6 +245,12 @@ bool WinSlirpEthernetHandler::open()
 	callbacks.unregister_poll_fd = unregister_poll_fd;
 	callbacks.notify = notify;
 
+	if (!open_wake_socket()) {
+		panicbug("eth%d: slirp: cannot create wakeup socket", ethX);
+		close();
+		return false;
+	}
+
 	debug = strstr(bx_options.ethernet[ethX].type, "debug") != NULL;
 	guest_packets.clear();
 	packets.clear();
@@ -190,6 +272,7 @@ void WinSlirpEthernetHandler::close()
 		slirp_cleanup(slirp);
 		slirp = NULL;
 	}
+	close_wake_socket();
 #if defined(OS_mingw)
 	if (winsock_started) {
 		WSACleanup();
@@ -237,14 +320,31 @@ int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 		FD_ZERO(&readfds);
 		FD_ZERO(&writefds);
 		FD_ZERO(&exceptfds);
+		/* Always present, so the sets are never empty (Winsock rejects that). */
+		FD_SET(wake_socket, &readfds);
 #if !defined(OS_mingw)
-		int maxfd = -1;
+		int maxfd = (int)wake_socket;
 #endif
-		bool have_fds = false;
+		size_t polled = 1;
 		for (size_t i = 0; i < poll_entries.size(); ++i) {
 			if (poll_entries[i].fd == SLIRP_INVALID_SOCKET)
 				continue;
-			have_fds = true;
+#if defined(OS_mingw)
+			bool fits = polled < FD_SETSIZE;
+#else
+			bool fits = poll_entries[i].fd < FD_SETSIZE;
+#endif
+			if (!fits) {
+				/* Leave it out; FD_SET() would drop or overrun it. */
+				if (!fd_limit_reported) {
+					panicbug("eth%d: slirp: more than %d sockets, some connections will stall",
+						ethX, FD_SETSIZE);
+					fd_limit_reported = true;
+				}
+				poll_entries[i].fd = SLIRP_INVALID_SOCKET;
+				continue;
+			}
+			polled++;
 			if (poll_entries[i].events & SLIRP_POLL_IN)
 				FD_SET(poll_entries[i].fd, &readfds);
 			if (poll_entries[i].events & SLIRP_POLL_OUT)
@@ -261,26 +361,12 @@ int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 		wait_time.tv_sec = timeout / 1000;
 		wait_time.tv_usec = (timeout % 1000) * 1000;
 #if defined(OS_mingw)
-		int result;
-		if (!have_fds) {
-			/*
-			 * Unlike POSIX, Winsock rejects select() when all three fd
-			 * sets are empty (WSAEINVAL).  A new slirp instance normally
-			 * has no sockets yet, so wait for its bounded timeout instead
-			 * of reporting a spurious receive error to MiNTNet.
-			 */
-			Sleep(timeout);
-			result = 0;
-		} else {
-			result = select(0, &readfds, &writefds, &exceptfds, &wait_time);
-		}
+		int result = select(0, &readfds, &writefds, &exceptfds, &wait_time);
 #else
-		int result;
-		if (!have_fds)
-			result = select(0, NULL, NULL, NULL, &wait_time);
-		else
-			result = select(maxfd + 1, &readfds, &writefds, &exceptfds, &wait_time);
+		int result = select(maxfd + 1, &readfds, &writefds, &exceptfds, &wait_time);
 #endif
+		if (result > 0 && FD_ISSET(wake_socket, &readfds))
+			drain_wake_socket();
 
 		pthread_mutex_lock(&slirp_lock);
 		for (size_t i = 0; i < poll_entries.size(); ++i) {
@@ -315,5 +401,6 @@ int WinSlirpEthernetHandler::send(const uint8 *buffer, int length)
 	}
 	guest_packets.push_back(std::vector<uint8>(buffer, buffer + length));
 	pthread_mutex_unlock(&slirp_lock);
+	wake();
 	return length;
 }

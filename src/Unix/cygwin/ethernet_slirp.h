@@ -27,9 +27,20 @@ class WinSlirpEthernetHandler : public ETHERNETDriver::Handler {
 	std::deque<std::vector<uint8> > packets;
 	std::vector<PollEntry> poll_entries;
 	pthread_mutex_t slirp_lock;
+	/*
+	 * Loopback UDP socket that is always in the select() set.  send()
+	 * writes a byte to it so queued guest frames reach libslirp at once
+	 * instead of after the select() timeout.
+	 */
+	slirp_os_socket wake_socket;
+	bool fd_limit_reported;
 
 	void enqueue(const uint8 *packet, size_t length);
 	static uint32 parse_ipv4(const char *text, uint32 fallback);
+	bool open_wake_socket();
+	void close_wake_socket();
+	void wake();
+	void drain_wake_socket();
 	static slirp_ssize_t send_packet(const void *packet, size_t length, void *opaque);
 	static void guest_error(const char *message, void *opaque);
 	static int64_t clock_get_ns(void *opaque);
