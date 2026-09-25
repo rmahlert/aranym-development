@@ -631,6 +631,20 @@ extern CFBundleRef mainBundle;
 
 #endif /* MACOSX_support */
 
+#if defined(_WIN64) && defined(__SEH__) && (USE_JIT || defined(HW_SIGSEGV))
+/*
+ * On x86-64 MinGW, setjmp() records the current frame and longjmp() then
+ * performs a full SEH unwind back to it.  That unwind cannot walk through
+ * JIT-generated code, or through the context the segfault handler redirects
+ * to atari_bus_fault(), neither of which has unwind tables.  With a NULL
+ * frame longjmp() just restores registers, as it does on Unix (QEMU does
+ * the same for its generated code).
+ */
+# include <setjmp.h>
+# undef setjmp
+# define setjmp(a)	_setjmp((a), NULL)
+#endif
+
 #ifndef HAVE_SIGSETJMP
 # include <setjmp.h>
 # define sigsetjmp(a, b) setjmp(a)

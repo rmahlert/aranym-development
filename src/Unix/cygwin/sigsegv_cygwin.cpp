@@ -172,9 +172,40 @@ do_install_main_exception_filter ()
 #endif /* OS_cygwin */
 
 #ifdef OS_mingw
+#if FIXED_ADDRESSING
+/*
+ * On x86-64 Windows exceptions are dispatched by unwinding the stack from
+ * table-based unwind data, which JIT-generated code does not have, so a
+ * guest memory fault inside a compiled block may never reach the unhandled
+ * exception filter.  A vectored handler runs before any unwinding.  Only
+ * claim faults inside the guest memory window (the same range the debug
+ * checks above treat as legitimate); anything else keeps going to the
+ * normal handlers.
+ */
+static PVOID vectored_handler;
+
+static LONG WINAPI
+guest_fault_handler (EXCEPTION_POINTERS *ExceptionInfo)
+{
+	if (ExceptionInfo->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
+		return EXCEPTION_CONTINUE_SEARCH;
+	uintptr fault_addr = (uintptr)ExceptionInfo->ExceptionRecord->ExceptionInformation[1];
+	if (fault_addr < (uintptr)(fixed_memory_offset - 0x1000000UL)
+#ifdef CPU_x86_64
+		|| fault_addr >= ((uintptr)fixed_memory_offset + 0x100000000ULL)
+#endif
+		)
+		return EXCEPTION_CONTINUE_SEARCH;
+	return main_exception_filter(ExceptionInfo);
+}
+#endif
+
 static void
 do_install_main_exception_filter ()
 {
+#if FIXED_ADDRESSING
+	vectored_handler = AddVectoredExceptionHandler(1, guest_fault_handler);
+#endif
 	SetUnhandledExceptionFilter(main_exception_filter);
 }
 #endif
@@ -198,6 +229,12 @@ static void uninstall_main_exception_filter ()
 		_except_list->handler = cygwin_exception_handler;
 #endif
 #ifdef OS_mingw
+#if FIXED_ADDRESSING
+		if (vectored_handler != NULL) {
+			RemoveVectoredExceptionHandler(vectored_handler);
+			vectored_handler = NULL;
+		}
+#endif
 		SetUnhandledExceptionFilter(NULL);
 #endif
 		main_exception_filter_installed = 0;

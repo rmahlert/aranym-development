@@ -132,6 +132,32 @@ static inline DWORD align_size_segment(LPVOID addr, DWORD size)
 {
 	return size + ((DWORD_PTR)addr - (DWORD_PTR)align_addr_segment(addr));
 }
+
+/*
+ * Windows has no MAP_32BIT, and VirtualAlloc(NULL, ...) may return memory
+ * anywhere in a 64-bit address space.  The JIT addresses its code cache and
+ * block pools with sign-extended 32-bit displacements and reaches the
+ * executable with rel32 calls, so walk the address space for a free region
+ * below 2GB, like MAP_32BIT does on Linux.
+ */
+static void *win32_alloc_low(size_t size)
+{
+	const DWORD_PTR limit = 0x80000000UL;
+	const DWORD_PTR granularity = 65536;
+	DWORD_PTR addr = granularity;
+	MEMORY_BASIC_INFORMATION info;
+
+	while (addr + size <= limit && VirtualQuery((LPCVOID)addr, &info, sizeof(info)) != 0) {
+		DWORD_PTR region_end = (DWORD_PTR)info.BaseAddress + info.RegionSize;
+		if (info.State == MEM_FREE && region_end >= addr + size) {
+			void *p = VirtualAlloc((LPVOID)addr, size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+			if (p != NULL)
+				return p;
+		}
+		addr = (region_end + granularity - 1) & ~(granularity - 1);
+	}
+	return NULL;
+}
 #endif
 
 /* Translate generic VM prot flags to host values.  */
@@ -244,7 +270,11 @@ void * vm_acquire(size_t size, int options)
 	
 #else
 #ifdef HAVE_WIN32_VM
-	if ((addr = VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE)) == NULL)
+	addr = NULL;
+	if (sizeof(void *) > 4 && (options & VM_MAP_32BIT))
+		addr = win32_alloc_low(size);
+	if (addr == NULL &&
+		(addr = VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE)) == NULL)
 		return VM_MAP_FAILED;
 
 	// Sanity checks for 64-bit platforms

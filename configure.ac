@@ -1468,7 +1468,13 @@ if [[ "x$WANT_JIT" = "xyes" -a "x$CAN_JIT" = "xyes" ]]; then
   if [[ "x$WANT_JIT_FPU" = "xyes" ]]; then
     DEFINES="$DEFINES -DUSE_JIT_FPU=1"
   fi
-  if test "$OS_TYPE" != darwin && $HAVE_X86_64; then
+  if test "$OS_TYPE" = mingw && $HAVE_X86_64; then
+     # -Ttext-segment is ELF only.  A PE executable defaults to an image
+     # base above 4GB and ASLR may move it anywhere, but the JIT addresses
+     # globals and helpers with 32-bit displacements.  Pin it low instead.
+     # Stay large-address-aware so big TT-RAM sizes still fit.
+     LDFLAGS="$LDFLAGS -Wl,--image-base=0x10000000 -Wl,--disable-dynamicbase -Wl,--disable-high-entropy-va"
+  elif test "$OS_TYPE" != darwin && $HAVE_X86_64; then
      # Force text address; needed at least on ArchLinux
      # where it is otherwise set to a high memory address
      # which is not in the range for the JIT addressing scheme
