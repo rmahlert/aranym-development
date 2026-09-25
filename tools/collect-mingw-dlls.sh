@@ -10,6 +10,7 @@
 #                     $MINGW_ROOT/lib, and the binary's own directory)
 #   OBJDUMP           cross objdump to read import tables with
 #   MINGW_TOOL_PREFIX toolchain prefix used to derive OBJDUMP
+#   MINGW_CXX         cross C++ compiler used to locate its runtime DLLs
 #
 # Dependencies are resolved by reading PE import tables rather than from a
 # hardcoded list, so a new library (libslirp, and the glib chain behind it)
@@ -30,6 +31,7 @@ shift
 : "${MINGW_ROOT:=/usr/x86_64-w64-mingw32/sys-root/mingw}"
 : "${MINGW_TOOL_PREFIX:=x86_64-w64-mingw32}"
 : "${OBJDUMP:=${MINGW_TOOL_PREFIX}-objdump}"
+: "${MINGW_CXX:=${MINGW_TOOL_PREFIX}-g++}"
 
 if ! type "$OBJDUMP" > /dev/null 2>&1; then
 	echo "$0: $OBJDUMP not found; cannot resolve DLL dependencies" >&2
@@ -89,12 +91,20 @@ while test -s "$work/todo"; do
 				break
 			fi
 		done
+		if test -z "$found" && type "$MINGW_CXX" > /dev/null 2>&1; then
+			compiler_file=`"$MINGW_CXX" -print-file-name="$dep" 2>/dev/null || true`
+			if test -f "$compiler_file"; then
+				found="$compiler_file"
+			fi
+		fi
 		if test -z "$found"; then
 			echo "$dep" >> "$work/missing"
 			continue
 		fi
 
-		cp -a "$found" "$destdir/"
+		if test "$found" != "$destdir/${found##*/}"; then
+			cp -a "$found" "$destdir/"
+		fi
 		# Walk it too: libslirp pulls in glib, which pulls in
 		# pcre2, intl and iconv.
 		echo "$found" >> "$work/todo"

@@ -274,7 +274,7 @@ function mkdist() {
 	    cd "$distdir"
 	    echo "creating Windows installer"
 	    find . -type d | sed -e 's|^./\(.*\)$|${CreateDirectory} "$INSTDIR\\\1"|' -e '/^\.$/d' | tr '/' '\\' > ../aranym.files
-	    find . -type f | sed -e 's|^./\(.*\)$|${File} "\1"|' | tr '/' '\\' >> ../aranym.files
+	    find . -type f ! -path './aranym/emutos-aranym.img' | sed -e 's|^./\(.*\)$|${File} "\1"|' | tr '/' '\\' >> ../aranym.files
 	    easy_define=
 	    if test -d aranym/atari && test -f aranym/atari/config; then
 		easy_define=-DEASY_DRIVES

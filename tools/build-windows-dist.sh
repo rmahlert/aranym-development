@@ -15,6 +15,7 @@
 #   EASYARAMINT_DIR  optional EasyARAnyM drives to include as a component
 #   OUTPUT_DIR       where to write the packages (default dist/windows)
 #   VERSION_SUFFIX   appended to the package name (default -unofficial)
+#   STRIP            cross strip tool (derived from MINGW_TOOL_PREFIX)
 
 set -eu
 
@@ -35,6 +36,35 @@ if ! test -f "$exe"; then
 	echo "$0: $exe not found; run tools/build-target.sh windows first" >&2
 	exit 1
 fi
+config_header="$build_dir/config.h"
+if ! test -f "$config_header" ||
+	! grep -Eq '^[[:space:]]*#define[[:space:]]+HAVE_SLIRP[[:space:]]+1([[:space:]]|$)' "$config_header"; then
+	echo "$0: $exe was not configured with SLIRP support" >&2
+	echo "$0: rebuild it with tools/build-target.sh windows before packaging" >&2
+	exit 1
+fi
+if ! grep -Eq '^[[:space:]]*#define[[:space:]]+ETHERNET_SUPPORT[[:space:]]+1([[:space:]]|$)' "$config_header"; then
+	echo "$0: $exe has SLIRP but the NatFeat Ethernet device is disabled" >&2
+	echo "$0: refusing to package a build that the MiNTNet driver cannot use" >&2
+	exit 1
+fi
+package_objdump=${OBJDUMP:-${MINGW_TOOL_PREFIX:-x86_64-w64-mingw32}-objdump}
+if ! type "$package_objdump" > /dev/null 2>&1; then
+	echo "$0: $package_objdump not found; cannot verify the Windows executable" >&2
+	exit 1
+fi
+if ! "$package_objdump" -p "$exe" 2>/dev/null |
+	sed -n 's/^[[:space:]]*DLL Name:[[:space:]]*//p' |
+	grep -Eiq '^libslirp-[0-9]+\.dll$'; then
+	echo "$0: $exe does not import the SLIRP runtime" >&2
+	echo "$0: refusing to package a Windows build whose SLIRP option cannot work" >&2
+	exit 1
+fi
+package_strip=${STRIP:-${MINGW_TOOL_PREFIX:-x86_64-w64-mingw32}-strip}
+if ! type "$package_strip" > /dev/null 2>&1; then
+	echo "$0: $package_strip not found; cannot prepare release binaries" >&2
+	exit 1
+fi
 if ! type makensis > /dev/null 2>&1; then
 	echo "$0: makensis not found; install nsis" >&2
 	exit 1
@@ -52,8 +82,19 @@ for f in aranym.exe aranym-jit.exe aranym-mmu.exe; do
 done
 
 echo "resolving DLL dependencies"
-MINGW_ROOT="$MINGW_ROOT" "$root/tools/collect-mingw-dlls.sh" "$stage" "$stage"/*.exe |
-	sed -e 's/^/  /'
+if ! MINGW_ROOT="$MINGW_ROOT" "$root/tools/collect-mingw-dlls.sh" \
+	"$stage" "$stage"/*.exe > "$work/dll-list"; then
+	exit 1
+fi
+sed -e 's/^/  /' "$work/dll-list"
+
+# Ubuntu's MinGW runtime DLLs and the default ARAnyM build contain debug
+# sections.  Apart from bloating the package, sufficiently large unstripped
+# PE files can make makensis fail while compressing them.
+for f in "$stage"/*.exe "$stage"/*.dll; do
+	test -f "$f" || continue
+	"$package_strip" --strip-unneeded "$f"
+done
 
 # Documentation, with the line endings Windows expects.
 cp "$root/COPYING" "$stage/COPYING.txt"
@@ -91,7 +132,8 @@ fi
 (
 	cd "$stage"
 	find . -type d | sed -e 's|^./\(.*\)$|${CreateDirectory} "$INSTDIR\\\1"|' -e '/^\.$/d' | tr '/' '\\' > aranym.files
-	find . -type f ! -name aranym.files | sed -e 's|^./\(.*\)$|${File} "\1"|' | tr '/' '\\' >> aranym.files
+	find . -type f ! -name aranym.files ! -path './aranym/emutos-aranym.img' |
+		sed -e 's|^./\(.*\)$|${File} "\1"|' | tr '/' '\\' >> aranym.files
 )
 
 mkdir -p "$OUTPUT_DIR"
@@ -99,8 +141,8 @@ mkdir -p "$OUTPUT_DIR"
 echo "creating zip"
 # zip adds to an existing archive rather than replacing it, which would
 # silently merge a previous release into this one.
-rm -f "$OUTPUT_DIR/$name.zip"
-( cd "$work" && zip -qr "$OUTPUT_DIR/$name.zip" "$name" -x "$name/aranym.files" )
+package_zip="$work/$name.zip"
+( cd "$work" && zip -qr "$package_zip" "$name" -x "$name/aranym.files" )
 
 echo "creating installer"
 cp "$root/tools/aranym.nsi" "$stage/aranym.nsi"
@@ -110,8 +152,12 @@ done
 ( cd "$stage" && makensis -V2 -NOCD \
 	-DVER_MAJOR="$major" -DVER_MINOR="$minor" -DVER_MICRO="$micro" \
 	$easy_define \
-	-DOUTFILE="$OUTPUT_DIR/$name-setup.exe" \
+	-DOUTFILE="$work/$name-setup.exe" \
 	aranym.nsi )
+
+# Publish only after both artifacts have been built successfully.
+cp "$package_zip" "$OUTPUT_DIR/$name.zip"
+cp "$work/$name-setup.exe" "$OUTPUT_DIR/$name-setup.exe"
 
 echo
 echo "$OUTPUT_DIR/$name.zip"

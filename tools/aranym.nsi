@@ -53,6 +53,7 @@ RequestExecutionLevel admin
 !include "Sections.nsh"
 !include "UninstallLog.nsh"
 !include "TextFunc.nsh"
+!include "FileFunc.nsh"
 !include "Sections.nsh"
 !include "LogicLib.nsh"
 !include "Memento.nsh"
@@ -349,6 +350,80 @@ ${MementoSection} "${NAME} Core Files (required)" SecCore
 
 ${MementoSectionEnd}
 
+;
+; Keep the bundled EmuTOS image out of the generic file list.  On a new
+; installation it goes to the standard data directory.  If a user config
+; already exists, resolve [GLOBAL] EmuTOS exactly as ARAnyM does and ask before
+; replacing the image that configuration actually uses.
+;
+Section -emutosimage
+  SetOutPath "$PLUGINSDIR"
+  File /oname=emutos-aranym.img "aranym\emutos-aranym.img"
+
+  ${IfNot} ${FileExists} "$PROFILE\aranym\config"
+    CreateDirectory "$INSTDIR\aranym"
+    CopyFiles /SILENT "$PLUGINSDIR\emutos-aranym.img" "$INSTDIR\aranym\emutos-aranym.img"
+    Return
+  ${EndIf}
+
+  ReadINIStr $R8 "$PROFILE\aranym\config" "GLOBAL" "EmuTOS"
+  ${If} $R8 == ""
+    DetailPrint "Existing config has no [GLOBAL] EmuTOS image; leaving it unchanged"
+    Return
+  ${EndIf}
+
+  ; ARAnyM expands ~/ from the user profile, */ from its data directory,
+  ; and other relative paths from the directory containing the config file.
+  StrCpy $R7 $R8
+  StrCpy $R6 $R8 2
+  ${If} $R6 == "~/"
+  ${OrIf} $R6 == "~\"
+    StrCpy $R6 $R8 "" 2
+    StrCpy $R7 "$PROFILE\$R6"
+  ${ElseIf} $R6 == "*/"
+  ${OrIf} $R6 == "*\"
+    StrCpy $R6 $R8 "" 2
+    StrCpy $R7 "$INSTDIR\aranym\$R6"
+  ${Else}
+    StrCpy $R6 $R8 1 1
+    ${If} $R6 != ":"
+      StrCpy $R6 $R8 1
+      ${If} $R6 != "\"
+      ${AndIf} $R6 != "/"
+        StrCpy $R7 "$PROFILE\aranym\$R8"
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+
+  MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 \
+    "Your current ARAnyM configuration uses this EmuTOS image:$\r$\n$R7$\r$\n$\r$\nReplace it with the EmuTOS image included with this installer?$\r$\n$\r$\nIf the file exists, it will first be backed up as:$\r$\n$R7.before-aranym-${VERSION}.bak" /SD IDNO \
+    IDYES emutos_replace IDNO emutos_keep
+
+  emutos_keep:
+    DetailPrint "Keeping configured EmuTOS image: $R7"
+    Return
+
+  emutos_replace:
+    ${If} ${FileExists} "$R7"
+      ClearErrors
+      CopyFiles /SILENT "$R7" "$R7.before-aranym-${VERSION}.bak"
+      ${If} ${Errors}
+        MessageBox MB_ICONEXCLAMATION|MB_OK "The existing EmuTOS image could not be backed up, so it was not replaced:$\r$\n$R7"
+        Return
+      ${EndIf}
+    ${EndIf}
+
+    ${GetParent} "$R7" $R6
+    CreateDirectory "$R6"
+    ClearErrors
+    CopyFiles /SILENT "$PLUGINSDIR\emutos-aranym.img" "$R7"
+    ${If} ${Errors}
+      MessageBox MB_ICONSTOP|MB_OK "The configured EmuTOS image could not be updated:$\r$\n$R7$\r$\n$\r$\nYour configuration was not changed."
+    ${Else}
+      DetailPrint "Updated configured EmuTOS image: $R7"
+    ${EndIf}
+SectionEnd
+
 Section -defaultconfig
   ${IfNot} ${FileExists} "$PROFILE\aranym\config"
     SetOutPath "$PROFILE\aranym"
@@ -357,6 +432,13 @@ Section -defaultconfig
 SectionEnd
 
 Section -networkdriver
+  ; NETSETUP.PRG supplies SLIRP's guest address, route, and DNS setup.  TAP
+  ; users manage those settings as part of their bridge/LAN configuration,
+  ; so do not install the SLIRP setup payload for TAP or disabled networking.
+  ${If} $NetworkType != "slirp"
+    Return
+  ${EndIf}
+
   ; The Atari-side driver and the setup tool that configures the guest from
   ; whatever was chosen on the network page above.  These live in a folder
   ; that gets mapped as a HOSTFS drive below, so the Atari side can reach
@@ -376,6 +458,13 @@ SectionEnd
 ; partition letters from C: up, and those are not recorded in the config.
 ;
 Section -hostfsmapping
+  ; The setup directory above exists only for SLIRP.  In particular, do not
+  ; create a stale HOSTFS mapping or show the NETSETUP prompt when TAP was
+  ; selected.
+  ${If} $NetworkType != "slirp"
+    Return
+  ${EndIf}
+
   StrCpy $R9 "ZYXWVUTSRQPONMLKJIHGFEDCBA"
   StrCpy $NetworkSetupDrive ""
 

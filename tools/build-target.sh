@@ -12,7 +12,9 @@ prepare_tree()
 	rm -rf "$tree"
 	mkdir -p "$tree"
 	tar -C "$root" --exclude=.git --exclude=build --exclude=dist \
-		--exclude=lan-share -cf - . | tar -C "$tree" -xf -
+		--exclude=lan-share --exclude=.deps --exclude='*.o' \
+		--exclude='*.a' --exclude='*.Po' --exclude='*.Plo' \
+		--exclude='*.exe' -cf - . | tar -C "$tree" -xf -
 	echo "$tree"
 }
 
