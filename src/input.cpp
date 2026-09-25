@@ -1435,6 +1435,19 @@ static void process_active_event(const SDL_Event &event)
 		return;
 	
 #if SDL_VERSION_ATLEAST(2, 0, 0)
+	/*
+	 * Windows may discard the window surface contents during an expose or a
+	 * mode transition.  Re-presenting that now-empty surface is not enough:
+	 * mark every guest tile dirty so the next video refresh reconstructs it.
+	 */
+	if (event.window.windowID == video->window_id &&
+		(event.window.event == SDL_WINDOWEVENT_EXPOSED ||
+		 event.window.event == SDL_WINDOWEVENT_SHOWN ||
+		 event.window.event == SDL_WINDOWEVENT_RESTORED))
+	{
+		video->forceRefreshScreen();
+	}
+
 	if (event.window.event == SDL_WINDOWEVENT_NONE ||
 		event.window.event == SDL_WINDOWEVENT_SHOWN ||
 		event.window.event == SDL_WINDOWEVENT_HIDDEN ||
@@ -1656,4 +1669,3 @@ void check_event()
 }
 
 // don't remove this modeline with intended formatting for vim:ts=4:sw=4:
-
