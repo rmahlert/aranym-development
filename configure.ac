@@ -1071,6 +1071,9 @@ if [[ "x$WANT_ETHERNET" = "xyes" ]]; then
       AC_MSG_WARN([Ethernet won't work without TunTap driver for Mac OS X. See http://tuntaposx.sourceforge.net/])
     fi
     HAVE_ETHERNET="yes"
+  elif [[ "x$have_slirp" = "xyes" ]]; then
+    AC_DEFINE([ETHERNET_SUPPORT], 1)
+    HAVE_ETHERNET="yes"
   else
     AC_MSG_WARN([Ethernet interface not supported on your system])
   fi

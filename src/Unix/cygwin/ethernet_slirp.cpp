@@ -5,6 +5,7 @@
 
 #if defined(OS_mingw)
 #include <winsock2.h>
+#include <windows.h>
 #else
 #include <arpa/inet.h>
 #include <sys/select.h>
@@ -65,6 +66,32 @@ int64_t WinSlirpEthernetHandler::clock_get_ns(void *opaque)
 	return (int64_t)tv.tv_sec * 1000000000LL + (int64_t)tv.tv_usec * 1000LL;
 }
 
+/*
+ * SlirpConfig version 1 requires the legacy socket-registration callbacks.
+ * The pollfds API rebuilds the complete socket list before every select(), so
+ * ARAnyM does not need to retain a second copy of the registered descriptors.
+ */
+void WinSlirpEthernetHandler::register_poll_fd(int fd, void *opaque)
+{
+	(void)fd;
+	(void)opaque;
+}
+
+void WinSlirpEthernetHandler::unregister_poll_fd(int fd, void *opaque)
+{
+	(void)fd;
+	(void)opaque;
+}
+
+void WinSlirpEthernetHandler::notify(void *opaque)
+{
+	/*
+	 * Guest input and libslirp polling are serialized on the receive thread.
+	 * Its bounded select timeout means there is no separate I/O thread to wake.
+	 */
+	(void)opaque;
+}
+
 int WinSlirpEthernetHandler::add_poll(slirp_os_socket fd, int events, void *opaque)
 {
 	WinSlirpEthernetHandler *handler = static_cast<WinSlirpEthernetHandler *>(opaque);
@@ -86,7 +113,6 @@ int WinSlirpEthernetHandler::get_revents(int index, void *opaque)
 bool WinSlirpEthernetHandler::open()
 {
 	SlirpConfig config;
-	SlirpCb callbacks;
 
 #if defined(OS_mingw)
 	WSADATA winsock_data;
@@ -139,8 +165,12 @@ bool WinSlirpEthernetHandler::open()
 	callbacks.send_packet = send_packet;
 	callbacks.guest_error = guest_error;
 	callbacks.clock_get_ns = clock_get_ns;
+	callbacks.register_poll_fd = register_poll_fd;
+	callbacks.unregister_poll_fd = unregister_poll_fd;
+	callbacks.notify = notify;
 
 	debug = strstr(bx_options.ethernet[ethX].type, "debug") != NULL;
+	guest_packets.clear();
 	packets.clear();
 	poll_entries.clear();
 	slirp = slirp_new(&config, &callbacks, this);
@@ -167,6 +197,7 @@ void WinSlirpEthernetHandler::close()
 	}
 #endif
 	packets.clear();
+	guest_packets.clear();
 	poll_entries.clear();
 	pthread_mutex_unlock(&slirp_lock);
 }
@@ -175,6 +206,19 @@ int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 {
 	for (;;) {
 		pthread_mutex_lock(&slirp_lock);
+
+		/*
+		 * Keep all libslirp calls on this thread.  Calling slirp_input()
+		 * from the CPU thread after slirp_pollfds_fill_socket() but before
+		 * slirp_pollfds_poll() invalidates the poll snapshot.  That race is
+		 * especially easy to hit while MiNTNet is starting and can make
+		 * libslirp use stale socket state.
+		 */
+		while (slirp != NULL && !guest_packets.empty()) {
+			std::vector<uint8> packet = guest_packets.front();
+			guest_packets.pop_front();
+			slirp_input(slirp, &packet[0], packet.size());
+		}
 		if (!packets.empty()) {
 			std::vector<uint8> packet = packets.front();
 			packets.pop_front();
@@ -189,17 +233,27 @@ int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 		slirp_pollfds_fill_socket(slirp, &timeout, add_poll, this);
 		fd_set readfds;
 		fd_set writefds;
+		fd_set exceptfds;
 		FD_ZERO(&readfds);
 		FD_ZERO(&writefds);
-	int maxfd = -1;
+		FD_ZERO(&exceptfds);
+#if !defined(OS_mingw)
+		int maxfd = -1;
+#endif
+		bool have_fds = false;
 		for (size_t i = 0; i < poll_entries.size(); ++i) {
 			if (poll_entries[i].fd == SLIRP_INVALID_SOCKET)
 				continue;
-			if (poll_entries[i].events & (SLIRP_POLL_IN | SLIRP_POLL_PRI | SLIRP_POLL_ERR | SLIRP_POLL_HUP))
+			have_fds = true;
+			if (poll_entries[i].events & SLIRP_POLL_IN)
 				FD_SET(poll_entries[i].fd, &readfds);
 			if (poll_entries[i].events & SLIRP_POLL_OUT)
 				FD_SET(poll_entries[i].fd, &writefds);
+			if (poll_entries[i].events & (SLIRP_POLL_PRI | SLIRP_POLL_ERR | SLIRP_POLL_HUP))
+				FD_SET(poll_entries[i].fd, &exceptfds);
+#if !defined(OS_mingw)
 			maxfd = MAX(maxfd, (int)poll_entries[i].fd);
+#endif
 		}
 		pthread_mutex_unlock(&slirp_lock);
 
@@ -207,18 +261,39 @@ int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 		wait_time.tv_sec = timeout / 1000;
 		wait_time.tv_usec = (timeout % 1000) * 1000;
 #if defined(OS_mingw)
-		int result = select(0, &readfds, &writefds, NULL, &wait_time);
+		int result;
+		if (!have_fds) {
+			/*
+			 * Unlike POSIX, Winsock rejects select() when all three fd
+			 * sets are empty (WSAEINVAL).  A new slirp instance normally
+			 * has no sockets yet, so wait for its bounded timeout instead
+			 * of reporting a spurious receive error to MiNTNet.
+			 */
+			Sleep(timeout);
+			result = 0;
+		} else {
+			result = select(0, &readfds, &writefds, &exceptfds, &wait_time);
+		}
 #else
-		int result = select(maxfd + 1, &readfds, &writefds, NULL, &wait_time);
+		int result;
+		if (!have_fds)
+			result = select(0, NULL, NULL, NULL, &wait_time);
+		else
+			result = select(maxfd + 1, &readfds, &writefds, &exceptfds, &wait_time);
 #endif
 
 		pthread_mutex_lock(&slirp_lock);
 		for (size_t i = 0; i < poll_entries.size(); ++i) {
 			poll_entries[i].revents = 0;
+			if (poll_entries[i].fd == SLIRP_INVALID_SOCKET)
+				continue;
 			if (FD_ISSET(poll_entries[i].fd, &readfds))
 				poll_entries[i].revents |= SLIRP_POLL_IN;
 			if (FD_ISSET(poll_entries[i].fd, &writefds))
 				poll_entries[i].revents |= SLIRP_POLL_OUT;
+			if (FD_ISSET(poll_entries[i].fd, &exceptfds))
+				poll_entries[i].revents |= poll_entries[i].events &
+					(SLIRP_POLL_PRI | SLIRP_POLL_ERR | SLIRP_POLL_HUP);
 		}
 		if (slirp != NULL)
 			slirp_pollfds_poll(slirp, result < 0, get_revents, this);
@@ -230,9 +305,15 @@ int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 
 int WinSlirpEthernetHandler::send(const uint8 *buffer, int length)
 {
+	if (buffer == NULL || length <= 0)
+		return -1;
+
 	pthread_mutex_lock(&slirp_lock);
-	if (slirp != NULL)
-		slirp_input(slirp, buffer, length);
+	if (slirp == NULL) {
+		pthread_mutex_unlock(&slirp_lock);
+		return -1;
+	}
+	guest_packets.push_back(std::vector<uint8>(buffer, buffer + length));
 	pthread_mutex_unlock(&slirp_lock);
 	return length;
 }

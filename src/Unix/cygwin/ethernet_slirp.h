@@ -15,7 +15,15 @@ class WinSlirpEthernetHandler : public ETHERNETDriver::Handler {
 	};
 
 	Slirp *slirp;
+	/* libslirp retains this pointer for the lifetime of the Slirp instance. */
+	SlirpCb callbacks;
 	bool winsock_started;
+	/*
+	 * libslirp is not thread-safe.  The MiNT CPU thread queues frames here;
+	 * the receive thread is the sole caller of slirp_input() and of the
+	 * poll API.
+	 */
+	std::deque<std::vector<uint8> > guest_packets;
 	std::deque<std::vector<uint8> > packets;
 	std::vector<PollEntry> poll_entries;
 	pthread_mutex_t slirp_lock;
@@ -25,6 +33,9 @@ class WinSlirpEthernetHandler : public ETHERNETDriver::Handler {
 	static slirp_ssize_t send_packet(const void *packet, size_t length, void *opaque);
 	static void guest_error(const char *message, void *opaque);
 	static int64_t clock_get_ns(void *opaque);
+	static void register_poll_fd(int fd, void *opaque);
+	static void unregister_poll_fd(int fd, void *opaque);
+	static void notify(void *opaque);
 	static int add_poll(slirp_os_socket fd, int events, void *opaque);
 	static int get_revents(int index, void *opaque);
 
