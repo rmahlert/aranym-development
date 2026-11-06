@@ -16,6 +16,7 @@
 #   OUTPUT_DIR       where to write the packages (default dist/windows)
 #   VERSION_SUFFIX   appended to the package name (default -unofficial)
 #   STRIP            cross strip tool (derived from MINGW_TOOL_PREFIX)
+#   ATARI_TAP_SETUP_ZIP optional shared TAP setup kit, with matching .sha256
 
 set -eu
 
@@ -116,6 +117,12 @@ for f in nfeth.xif nfeth-config netsetup.prg eth0-config.sh README-setup.txt; do
 	cp -a "$root/data/network/$f" "$stage/aranym/network/$f"
 done
 
+tap_define=
+if test -n "${ATARI_TAP_SETUP_ZIP:-}"; then
+    python3 "$root/tools/stage-tap-setup.py" "$ATARI_TAP_SETUP_ZIP" "$stage/aranym/network"
+    tap_define=-DTAP_SETUP
+fi
+
 easy_define=
 if test -n "${EASYARAMINT_DIR:-}" && test -f "$EASYARAMINT_DIR/config"; then
 	echo "including EasyARAnyM drives from $EASYARAMINT_DIR"
@@ -152,6 +159,7 @@ done
 ( cd "$stage" && makensis -V2 -NOCD \
 	-DVER_MAJOR="$major" -DVER_MINOR="$minor" -DVER_MICRO="$micro" \
 	$easy_define \
+    $tap_define \
 	-DOUTFILE="$work/$name-setup.exe" \
 	aranym.nsi )
 

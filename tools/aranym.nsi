@@ -521,6 +521,9 @@ ${MementoSection} "Start Menu Shortcuts" SecMenuShortcuts
   StrCpy $0 "$SMPROGRAMS\${NAME}"
   ${CreateDirectory} "$0"
   ${CreateShortcut} "$0\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" "" "" "" "${NAME}"
+!ifdef TAP_SETUP
+  ${CreateShortcut} "$0\Network adapter setup.lnk" "$INSTDIR\aranym\network\Atari-TAP-Setup.cmd" "" "" "" "Standalone signed TAP setup; no OpenVPN application"
+!endif
   ${CreateShortcut} "$0\${NAME}${NAMESUFFIX} - MMU.lnk" "$INSTDIR\aranym-mmu.exe" "" "" "" "${NAME} MMU"
   ${CreateShortcut} "$0\${NAME}${NAMESUFFIX} - JIT.lnk" "$INSTDIR\aranym-jit.exe" "" "" "" "${NAME} JIT"
 ${MementoSectionEnd}

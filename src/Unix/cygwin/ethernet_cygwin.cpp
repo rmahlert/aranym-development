@@ -32,6 +32,7 @@
 #endif
 
 #include <errno.h>
+#include <ctype.h>
 
 #define MTU 1500
 
@@ -75,7 +76,11 @@
 // simultaneously.
 //=========================================================
 
-#define TAP_COMPONENT_ID "tap0801"
+// Only adapters using the TAP-Windows Ethernet ABI are supported.
+static bool known_tap_component(const char *id)
+{
+	return !strcmp(id, "tap0801") || !strcmp(id, "tap0901");
+}
 
 static char *winerror(int err) {
 	static char buf[1024], *newline;
@@ -97,7 +102,10 @@ WinTapEthernetHandler::WinTapEthernetHandler(int eth_idx)
 {
 	device_handle = INVALID_HANDLE_VALUE;
 	device = NULL;
-	iface = NULL;
+	memset(&read_overlapped, 0, sizeof(read_overlapped));
+	memset(&write_overlapped, 0, sizeof(write_overlapped));
+	media_connected = false;
+	read_pending = write_pending = false;
 
 	device_total_in = 0;
 	device_total_out = 0;
@@ -108,221 +116,195 @@ WinTapEthernetHandler::~WinTapEthernetHandler()
 	close();
 }
 
-bool is_tap_win32_dev(const char *guid)
+// RegQueryValueEx does not promise a terminating NUL, even for REG_SZ.
+static bool registry_string(HKEY key, const char *value, char *text, DWORD capacity, LONG *result = NULL)
 {
-	HKEY netcard_key;
-	LONG status;
-	DWORD len;
-	int i = 0;
-
-	status = RegOpenKeyEx(
-		HKEY_LOCAL_MACHINE,
-		ADAPTER_KEY,
-		0,
-		KEY_READ,
-		&netcard_key);
-
-	if (status != ERROR_SUCCESS) {
-		D(bug("WinTap: Error opening registry key: %s", ADAPTER_KEY));
+	DWORD type = 0, length = capacity - 1;
+	LONG status = RegQueryValueExA(key, value, NULL, &type, (BYTE *)text, &length);
+	if (result) *result = status;
+	if (status != ERROR_SUCCESS || type != REG_SZ || !length || length >= capacity)
 		return false;
-	}
-
-	while (true)
-	{
-		char enum_name[256];
-		char unit_string[256 + sizeof(ADAPTER_KEY) + 3];
-		HKEY unit_key;
-		char component_id_string[] = "ComponentId";
-		char component_id[256];
-		char net_cfg_instance_id_string[] = "NetCfgInstanceId";
-		char net_cfg_instance_id[256];
-		DWORD data_type;
-
-		len = sizeof (enum_name);
-		status = RegEnumKeyEx(
-			netcard_key,
-			i,
-			enum_name,
-			&len,
-			NULL,
-			NULL,
-			NULL,
-			NULL);
-
-		if (status == ERROR_NO_MORE_ITEMS)
-			break;
-		else if (status != ERROR_SUCCESS) {
-			D(bug("WinTap: Error enumerating registry subkeys of key: %s",
-				ADAPTER_KEY));
-			return false;
-		}
-	
-		snprintf (unit_string, sizeof(unit_string), "%s\\%s",
-			  ADAPTER_KEY, enum_name);
-
-		status = RegOpenKeyEx(
-			HKEY_LOCAL_MACHINE,
-			unit_string,
-			0,
-			KEY_READ,
-			&unit_key);
-
-		if (status != ERROR_SUCCESS) {
-			D(bug("WinTap: Error opening registry key: %s", unit_string)); 
-			return false;
-		}
-		else
-		{
-			len = sizeof (component_id);
-			status = RegQueryValueEx(
-				unit_key,
-				component_id_string,
-				NULL,
-				&data_type,
-				(BYTE*)component_id,
-				&len);
-
-			if (!(status != ERROR_SUCCESS || data_type != REG_SZ)) {
-				len = sizeof (net_cfg_instance_id);
-				status = RegQueryValueEx(
-					unit_key,
-					net_cfg_instance_id_string,
-					NULL,
-					&data_type,
-					(BYTE*)net_cfg_instance_id,
-					&len);
-
-				if (status == ERROR_SUCCESS && data_type == REG_SZ)
-				{
-					if (!strcmp (net_cfg_instance_id, guid))
-					{
-						RegCloseKey (unit_key);
-						RegCloseKey (netcard_key);
-						return true;
-					}
-				}
-			}
-			RegCloseKey (unit_key);
-		}
-		++i;
-	}
-
-	RegCloseKey (netcard_key);
-	return false;
+	text[length] = '\0';
+	const char *end = (const char *)memchr(text, '\0', length);
+	return !end || end == text + length - 1;
 }
 
-
-int get_device_guid(
-	char *name,
-	int name_size,
-	char *actual_name,
-	int actual_name_size)
+static bool valid_guid(const char *guid)
 {
-	LONG status;
-	HKEY control_net_key;
-	DWORD len;
-	int i = 0;
-	int stop = 0;
+	if (!guid || strlen(guid) != 38 || guid[0] != '{' || guid[37] != '}')
+		return false;
+	for (int i = 1; i < 37; ++i) {
+		if (i == 9 || i == 14 || i == 19 || i == 24) {
+			if (guid[i] != '-') return false;
+		} else if (!isxdigit((unsigned char)guid[i])) {
+			return false;
+		}
+	}
+	return true;
+}
 
-	status = RegOpenKeyEx(
-		HKEY_LOCAL_MACHINE,
-		NETWORK_CONNECTIONS_KEY,
-		0,
-		KEY_READ,
-		&control_net_key);
+bool is_tap_win32_dev(const char *guid, bool modern_only = false)
+{
+	if (!valid_guid(guid)) return false;
+	HKEY adapters;
+	if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, ADAPTER_KEY, 0, KEY_READ, &adapters) != ERROR_SUCCESS)
+		return false;
+	bool found = false;
+	for (DWORD i = 0; ; ++i) {
+		char subkey[256];
+		DWORD length = sizeof(subkey);
+		LONG status = RegEnumKeyExA(adapters, i, subkey, &length, NULL, NULL, NULL, NULL);
+		if (status == ERROR_NO_MORE_ITEMS) break;
+		if (status != ERROR_SUCCESS) break;
+		HKEY adapter;
+		if (RegOpenKeyExA(adapters, subkey, 0, KEY_READ, &adapter) != ERROR_SUCCESS)
+			continue;
+		char component[256], instance[256];
+		found = registry_string(adapter, "ComponentId", component, sizeof(component))
+			&& (modern_only ? !strcmp(component, "tap0901") : known_tap_component(component))
+			&& registry_string(adapter, "NetCfgInstanceId", instance, sizeof(instance))
+			&& valid_guid(instance) && !strcasecmp(instance, guid);
+		RegCloseKey(adapter);
+		if (found) break;
+	}
+	RegCloseKey(adapters);
+	return found;
+}
 
-	if (status != ERROR_SUCCESS) {
-		D(bug("WinTap: Error opening registry key: %s", NETWORK_CONNECTIONS_KEY));
+int get_device_guid(char *name, int name_size, char *actual_name, int actual_name_size)
+{
+	if (!name || name_size < 39 || (actual_name && actual_name_size < 1)) {
+		SetLastError(ERROR_INVALID_PARAMETER);
 		return -1;
 	}
-
-	while (!stop)
-	{
-		char enum_name[256];
-		char connection_string[256 + sizeof(NETWORK_CONNECTIONS_KEY) + 20];
-		HKEY connection_key;
-		char name_data[256];
-		DWORD name_type;
-		const char name_string[] = "Name";
-
-		len = sizeof (enum_name);
-		status = RegEnumKeyEx(
-			control_net_key,
-			i,
-			enum_name,
-			&len,
-			NULL,
-			NULL,
-			NULL,
-			NULL);
-
-		if (status == ERROR_NO_MORE_ITEMS)
-			break;
-		else if (status != ERROR_SUCCESS) {
-			D(bug("WinTap: Error enumerating registry subkeys of key: %s",
-			       NETWORK_CONNECTIONS_KEY));
-			return -1;
+	HKEY connections;
+	LONG opened = RegOpenKeyExA(HKEY_LOCAL_MACHINE, NETWORK_CONNECTIONS_KEY, 0, KEY_READ, &connections);
+	if (opened != ERROR_SUCCESS) { SetLastError(opened); return -1; }
+	bool found = false, failed = false;
+	char selected_guid[39], selected_name[256];
+	for (DWORD i = 0; ; ++i) {
+		char guid[256];
+		DWORD length = sizeof(guid);
+		LONG status = RegEnumKeyExA(connections, i, guid, &length, NULL, NULL, NULL, NULL);
+		if (status == ERROR_NO_MORE_ITEMS) break;
+		if (status != ERROR_SUCCESS) { failed = true; break; }
+		if (!valid_guid(guid)) continue;
+		char path[sizeof(guid) + 12];
+		snprintf(path, sizeof(path), "%s\\Connection", guid);
+		HKEY connection;
+		if (RegOpenKeyExA(connections, path, 0, KEY_READ, &connection) != ERROR_SUCCESS)
+			continue;
+		char friendly[256];
+		bool usable = registry_string(connection, "Name", friendly, sizeof(friendly));
+		RegCloseKey(connection);
+		if (!usable || !is_tap_win32_dev(guid)) continue;
+		if (actual_name && *actual_name) {
+			bool matches = valid_guid(actual_name) ? !strcasecmp(guid, actual_name)
+				: !strcmp(friendly, actual_name);
+			if (!matches) continue;
 		}
-
-		snprintf(connection_string, 
-			 sizeof(connection_string),
-			 "%s\\%s\\Connection",
-			 NETWORK_CONNECTIONS_KEY, enum_name);
-
-		status = RegOpenKeyEx(
-			HKEY_LOCAL_MACHINE,
-			connection_string,
-			0,
-			KEY_READ,
-			&connection_key);
-		
-		if (status == ERROR_SUCCESS) {
-			len = sizeof (name_data);
-			status = RegQueryValueEx(
-				connection_key,
-				name_string,
-				NULL,
-				&name_type,
-				(BYTE*)name_data,
-				&len);
-
-			if (status != ERROR_SUCCESS || name_type != REG_SZ) {
-				D(bug("WinTap: Error opening registry key: %s\\%s\\%s",
-				       NETWORK_CONNECTIONS_KEY, connection_string, name_string));
-			        return -1;
-			}
-			else {
-				if (is_tap_win32_dev(enum_name)) {
-					D(bug("WinTap: found TAP device named \"%s\" ~ \"%s\"", name_data, actual_name));
-
-					snprintf(name, name_size, "%s", enum_name);
-					if (actual_name) {
-						if (strcmp(actual_name, "") != 0) {
-							if (strcmp(name_data, actual_name) != 0) {
-								RegCloseKey (connection_key);
-								++i;
-								continue;
-							}
-						}
-						else {
-							snprintf(actual_name, actual_name_size, "%s", name_data);
-						}
-					}
-					stop = 1;
-				}
-			}
-
-			RegCloseKey (connection_key);
-		}
-		++i;
+		// Never choose an arbitrary adapter when a name matches more than one.
+		if (found) { failed = true; break; }
+		strcpy(selected_guid, guid);
+		strcpy(selected_name, friendly);
+		found = true;
 	}
-
-	RegCloseKey (control_net_key);
-
-	if (stop == 0)
+	RegCloseKey(connections);
+	if (!found || failed || (actual_name && !*actual_name
+		&& strlen(selected_name) >= (size_t)actual_name_size)) {
+		SetLastError(failed ? ERROR_INVALID_DATA : ERROR_FILE_NOT_FOUND);
 		return -1;
-
+	}
+	strcpy(name, selected_guid);
+	if (actual_name && !*actual_name) strcpy(actual_name, selected_name);
 	return 0;
+}
+
+// The installer writes this GUID in the 64-bit view even for 32-bit ARAnyM.
+// Missing setup preserves legacy configuration; stale setup must not select a
+// different adapter just because it has the same display name.
+static int managed_tap_guid(char *guid, DWORD capacity)
+{
+	HKEY key;
+	LONG status = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\ARAnyM\\LAN", 0,
+		KEY_READ | KEY_WOW64_64KEY, &key);
+	if (status == ERROR_FILE_NOT_FOUND) return 0;
+	if (status != ERROR_SUCCESS) return -1;
+	bool valid = registry_string(key, "TapGuid", guid, capacity, &status)
+		&& valid_guid(guid) && is_tap_win32_dev(guid, true);
+	RegCloseKey(key);
+	if (status == ERROR_FILE_NOT_FOUND) return 0;
+	return valid ? 1 : -1;
+}
+
+// CancelIo only cancels requests issued by this thread. The receive-thread
+// cleanup below provides that fallback on XP; CancelIoEx also covers close().
+static void cancel_io(HANDLE handle, OVERLAPPED *overlapped)
+{
+	typedef BOOL (WINAPI *CancelIoExFn)(HANDLE, LPOVERLAPPED);
+	FARPROC address = GetProcAddress(GetModuleHandleA("kernel32.dll"), "CancelIoEx");
+	CancelIoExFn cancel;
+	static_assert(sizeof(cancel) == sizeof(address), "Windows procedure pointer size");
+	memcpy(&cancel, &address, sizeof(cancel));
+	if (cancel) cancel(handle, overlapped);
+	else CancelIo(handle);
+}
+
+struct PendingTapIo {
+	HANDLE handle;
+	OVERLAPPED *overlapped;
+	bool *pending;
+};
+
+static void cancel_pending_io(void *argument)
+{
+	PendingTapIo *io = (PendingTapIo *)argument;
+	if (*io->pending) {
+		cancel_io(io->handle, io->overlapped);
+		DWORD transferred;
+		// Cancellation is asynchronous: keep OVERLAPPED, event and buffer alive
+		// until the driver has completed the request, including on reset.
+		GetOverlappedResult(io->handle, io->overlapped, &transferred, TRUE);
+		*io->pending = false;
+	}
+}
+
+static bool finish_io(HANDLE handle, OVERLAPPED *overlapped, bool *pending, DWORD *transferred)
+{
+	PendingTapIo io = { handle, overlapped, pending };
+	bool success = false;
+	DWORD error = ERROR_SUCCESS;
+	pthread_cleanup_push(cancel_pending_io, &io);
+	for (;;) {
+		// Native Windows waits are not pthread cancellation points on Cygwin.
+		pthread_testcancel();
+		DWORD status = WaitForSingleObject(overlapped->hEvent, 100);
+		if (status == WAIT_TIMEOUT) continue;
+		if (status != WAIT_OBJECT_0) { error = GetLastError(); break; }
+		success = GetOverlappedResult(handle, overlapped, transferred, FALSE) != FALSE;
+		error = success ? ERROR_SUCCESS : GetLastError();
+		if (error != ERROR_IO_INCOMPLETE) *pending = false;
+		break;
+	}
+	pthread_cleanup_pop(1);
+	SetLastError(error);
+	return success;
+}
+
+// The device is opened overlapped, so IOCTLs also need a valid OVERLAPPED.
+static bool tap_ioctl(HANDLE handle, DWORD request, void *data, DWORD size, DWORD *returned)
+{
+	OVERLAPPED overlapped;
+	memset(&overlapped, 0, sizeof(overlapped));
+	overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	if (!overlapped.hEvent) return false;
+	BOOL success = DeviceIoControl(handle, request, data, size, data, size, returned, &overlapped);
+	if (!success && GetLastError() == ERROR_IO_PENDING)
+		success = GetOverlappedResult(handle, &overlapped, returned, TRUE);
+	DWORD error = success ? ERROR_SUCCESS : GetLastError();
+	CloseHandle(overlapped.hEvent);
+	SetLastError(error);
+	return success != FALSE;
 }
 
 bool WinTapEthernetHandler::open()
@@ -340,16 +322,22 @@ bool WinTapEthernetHandler::open()
 	}
 	debug = strstr(type, "debug") != NULL;
 
-	if ( strlen(bx_options.ethernet[ethX].tunnel) == 0) {
-		D(bug("ETH%d: tunnel name undefined", ethX));
-		return false;
+	const char *tunnel = bx_options.ethernet[ethX].tunnel;
+	int managed = 0;
+	if (!*tunnel || !strcmp(tunnel, "tap0")) {
+		managed = managed_tap_guid(device_guid, sizeof(device_guid));
+		if (managed < 0) {
+			panicbug("ETH%d: ERROR: Managed ARAnyM TAP is missing or invalid; run Atari TAP Setup", ethX);
+			return false;
+		}
 	}
-
-	safe_strncpy(name_buffer, bx_options.ethernet[ethX].tunnel, sizeof(name_buffer));
-
- 	if ( get_device_guid(device_guid, sizeof(device_guid), name_buffer, sizeof(name_buffer)) < 0 ) {
-		panicbug("ETH%d: ERROR: Could not find Windows tap device: %s", ethX, winerror(GetLastError()));
-		return false;
+	if (!managed) {
+		if (!*tunnel) return false;
+		safe_strncpy(name_buffer, tunnel, sizeof(name_buffer));
+		if (get_device_guid(device_guid, sizeof(device_guid), name_buffer, sizeof(name_buffer)) < 0) {
+			panicbug("ETH%d: ERROR: Could not find Windows tap device: %s", ethX, winerror(GetLastError()));
+			return false;
+		}
 	}
 
 	/*
@@ -366,78 +354,84 @@ bool WinTapEthernetHandler::open()
 		panicbug("ETH%d: ERROR: Could not open (%s) Windows tap device: %s", ethX, device_path, winerror(GetLastError()));
 		return false;
 	}
+	read_overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	write_overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	ULONG version[3] = { 0, 0, 0 };
+	DWORD returned = 0;
+	if (!read_overlapped.hEvent || !write_overlapped.hEvent
+		|| !tap_ioctl(device_handle, TAP_IOCTL_GET_VERSION, version, sizeof(version), &returned)
+		|| returned != sizeof(version)
+		|| !((version[0] == 8 && version[1] >= 1) || version[0] == 9)) {
+		panicbug("ETH%d: ERROR: TAP requires a supported 8.1 or 9.x driver", ethX);
+		close();
+		return false;
+	}
+	ULONG connected = 1;
+	media_connected = true;
+	if (!tap_ioctl(device_handle, TAP_IOCTL_SET_MEDIA_STATUS, &connected, sizeof(connected), &returned)) {
+		panicbug("ETH%d: ERROR: Could not connect TAP media: %s", ethX, winerror(GetLastError()));
+		close();
+		return false;
+	}
 	device = strdup(device_path);
-	
-	read_overlapped.Offset = 0; 
-	read_overlapped.OffsetHigh = 0; 
-	read_overlapped.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-	write_overlapped.Offset = 0; 
-	write_overlapped.OffsetHigh = 0; 
-	write_overlapped.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-
-	D(bug("ETH%d: tap device open %s [handle=%p]", ethX, device_path, (void*)device_handle));
+	if (!device) { close(); return false; }
+	D(bug("ETH%d: TAP %lu.%lu opened: %s", ethX, version[0], version[1], device));
 	return true;
 }
 
 void WinTapEthernetHandler::close()
 {
-	if (device_handle != INVALID_HANDLE_VALUE)
-	{
+	// ETHERNETDriver stops and joins the receiver before close/destruction.
+	// Its cancellation cleanup has drained any pending read before we get here.
+	if (device_handle != INVALID_HANDLE_VALUE) {
+		ULONG connected = 0;
+		DWORD returned;
+		if (media_connected)
+			tap_ioctl(device_handle, TAP_IOCTL_SET_MEDIA_STATUS, &connected, sizeof(connected), &returned);
+		PendingTapIo read = { device_handle, &read_overlapped, &read_pending };
+		PendingTapIo write = { device_handle, &write_overlapped, &write_pending };
+		cancel_pending_io(&read);
+		cancel_pending_io(&write);
 		CloseHandle(device_handle);
 		device_handle = INVALID_HANDLE_VALUE;
 	}
+	if (read_overlapped.hEvent) CloseHandle(read_overlapped.hEvent);
+	if (write_overlapped.hEvent) CloseHandle(write_overlapped.hEvent);
+	memset(&read_overlapped, 0, sizeof(read_overlapped));
+	memset(&write_overlapped, 0, sizeof(write_overlapped));
+	media_connected = false;
+	read_pending = write_pending = false;
 	free(device);
 	device = NULL;
 }
 
 int WinTapEthernetHandler::recv(uint8 *buf, int len)
 {
-	DWORD lenin;
-
-	D(bug("ETH%d: Read packet from %s", ethX, device));
-
-	BOOL result = ReadFile(device_handle, buf, len, &lenin, &read_overlapped);
-	if (!result) { 
-		DWORD error = GetLastError();
-		switch (error)
-		{ 
-		case ERROR_IO_PENDING: 
-			WaitForSingleObject(read_overlapped.hEvent, INFINITE); 
-			result = GetOverlappedResult( device_handle, &read_overlapped, &lenin, 0 );
-			if ( result ) break;
-			/* fallthrough */
-		default:
-			D(bug("ETH%d: Error while reading from %s: %s", ethX, device, winerror(GetLastError())));
-			return -1;
-		}
+	if (device_handle == INVALID_HANDLE_VALUE || !buf || len <= 0) return -1;
+	DWORD transferred = 0;
+	if (!ResetEvent(read_overlapped.hEvent)) return -1;
+	if (!ReadFile(device_handle, buf, len, &transferred, &read_overlapped)) {
+		if (GetLastError() != ERROR_IO_PENDING) return -1;
+		read_pending = true;
+		if (!finish_io(device_handle, &read_overlapped, &read_pending, &transferred)) return -1;
 	}
-
-	device_total_in += lenin;
-	D(bug("ETH%d: Read packet done (len %d)", ethX, (int)lenin));
-	return lenin;
+	if (transferred > (DWORD)len) return -1;
+	device_total_in += transferred;
+	return (int)transferred;
 }
 
 int WinTapEthernetHandler::send(const uint8 *buf, int len)
 {
-	DWORD lenout;
-
-	D(bug("ETH%d: Writing packet of %d bytes to %s", ethX, len, device));
-
-	BOOL result = WriteFile (device_handle, buf, len, &lenout, &write_overlapped);
-	if (!result) { 
-		DWORD error = GetLastError();
-		switch (error)
-		{ 
-		case ERROR_IO_PENDING: 
-			WaitForSingleObject(write_overlapped.hEvent, INFINITE);
-			break;
-		default:
-			D(bug("ETH%d: Error while writing to %s: %s", ethX, device, winerror(GetLastError())));
-			return -1;
-		} 
+	if (device_handle == INVALID_HANDLE_VALUE || !buf || len <= 0) return -1;
+	DWORD transferred = 0;
+	if (!ResetEvent(write_overlapped.hEvent)) return -1;
+	if (!WriteFile(device_handle, buf, len, &transferred, &write_overlapped)) {
+		if (GetLastError() != ERROR_IO_PENDING) return -1;
+		write_pending = true;
+		if (!finish_io(device_handle, &write_overlapped, &write_pending, &transferred)) return -1;
 	}
-
-	device_total_out += lenout;
-	D(bug("ETH%d: Writing packet done", ethX));
-	return lenout;
+	// A short Ethernet write is not a successfully transmitted packet.
+	if (transferred != (DWORD)len) return -1;
+	device_total_out += transferred;
+	return (int)transferred;
 }
