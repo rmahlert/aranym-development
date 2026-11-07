@@ -28,6 +28,9 @@
 #include "file.h"
 #include "dlgFileSelect.h"
 #include <assert.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #define DEBUG 0
 #include "debug.h"
@@ -52,8 +55,9 @@ struct listentry {
 };
 
 /* Create a sorted list from the directory listing of path */
-struct listentry *create_list(char *path)
+struct listentry *create_list(char *path, bool *readable = NULL)
 {
+	if (readable) *readable = false;
 	struct listentry *list = NULL;
 	struct listentry *newentry;
 	DIR *dd;
@@ -61,13 +65,42 @@ struct listentry *create_list(char *path)
 	char tempstr[MAX_FILENAME_LENGTH];
 	struct stat filestat;
 
+#ifdef _WIN32
+	/* An empty path is the Computer view, above the individual drive roots. */
+	if (!path[0]) {
+		DWORD drives = GetLogicalDrives();
+		if (readable) *readable = drives != 0;
+		struct listentry **tail = &list;
+		for (int drive = 0; drive < 26; ++drive) {
+			if (!(drives & (1UL << drive)))
+				continue;
+			newentry = (struct listentry *)malloc(sizeof(*newentry) + 4);
+			if (!newentry)
+				break;
+			newentry->filename = (char *)(newentry + 1);
+			snprintf(newentry->filename, 4, "%c:/", 'A' + drive);
+			newentry->directory = true;
+			newentry->next = NULL;
+			*tail = newentry;
+			tail = &newentry->next;
+		}
+		return list;
+	}
+#endif
+
 	if ((dd = opendir(path)) == NULL)
 		return NULL;
+	if (readable) *readable = true;
 
 	while ((direntry = readdir(dd)) != NULL) {
 		// skip "." name
 		if (strcmp(direntry->d_name, ".") == 0)
 			continue;
+#ifdef _WIN32
+		if (strlen(path) == 3 && path[1] == ':' && path[2] == '/' &&
+		    strcmp(direntry->d_name, "..") == 0)
+			continue;
+#endif
 
 		/* Allocate enough memory to store a new list entry and
 		   its filemane */
@@ -75,13 +108,17 @@ struct listentry *create_list(char *path)
 			(struct listentry *) malloc(sizeof(struct listentry) +
 										strlen(direntry->d_name) + 1);
 
+		if (!newentry)
+			break;
 		/* Store filename */
 		newentry->filename = (char *) (newentry + 1);
 		strcpy(newentry->filename, direntry->d_name);
 
 		/* Is this entry a directory ? */
-		strcpy(tempstr, path);
-		strcat(tempstr, newentry->filename);
+		if (snprintf(tempstr, sizeof(tempstr), "%s%s", path, newentry->filename) >= (int)sizeof(tempstr)) {
+			free(newentry);
+			continue;
+		}
 		if (stat(tempstr, &filestat) == 0 && S_ISDIR(filestat.st_mode))
 			newentry->directory = true;
 		else
@@ -145,9 +182,21 @@ DlgFileSelect::DlgFileSelect(SGOBJ *dlg, char *new_path_and_name, bool bAllowNew
 	fsdlg[SGFSDLG_FILENAME].type = bAllowNew ? SGEDITFIELD : SGTEXT;
 
 	/* Prepare the path and filename variables */
-	File_splitpath(path_and_name, file_path, file_fname, NULL);
+	char normalized[MAX_FILENAME_LENGTH];
+	safe_strncpy(normalized, path_and_name, sizeof(normalized));
+#ifdef _WIN32
+	for (char *p = normalized; *p; ++p)
+		if (*p == '\\') *p = '/';
+	fsdlg[SGFSDLG_ROOTDIR].txt = (char *)N_("PC");
+#endif
+	File_splitpath(normalized, file_path, file_fname, NULL);
 	if (strlen(file_path) == 0) {
-		assert(getcwd(file_path, sizeof(file_path)) != NULL);
+		if (getcwd(file_path, sizeof(file_path)-1) == NULL)
+			strcpy(file_path, "/");
+#ifdef _WIN32
+		for (char *p = file_path; *p; ++p)
+			if (*p == '\\') *p = '/';
+#endif
 		File_AddSlashToEndFileName(file_path);
 	}
 	File_ShrinkName(dlgpath, file_path, sizeof(dlgpath)-1);
@@ -162,15 +211,28 @@ DlgFileSelect::~DlgFileSelect()
 	}
 }
 
-void DlgFileSelect::confirm(void)
+bool DlgFileSelect::confirm(void)
 {
-	/* if user edited filename, use new one */
-	char dlgfname2[ENTRY_LENGTH-2];
-	File_ShrinkName(dlgfname2, file_fname, sizeof(dlgfname2)-1);
-	if (strcmp(dlgfname, dlgfname2) != 0)
-		strcpy(file_fname, dlgfname);
-
-	File_makepath(path_and_name,file_path, file_fname, NULL);
+	/* Preserve the full selected name unless the user edited its display. */
+	char previous[ENTRY_LENGTH-2];
+	File_ShrinkName(previous, file_fname, sizeof(previous)-1);
+	if (strcmp(dlgfname, previous) != 0)
+		safe_strncpy(file_fname, dlgfname, sizeof(file_fname));
+#ifdef _WIN32
+	for (char *p = file_fname; *p; ++p)
+		if (*p == '\\') *p = '/';
+	if ((isalpha((unsigned char)file_fname[0]) && file_fname[1] == ':' && file_fname[2] == '/') ||
+	    (file_fname[0] == '/' && file_fname[1] == '/')) {
+		safe_strncpy(path_and_name, file_fname, MAX_FILENAME_LENGTH);
+		return true;
+	}
+	if (!file_path[0])
+		return false; /* Computer itself is not a directory/image path. */
+#endif
+	if (strlen(file_path) + strlen(file_fname) + 1 >= MAX_FILENAME_LENGTH)
+		return false;
+	File_makepath(path_and_name, file_path, file_fname, NULL);
+	return true;
 }
 
 void DlgFileSelect::idle(void)
@@ -192,7 +254,16 @@ int DlgFileSelect::processDialog(void)
 
 	switch (return_obj) {
 		case SGFSDLG_UPDIR:
-			/* Change path to parent directory */
+			/* The parent of a Windows drive root is the Computer view. */
+#ifdef _WIN32
+			if (strlen(file_path) == 3 && file_path[1] == ':' && file_path[2] == '/') {
+				file_path[0] = 0;
+				reloaddir = true;
+				strcpy(dlgpath, N_("Computer"));
+				selection = -1; file_fname[0] = dlgfname[0] = 0; ypos = 0;
+				break;
+			}
+#endif
 			if (strlen(file_path) > 2) {
 				File_CleanFileName(file_path);
 				char *ptr = strrchr(file_path, '/');
@@ -211,9 +282,14 @@ int DlgFileSelect::processDialog(void)
 			break;
 		case SGFSDLG_ROOTDIR:
 			/* Change to root directory */
+#ifdef _WIN32
+			file_path[0] = 0;
+			strcpy(dlgpath, N_("Computer"));
+#else
 			strcpy(file_path, "/");
-			reloaddir = true;
 			strcpy(dlgpath, file_path);
+#endif
+			reloaddir = true;
 			/* Remove old selection */
 			selection = -1;
 			file_fname[0] = 0;
@@ -236,8 +312,9 @@ int DlgFileSelect::processDialog(void)
 			break;
 
 		case SGFSDLG_OKAY:
+			if (!confirm())
+				break;
 			pressed_ok = true;
-			confirm();
 			/* fall through */
 		case SGFSDLG_CANCEL:
 			retval = Dialog::GUI_CLOSE;
@@ -255,10 +332,14 @@ int DlgFileSelect::processDialog(void)
 		int i;
 
 		strcpy(tempstr, file_path);
-		for (i = 0; i < ((return_obj - SGFSDLG_FIRSTENTRY) + ypos); i++)
+		for (i = 0; temp && i < ((return_obj - SGFSDLG_FIRSTENTRY) + ypos); i++)
 			temp = temp->next;
-		strcat(tempstr, temp->filename);
-		if (stat(tempstr, &filestat) == 0 && S_ISDIR(filestat.st_mode)) {
+		if (!temp || snprintf(tempstr, sizeof(tempstr), "%s%s", file_path, temp->filename) >= (int)sizeof(tempstr))
+			return retval;
+		if (temp->directory && (!file_path[0] || (stat(tempstr, &filestat) == 0 && S_ISDIR(filestat.st_mode)))) {
+			/* Leave room for the directory separator and terminator. */
+			if (strlen(tempstr) >= sizeof(file_path)-1 && tempstr[strlen(tempstr)-1] != '/')
+				return retval;
 			/* Set the new directory */
 			strcpy(file_path, tempstr);
 			if (strlen(file_path) >= 3) {
@@ -289,7 +370,7 @@ int DlgFileSelect::processDialog(void)
 			/* Copy the path name to the dialog */
 			File_ShrinkName(dlgpath, file_path, sizeof(dlgpath)-1);
 			selection = -1;	/* Remove old selection */
-			// gui_file_fname[0] = 0;
+			file_fname[0] = 0;
 			dlgfname[0] = 0;
 			ypos = 0;
 		} else {
@@ -318,14 +399,22 @@ void DlgFileSelect::refreshEntries(void)
 		free_list(gui_file_list);
 
 		/* Load directory entries: */
-		gui_file_list = create_list(file_path);
-		if (gui_file_list == NULL) {
+		bool readable = false;
+		gui_file_list = create_list(file_path, &readable);
+		if (!readable) {
 			fprintf(stderr, "SDLGui_FileSelect: Path not found.\n");
 			/* reset path and reload entries */
+#ifdef _WIN32
+			file_path[0] = 0;
+			strcpy(dlgpath, N_("Computer"));
+#else
 			strcpy(file_path, "/");
 			strcpy(dlgpath, file_path);
-			gui_file_list = create_list(file_path);
-			if (gui_file_list == NULL)
+#endif
+			selection = -1;
+			ypos = 0;
+			gui_file_list = create_list(file_path, &readable);
+			if (!readable)
 				/* we're really lost if even root is unreadable */
 				return;
 		}
@@ -337,7 +426,7 @@ void DlgFileSelect::refreshEntries(void)
 	if (refreshentries) {
 		struct listentry *temp = gui_file_list;
 		int i;
-		for (i = 0; i < ypos; i++)
+		for (i = 0; temp && i < ypos; i++)
 			temp = temp->next;
 
 		/* Copy entries to dialog: */
