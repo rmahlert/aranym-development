@@ -200,6 +200,22 @@ void install_sigchild_handler(void)
 }
 
 
+#if FIXED_ADDRESSING && defined(USE_JIT)
+/* Generated guest accesses use 32-bit host addresses. Keep both RAM and
+ * its bus-error guard below 4 GiB, including when JIT is disabled at runtime. */
+static uint64 fixed_memory_window_size(void)
+{
+	return (uint64)RAMSize + ROMSize + HWSize + FastRAMSize + RAMEnd;
+}
+
+static bool fixed_memory_window_fits(uintptr offset)
+{
+	uint64 const limit = 0x100000000ULL;
+	uint64 const size = fixed_memory_window_size();
+	return offset >= 0x01000000UL && size <= limit && (uint64)offset <= limit - size;
+}
+#endif
+
 #if FIXED_ADDRESSING
 bool allocate_all_memory(uintptr fmemory, bool quiet)
 #else
@@ -209,6 +225,14 @@ bool allocate_all_memory(bool quiet)
 	UNUSED(quiet);
 #if DIRECT_ADDRESSING || FIXED_ADDRESSING
 #if FIXED_ADDRESSING
+#ifdef USE_JIT
+	if (!fixed_memory_window_fits(fmemory)) {
+		if (!quiet)
+			panicbug("FastRAM %u MB at fixed offset 0x%08x exceeds the 32-bit memory window; reduce FastRAM or use a lower FixedMemoryOffset.",
+				FastRAMSize / 0x00100000, (unsigned int)fmemory);
+		return false;
+	}
+#endif
 	if (vm_acquire_fixed((void *)fmemory, RAMSize + ROMSize + HWSize + FastRAMSize + RAMEnd) == false) {
 		if (!quiet)
 			panicbug("Not enough free memory (ST-RAM 0x%08x + TT-RAM 0x%08x).", RAMSize, FastRAMSize);
@@ -592,6 +616,14 @@ void vm_probe_fixed(void)
 void vm_probe_fixed_hint(void)
 {
 #if FIXED_ADDRESSING
+#ifdef USE_JIT
+	if (!fixed_memory_window_fits(fixed_memory_offset)) {
+		guialert("FastRAM %u MB and FixedMemoryOffset 0x%08x exceed the 32-bit memory window.\n"
+			"Reduce FastRAM or use a lower FixedMemoryOffset.",
+			FastRAMSize / 0x00100000, (unsigned int)fixed_memory_offset);
+		return;
+	}
+#endif
 	/*
 	 * give a hint for the command line option if memory allocation fails
 	 * (with FIXED_ADDRESSING, this is usually not caused by missing memory,
@@ -673,6 +705,20 @@ int main(int argc, char **argv)
 #endif
 
 #if FIXED_ADDRESSING
+#if defined(OS_mingw) && defined(CPU_x86_64) && defined(USE_JIT)
+	if (!fixed_memory_window_fits(fixed_memory_offset)) {
+		/* Pick a 64K-aligned window ending at 4 GiB. In particular, 2000 MB
+		 * FastRAM fits at 0x81000000, above Windows' shared user-data page.
+		 * This is a runtime choice; loading a profile does not rewrite it. */
+		uint64 const size = fixed_memory_window_size();
+		if (size <= 0xff000000ULL) {
+			uintptr const offset = (uintptr)((0x100000000ULL - size) & ~0xffffULL);
+			infoprint("Memory mapping: offset 0x%08x would wrap; using 0x%08x for %u MB FastRAM.",
+				(unsigned int)fixed_memory_offset, (unsigned int)offset, FastRAMSize / 0x00100000);
+			fixed_memory_offset = offset;
+		}
+	}
+#endif
 	if (!allocate_all_memory(fixed_memory_offset, false))
 #else
 	if (!allocate_all_memory(false))
