@@ -52,6 +52,13 @@ if ! grep -Eq '^[[:space:]]*#define[[:space:]]+ETHERNET_SUPPORT[[:space:]]+1([[:
 	echo "$0: refusing to package a build that the MiNTNet driver cannot use" >&2
 	exit 1
 fi
+# EasyMiNT starts NFJPEG.PRG during boot. Without the host service that
+# program stops at a key prompt instead of reaching the desktop unattended.
+if test -n "${EASYARAMINT_DIR:-}" && test -f "$EASYARAMINT_DIR/config" &&
+    ! grep -Eq '^[[:space:]]*#define[[:space:]]+NFJPEG_SUPPORT([[:space:]]|$)' "$config_header"; then
+    echo "$0: EasyMiNT requires a Windows build with NatFeat JPEG support" >&2
+    exit 1
+fi
 package_objdump=${OBJDUMP:-${MINGW_TOOL_PREFIX:-x86_64-w64-mingw32}-objdump}
 if ! type "$package_objdump" > /dev/null 2>&1; then
 	echo "$0: $package_objdump not found; cannot verify the Windows executable" >&2
@@ -122,6 +129,11 @@ done
 
 if test -n "${FVDI_UPDATE_ZIP:-}"; then
     python3 "$root/tools/stage-fvdi-update.py" "$FVDI_UPDATE_ZIP" "$stage/fvdi"
+fi
+
+if test -d "$MINGW_ROOT/share/licenses/libjpeg-turbo"; then
+    mkdir -p "$stage/LICENSES"
+    cp -a "$MINGW_ROOT/share/licenses/libjpeg-turbo" "$stage/LICENSES/"
 fi
 
 tap_define=

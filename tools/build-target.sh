@@ -65,7 +65,7 @@ build_windows()
         CXXCPP_FOR_BUILD="$CXXCPP_FOR_BUILD" \
         ./configure $configure_args \
             --enable-slirp \
-            --disable-nfjpeg \
+            --enable-nfjpeg \
             SDL2_CFLAGS="$SDL2_CFLAGS" SDL2_LIBS="$SDL2_LIBS"
 	make -j"$jobs"
 }
