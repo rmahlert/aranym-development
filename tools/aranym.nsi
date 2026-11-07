@@ -15,6 +15,12 @@
 
 !define NAME "ARAnyM"
 !define NAMESUFFIX " (Unofficial)"
+!ifndef EASY_DATA_VERSION
+  !define EASY_DATA_VERSION "EasyMiNT"
+!endif
+Var HadUserConfig
+Var EasyDataDir
+Var EasyConfigExisted
 
 ;--------------------------------
 ;Configuration
@@ -101,6 +107,10 @@ Page custom PageReinstall PageLeaveReinstall
 !insertmacro MUI_PAGE_DIRECTORY
 Page custom PageNetwork PageLeaveNetwork
 !insertmacro MUI_PAGE_INSTFILES
+!define MUI_FINISHPAGE_RUN
+!define MUI_FINISHPAGE_RUN_FUNCTION LaunchInstalled
+!define MUI_FINISHPAGE_RUN_TEXT "Start ARAnyM"
+!insertmacro MUI_PAGE_FINISH
 
 ;--------------------------------
 ;Languages
@@ -109,17 +119,6 @@ Page custom PageNetwork PageLeaveNetwork
 
 ;--------------------------------
 ;Installer Sections
-
-Function ".onInit"
-  ${If} ${Silent}
-    SetAutoClose true
-  ${EndIf}
-  ${MementoSectionRestore}
-FunctionEnd
-
-Function ".onInstSuccess"
-  ${MementoSectionSave}
-FunctionEnd
 
 Var NetworkType
 Var NetworkSetupDrive
@@ -136,6 +135,30 @@ Var NetworkAtariIPControl
 Var NetworkGatewayControl
 Var NetworkNetmaskControl
 Var NetworkMacControl
+
+
+Function ".onInit"
+  ${If} ${Silent}
+    SetAutoClose true
+  ${EndIf}
+  StrCpy $HadUserConfig 0
+  StrCpy $NetworkType "slirp"
+  StrCpy $NetworkAtariIP "10.0.2.15"
+  StrCpy $NetworkGateway "10.0.2.2"
+  StrCpy $NetworkNetmask "255.255.255.0"
+  StrCpy $NetworkMac "52:54:00:12:34:56"
+  StrCpy $NetworkSave 1
+  ${If} ${FileExists} "$PROFILE\aranym\config"
+    StrCpy $HadUserConfig 1
+    StrCpy $NetworkSave 0
+  ${EndIf}
+  ${MementoSectionRestore}
+FunctionEnd
+
+Function ".onInstSuccess"
+  ${MementoSectionSave}
+FunctionEnd
+
 
 Function PageNetwork
   !insertmacro MUI_HEADER_TEXT "Network Setup" "Configure ARAnyM networking"
@@ -181,7 +204,9 @@ Function PageNetwork
 
   ${NSD_CreateCheckbox} 0 184u 100% 12u "Save these settings to my ARAnyM user configuration"
   Pop $NetworkSaveCheck
-  SendMessage $NetworkSaveCheck ${BM_SETCHECK} ${BST_CHECKED} 0
+  ${If} $HadUserConfig == 0
+    SendMessage $NetworkSaveCheck ${BM_SETCHECK} ${BST_CHECKED} 0
+  ${EndIf}
 
   nsDialogs::Show
 FunctionEnd
@@ -203,11 +228,15 @@ Function PageLeaveNetwork
   ${NSD_GetText} $NetworkGatewayControl $NetworkGateway
   ${NSD_GetText} $NetworkNetmaskControl $NetworkNetmask
   ${NSD_GetText} $NetworkMacControl $NetworkMac
-  ${NSD_GetState} $NetworkSaveCheck $0
-  ${If} $0 != ${BST_CHECKED}
+  ${NSD_GetState} $NetworkSaveCheck $NetworkSave
+FunctionEnd
+
+; Defer writes until the default configuration has been installed. Otherwise
+; a fresh install creates an ETH0-only config and skips all boot settings.
+Function SaveNetworkConfig
+  ${If} $NetworkSave != ${BST_CHECKED}
     Return
   ${EndIf}
-
   CreateDirectory "$PROFILE\aranym"
   WriteINIStr "$PROFILE\aranym\config" "ETH0" "Type" "$NetworkType"
   ${If} $NetworkType == "slirp"
@@ -216,7 +245,14 @@ Function PageLeaveNetwork
     WriteINIStr "$PROFILE\aranym\config" "ETH0" "Netmask" "$NetworkNetmask"
     WriteINIStr "$PROFILE\aranym\config" "ETH0" "MAC" "$NetworkMac"
   ${EndIf}
-  MessageBox MB_ICONINFORMATION|MB_OK "ARAnyM network settings were saved to:$\r$\n$PROFILE\aranym\config$\r$\n$\r$\nExisting settings outside [ETH0] were preserved."
+FunctionEnd
+
+Function LaunchInstalled
+  ${If} $EasyDataDir != ""
+    Exec '$\"$INSTDIR\aranym.exe$\" -c $\"$EasyDataDir\config$\"'
+  ${Else}
+    Exec '$\"$INSTDIR\aranym.exe$\"'
+  ${EndIf}
 FunctionEnd
 
 !ifdef VER_MAJOR
@@ -306,7 +342,6 @@ Function PageLeaveReinstall
 
   StrCmp $R1 "1" reinst_done ; Upgrade/repair preserves the existing installation.
 
-  reinst_uninstall:
   ReadRegStr $R1 "${REG_ROOT}" "${REG_UNINST_KEY}" "UninstallString"
 
   ;Run uninstaller
@@ -343,7 +378,7 @@ FunctionEnd
 
 ; The stuff to install
 ${MementoSection} "${NAME} Core Files (required)" SecCore
-  SectionIn 1 2
+  SectionIn 1 2 3 RO
   ${SetOutPath} $INSTDIR
   
   !include "aranym.files"
@@ -408,7 +443,7 @@ Section -emutosimage
       ClearErrors
       CopyFiles /SILENT "$R7" "$R7.before-aranym-${VERSION}.bak"
       ${If} ${Errors}
-        MessageBox MB_ICONEXCLAMATION|MB_OK "The existing EmuTOS image could not be backed up, so it was not replaced:$\r$\n$R7"
+        MessageBox MB_ICONEXCLAMATION|MB_OK "The existing EmuTOS image could not be backed up, so it was not replaced:$\r$\n$R7" /SD IDOK
         Return
       ${EndIf}
     ${EndIf}
@@ -418,7 +453,7 @@ Section -emutosimage
     ClearErrors
     CopyFiles /SILENT "$PLUGINSDIR\emutos-aranym.img" "$R7"
     ${If} ${Errors}
-      MessageBox MB_ICONSTOP|MB_OK "The configured EmuTOS image could not be updated:$\r$\n$R7$\r$\n$\r$\nYour configuration was not changed."
+      MessageBox MB_ICONSTOP|MB_OK "The configured EmuTOS image could not be updated:$\r$\n$R7$\r$\n$\r$\nYour configuration was not changed." /SD IDOK
     ${Else}
       DetailPrint "Updated configured EmuTOS image: $R7"
     ${EndIf}
@@ -429,6 +464,10 @@ Section -defaultconfig
     SetOutPath "$PROFILE\aranym"
     File "aranym\config"
   ${EndIf}
+SectionEnd
+
+Section -networkconfig
+  Call SaveNetworkConfig
 SectionEnd
 
 Section -networkdriver
@@ -458,6 +497,9 @@ SectionEnd
 ; partition letters from C: up, and those are not recorded in the config.
 ;
 Section -hostfsmapping
+  ${If} $NetworkSave != ${BST_CHECKED}
+    Return
+  ${EndIf}
   ; The setup directory above exists only for SLIRP.  In particular, do not
   ; create a stale HOSTFS mapping or show the NETSETUP prompt when TAP was
   ; selected.
@@ -498,18 +540,46 @@ Section -hostfsmapping
     Goto free_loop
 
   no_free_letter:
-    MessageBox MB_ICONEXCLAMATION|MB_OK "Every HOSTFS drive letter is already in use, so the network setup folder could not be mapped.$\r$\n$\r$\nMap $INSTDIR\setup to a free letter in the ARAnyM setup GUI, then run NETSETUP.PRG from that drive."
+    MessageBox MB_ICONEXCLAMATION|MB_OK "Every HOSTFS drive letter is already in use, so the network setup folder could not be mapped.$\r$\n$\r$\nMap $INSTDIR\setup to a free letter in the ARAnyM setup GUI, then run NETSETUP.PRG from that drive." /SD IDOK
     Return
 
   mapping_done:
-    MessageBox MB_ICONINFORMATION|MB_OK "Network setup files were installed and mapped as Atari drive $NetworkSetupDrive:$\r$\n$\r$\nTo finish, start ARAnyM and run NETSETUP.PRG from drive $NetworkSetupDrive: on the Atari side.$\r$\n$\r$\nThat configures the Atari network from the settings chosen here. The disk image is not modified."
+    MessageBox MB_ICONINFORMATION|MB_OK "Network setup files were installed and mapped as Atari drive $NetworkSetupDrive:$\r$\n$\r$\nTo finish, start ARAnyM and run NETSETUP.PRG from drive $NetworkSetupDrive: on the Atari side.$\r$\n$\r$\nThat configures the Atari network from the settings chosen here. The disk image is not modified." /SD IDOK
 SectionEnd
 
 !ifdef EASY_DRIVES
-Section "EasyARAnyM Atari drives (optional)" SecAtariDrives
+Section "EasyMiNT with updated fVDI (separate system)" SecAtariDrives
   SectionIn 1
-  SetOutPath "$INSTDIR\atari"
+  StrCpy $EasyDataDir "$PROFILE\aranym\systems\${EASY_DATA_VERSION}"
+  StrCpy $EasyConfigExisted 0
+  ${If} ${FileExists} "$EasyDataDir\config"
+    StrCpy $EasyConfigExisted 1
+  ${EndIf}
+  ; User-owned systems are deliberately absent from uninstall.log. Never
+  ; overwrite existing data, even when installing the same build again.
+  SetOverwrite off
+  SetOutPath "$EasyDataDir"
   File /r "aranym\atari\*"
+  SetOverwrite on
+  ${If} $EasyConfigExisted == 0
+    WriteINIStr "$EasyDataDir\config" "ETH0" "Type" "$NetworkType"
+    ${If} $NetworkType == "slirp"
+      WriteINIStr "$EasyDataDir\config" "ETH0" "HostIP" "$NetworkGateway"
+      WriteINIStr "$EasyDataDir\config" "ETH0" "AtariIP" "$NetworkAtariIP"
+      WriteINIStr "$EasyDataDir\config" "ETH0" "Netmask" "$NetworkNetmask"
+      WriteINIStr "$EasyDataDir\config" "ETH0" "MAC" "$NetworkMac"
+      WriteINIStr "$EasyDataDir\config" "HOSTFS" "Z" "$INSTDIR\setup"
+    ${EndIf}
+  ${EndIf}
+  ${If} $HadUserConfig == 0
+    CopyFiles /SILENT "$EasyDataDir\config" "$PROFILE\aranym\config"
+    WriteINIStr "$PROFILE\aranym\config" "GLOBAL" "EmuTOS" "$EasyDataDir\emutos-aranym.img"
+    WriteINIStr "$PROFILE\aranym\config" "IDE0" "Path" "$EasyDataDir\EasyMint\aranym-ide-1.57G.img"
+    WriteINIStr "$PROFILE\aranym\config" "HOSTFS" "H" "$EasyDataDir\host_fs"
+  ${EndIf}
+  ${CreateDirectory} "$SMPROGRAMS\${NAME}"
+  ${CreateShortcut} "$SMPROGRAMS\${NAME}\ARAnyM - Updated EasyMiNT.lnk" "$INSTDIR\aranym.exe" '-c $\"$EasyDataDir\config$\"' "" "" "Updated EasyMiNT and fVDI"
+  ${CreateShortcut} "$DESKTOP\ARAnyM - Updated EasyMiNT.lnk" "$INSTDIR\aranym.exe" '-c $\"$EasyDataDir\config$\"' "" "" "Updated EasyMiNT and fVDI"
 SectionEnd
 !endif
 
@@ -573,7 +643,7 @@ SectionEnd
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} "The core files required to use ${NAME} (compiler etc.)"
 !ifdef EASY_DRIVES
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecAtariDrives} "Installs the optional EasyARAnyM EmuTOS, MiNT disk image, host filesystem, and Atari network driver."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecAtariDrives} "Installs a separate ready-to-boot EasyMiNT system with updated fVDI. Existing images and settings are kept."
 !endif
   !insertmacro MUI_DESCRIPTION_TEXT ${SecMenuShortcuts} "Adds icons to your start menu for easy access"
   !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktopShortcuts} "Adds icons to your desktop for easy access"
