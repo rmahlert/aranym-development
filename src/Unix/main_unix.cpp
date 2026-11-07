@@ -219,9 +219,12 @@ bool allocate_all_memory(bool quiet)
 	HWBaseHost = RAMBaseHost + HWBase;
 	FastRAMBaseHost = RAMBaseHost + FastRAMBase;
 # ifdef EXTENDED_SIGSEGV
-	if (vm_acquire_fixed((void *)(fmemory + ~0xffffffL), RAMSize + ROMSize + HWSize) == false) {
+	/* The host mirror is 16 MiB below ST-RAM. Use subtraction rather than
+	 * ~0xffffffUL: unsigned long is 32-bit on Win64, so that expression
+	 * would add nearly 4 GiB when used with a 64-bit host pointer. */
+	if (vm_acquire_fixed((void *)(fmemory - 0x01000000UL), RAMSize + ROMSize + HWSize) == false) {
 		if (!quiet)
-			panicbug("Not enough free memory (protected mirror RAM 0x%08x-0x%08x).", (unsigned int)(fmemory + ~0xffffffL), (unsigned int)(fmemory + ~0xffffffL + RAMSize + ROMSize + HWSize));
+			panicbug("Not enough free memory (protected mirror RAM 0x%08x-0x%08x).", (unsigned int)(fmemory - 0x01000000UL), (unsigned int)(fmemory - 0x01000000UL + RAMSize + ROMSize + HWSize));
 		return false;
 	}
 
@@ -277,7 +280,7 @@ void release_all_memory(void)
 #endif
 		vm_release(RAMBaseHost, RAMSize);
 #if FIXED_ADDRESSING && defined(EXTENDED_SIGSEGV)
-		void *mirror = (void *)(RAMBaseHost + ~0xffffffL);
+		void *mirror = (void *)(RAMBaseHost - 0x01000000UL);
 		vm_release(mirror, RAMSize + ROMSize + HWSize);
 #ifdef HW_SIGSEGV
 		vm_release((void *)FakeIOBaseHost, 0x00100000);
@@ -369,18 +372,18 @@ static bool install_signal_handler(bool quiet)
 
 	D(bug("Protected HW space     at %p - %p (0x%08x - 0x%08x)", HWBaseHost, HWBaseHost + HWSize, HWBase, HWBase + HWSize));
 
-	if (vm_protect(RAMBaseHost + ~0xffffffUL, 0x1000000, VM_PAGE_NOACCESS)) {
+	if (vm_protect(RAMBaseHost - 0x01000000UL, 0x1000000, VM_PAGE_NOACCESS)) {
 		if (!quiet)
 			panicbug("Couldn't set mirror address space");
 		return false;
 	}
 
 	D(bug("Protected mirror space at %p - %p (0x%08x - 0x%08x)",
-		RAMBaseHost + ~0xffffffUL, RAMBaseHost + ~0xffffffUL + RAMSize + ROMSize + HWSize,
+		RAMBaseHost - 0x01000000UL, RAMBaseHost - 0x01000000UL + RAMSize + ROMSize + HWSize,
 		RAMBase + ~0xffffffU, RAMBase + ~0xffffffU + RAMSize + ROMSize + HWSize));
 #if USE_VALGRIND
 	VALGRIND_MAKE_MEM_DEFINED(HWBaseHost, HWSize);
-	VALGRIND_MAKE_MEM_DEFINED(RAMBaseHost + ~0xffffffUL, 0x1000000);
+	VALGRIND_MAKE_MEM_DEFINED(RAMBaseHost - 0x01000000UL, 0x1000000);
 #endif
 # endif /* HW_SIGSEGV */
 
@@ -424,7 +427,7 @@ static void try_release(uintptr addr, size_t size)
 	{
 # ifdef EXTENDED_SIGSEGV
 		/* release mirror RAM */
-		void *mirror = (void *)(addr + ~0xffffffL);
+		void *mirror = (void *)(addr - 0x01000000UL);
 		if (mirror != 0 && mirror != VM_MAP_FAILED)
 			vm_release(mirror, RAMSize + ROMSize + HWSize);
 #  ifdef HW_SIGSEGV
