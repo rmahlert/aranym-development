@@ -18,6 +18,9 @@
 !ifndef EASY_DATA_VERSION
   !define EASY_DATA_VERSION "EasyMiNT"
 !endif
+Var LastConfigBackup
+Var BeforeUninstallProfile
+Var BeforeUninstallApplication
 Var HadUserConfig
 Var EasyDataDir
 Var EasyConfigExisted
@@ -109,7 +112,7 @@ Page custom PageNetwork PageLeaveNetwork
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_FUNCTION LaunchInstalled
-!define MUI_FINISHPAGE_RUN_TEXT "Start ARAnyM"
+!define MUI_FINISHPAGE_RUN_TEXT "Start ARAnyM with my configuration"
 !insertmacro MUI_PAGE_FINISH
 
 ;--------------------------------
@@ -248,11 +251,9 @@ Function SaveNetworkConfig
 FunctionEnd
 
 Function LaunchInstalled
-  ${If} $EasyDataDir != ""
-    Exec '$\"$INSTDIR\aranym.exe$\" -c $\"$EasyDataDir\config$\"'
-  ${Else}
-    Exec '$\"$INSTDIR\aranym.exe$\"'
-  ${EndIf}
+  ; Both fresh installs and upgrades use the same normal user config.
+  ; Selecting a bundled system must not silently switch the active profile.
+  Exec '$\"$INSTDIR\aranym.exe$\" -c $\"$PROFILE\aranym\config$\"'
 FunctionEnd
 
 !ifdef VER_MAJOR
@@ -344,6 +345,13 @@ Function PageLeaveReinstall
 
   ReadRegStr $R1 "${REG_ROOT}" "${REG_UNINST_KEY}" "UninstallString"
 
+  ; Back up before an older uninstaller can remove application-local config.
+    Push "$PROFILE\aranym\config"
+    Call BackupConfig
+    StrCpy $BeforeUninstallProfile "$LastConfigBackup"
+    Push "$INSTDIR\aranym\config"
+    Call BackupConfig
+    StrCpy $BeforeUninstallApplication "$LastConfigBackup"
   ;Run uninstaller
     HideWindow
 
@@ -367,6 +375,16 @@ Function PageLeaveReinstall
       StrCpy $0 $R1 1
       ${IfThen} $0 == '"' ${|} StrCpy $R1 $R1 -1 1 ${|} ; Strip quotes from UninstallString
       Delete $R1
+      ${If} $BeforeUninstallProfile != ""
+      ${AndIfNot} ${FileExists} "$PROFILE\aranym\config"
+        CreateDirectory "$PROFILE\aranym"
+        CopyFiles /SILENT "$BeforeUninstallProfile" "$PROFILE\aranym\config"
+      ${EndIf}
+      ${If} $BeforeUninstallApplication != ""
+      ${AndIfNot} ${FileExists} "$INSTDIR\aranym\config"
+        CreateDirectory "$INSTDIR\aranym"
+        CopyFiles /SILENT "$BeforeUninstallApplication" "$INSTDIR\aranym\config"
+      ${EndIf}
       RMDir $INSTDIR
     ${EndIf}
 
@@ -375,6 +393,67 @@ Function PageLeaveReinstall
 FunctionEnd
 
 !endif # VER_MAJOR
+
+Function BackupConfig
+  Exch $R9
+  Push $0
+  Push $1
+  Push $R0
+  Push $R1
+  Push $R2
+  Push $R3
+  Push $R4
+  Push $R5
+  Push $R6
+  Push $R7
+  Push $R8
+  StrCpy $LastConfigBackup ""
+  ${IfNot} ${FileExists} "$R9"
+    Goto backup_done
+  ${EndIf}
+  CreateDirectory "$PROFILE\aranym\backups"
+  ${GetTime} "" L $R0 $R1 $R2 $R3 $R4 $R5 $R6
+  StrCpy $R7 "$PROFILE\aranym\backups\config-$R2-$R1-$R0-$R4$R5$R6"
+  StrCpy $R2 0
+  backup_retry:
+    StrCpy $R8 "$R7-$R2.bak"
+    ; Fail-if-exists preserves previous backups even on repeated installs.
+    System::Call 'kernel32::CopyFileW(w "$R9", w "$R8", i 1) i.r0 ?e'
+    Pop $1
+    ${If} $0 == 0
+      ${If} $1 == 80
+      ${OrIf} $1 == 183
+        IntOp $R2 $R2 + 1
+        Goto backup_retry
+      ${EndIf}
+      MessageBox MB_ICONSTOP|MB_OK "The existing configuration could not be backed up. Installation stopped before changing it.$\r$\n$R9" /SD IDOK
+      SetErrorLevel 1
+      Abort
+    ${EndIf}
+  WriteINIStr "$R8.origin" "Backup" "OriginalPath" "$R9"
+  DetailPrint "Configuration backup: $R8"
+  StrCpy $LastConfigBackup "$R8"
+  backup_done:
+  Pop $R8
+  Pop $R7
+  Pop $R6
+  Pop $R5
+  Pop $R4
+  Pop $R3
+  Pop $R2
+  Pop $R1
+  Pop $R0
+  Pop $1
+  Pop $0
+  Pop $R9
+FunctionEnd
+
+Section -backupconfigs
+  Push "$PROFILE\aranym\config"
+  Call BackupConfig
+  Push "$INSTDIR\aranym\config"
+  Call BackupConfig
+SectionEnd
 
 ; The stuff to install
 ${MementoSection} "${NAME} Core Files (required)" SecCore
@@ -460,10 +539,14 @@ Section -emutosimage
 SectionEnd
 
 Section -defaultconfig
+  SetOverwrite off
+  SetOutPath "$INSTDIR\aranym"
+  File "aranym\config"
   ${IfNot} ${FileExists} "$PROFILE\aranym\config"
     SetOutPath "$PROFILE\aranym"
     File "aranym\config"
   ${EndIf}
+  SetOverwrite on
 SectionEnd
 
 Section -networkconfig
@@ -578,8 +661,8 @@ Section "EasyMiNT with updated fVDI (separate system)" SecAtariDrives
     WriteINIStr "$PROFILE\aranym\config" "HOSTFS" "H" "$EasyDataDir\host_fs"
   ${EndIf}
   ${CreateDirectory} "$SMPROGRAMS\${NAME}"
-  ${CreateShortcut} "$SMPROGRAMS\${NAME}\ARAnyM - Updated EasyMiNT.lnk" "$INSTDIR\aranym.exe" '-c $\"$EasyDataDir\config$\"' "" "" "Updated EasyMiNT and fVDI"
-  ${CreateShortcut} "$DESKTOP\ARAnyM - Updated EasyMiNT.lnk" "$INSTDIR\aranym.exe" '-c $\"$EasyDataDir\config$\"' "" "" "Updated EasyMiNT and fVDI"
+  ${CreateShortcut} "$SMPROGRAMS\${NAME}\ARAnyM - Separate EasyMiNT system.lnk" "$INSTDIR\aranym.exe" '-c $\"$EasyDataDir\config$\"' "" "" "Separate EasyMiNT system with its own configuration"
+  ${CreateShortcut} "$DESKTOP\ARAnyM - Separate EasyMiNT system.lnk" "$INSTDIR\aranym.exe" '-c $\"$EasyDataDir\config$\"' "" "" "Separate EasyMiNT system with its own configuration"
 SectionEnd
 !endif
 
@@ -590,7 +673,7 @@ ${MementoSection} "Start Menu Shortcuts" SecMenuShortcuts
   SectionIn 1 2
   StrCpy $0 "$SMPROGRAMS\${NAME}"
   ${CreateDirectory} "$0"
-  ${CreateShortcut} "$0\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" "" "" "" "${NAME}"
+  ${CreateShortcut} "$0\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" '-c $\"$PROFILE\aranym\config$\"' "" "" "${NAME}"
 !ifdef TAP_SETUP
   ${CreateShortcut} "$0\Network adapter setup.lnk" "$INSTDIR\aranym\network\Atari-TAP-Setup.cmd" "" "" "" "Standalone signed TAP setup; no OpenVPN application"
 !endif
@@ -603,13 +686,19 @@ ${MementoSectionEnd}
 ${MementoSection} "Desktop Shortcuts" SecDesktopShortcuts
   DetailPrint "Installing Desktop Shortcuts..."
   SectionIn 1 2
-  ${CreateShortcut} "$DESKTOP\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" "" "" "" "${NAME}"
+  ${CreateShortcut} "$DESKTOP\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" '-c $\"$PROFILE\aranym\config$\"' "" "" "${NAME}"
 ${MementoSectionEnd}
 !endif
 
 ${MementoSectionDone}
 
 Section -post
+  ${If} ${FileExists} "$DESKTOP\ARAnyM - Updated EasyMiNT.lnk"
+    ${CreateShortcut} "$DESKTOP\ARAnyM - Updated EasyMiNT.lnk" "$INSTDIR\aranym.exe" '-c $\"$PROFILE\aranym\config$\"' "" "" "ARAnyM with existing user configuration"
+  ${EndIf}
+  ${If} ${FileExists} "$SMPROGRAMS\${NAME}\ARAnyM - Updated EasyMiNT.lnk"
+    ${CreateShortcut} "$SMPROGRAMS\${NAME}\ARAnyM - Updated EasyMiNT.lnk" "$INSTDIR\aranym.exe" '-c $\"$PROFILE\aranym\config$\"' "" "" "ARAnyM with existing user configuration"
+  ${EndIf}
   ;Write the installation path into the registry
   ${WriteRegExpandStr} "${REG_ROOT}" "${REG_APP_PATH}" "InstallLocation" "$INSTDIR"
 !ifdef VER_MAJOR

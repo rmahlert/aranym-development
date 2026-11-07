@@ -48,6 +48,7 @@ class DlgMain : public Dialog
 		DlgMain(SGOBJ *new_dlg);
 		~DlgMain();
 
+		void init(void);
 		int processDialog(void);
 };
 

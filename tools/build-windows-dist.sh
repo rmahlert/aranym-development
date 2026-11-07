@@ -158,7 +158,7 @@ fi
 (
 	cd "$stage"
 	find . -path './aranym/atari' -prune -o -type d -print | sed -e 's|^./\(.*\)$|${CreateDirectory} "$INSTDIR\\\1"|' -e '/^\.$/d' | tr '/' '\\' > aranym.files
-	find . -path './aranym/atari' -prune -o -type f ! -name aranym.files ! -path './aranym/emutos-aranym.img' -print |
+	find . -path './aranym/atari' -prune -o -type f ! -name aranym.files ! -path './aranym/emutos-aranym.img' ! -path './aranym/config' -print |
 		sed -e 's|^./\(.*\)$|${File} "\1"|' | tr '/' '\\' >> aranym.files
 )
 
