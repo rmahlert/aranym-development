@@ -5,6 +5,12 @@
 namespace {
 bool busy=false;
 m040_bus_callback callback=nullptr;void *callback_opaque=nullptr;
+m040_reset_callback reset_callback=nullptr;void *reset_opaque=nullptr;
+bool reset_hardware(void *) {
+    const auto status=reset_callback(reset_opaque);
+    if(status!=0&&status!=1)throw std::runtime_error("reset callback must return0 or1");
+    return status==1;
+}
 struct Boundary { Boundary(){busy=true;} ~Boundary(){busy=false;} };
 bool bus(void *,const modern040::BusRequest &source,uae_u32 &value) {
     const m040_bus_request request{M040_ABI_VERSION,uint32_t(source.kind),source.address,source.size,
@@ -27,6 +33,7 @@ int m040_reset(const m040_options *options) {
     if(busy)return M040_BUSY;
     if(!options||options->abi_version!=M040_ABI_VERSION||options->deliver_exceptions>1||options->lc040_probes>1||options->log_accesses>1)return M040_BAD_ARGUMENT;
     try{Boundary guard;modern040::reset();modern040::install_handlers();callback=nullptr;callback_opaque=nullptr;
+        reset_callback=nullptr;reset_opaque=nullptr;
         modern040::host.deliver_exceptions=options->deliver_exceptions;modern040::host.lc040_probes=options->lc040_probes;
         modern040::host.log_accesses=options->log_accesses;return M040_OK;}catch(...){return failed();}
 }
@@ -65,6 +72,11 @@ int m040_set_bus(m040_bus_callback function,void *opaque) {
     callback=function;callback_opaque=opaque;
     modern040::host.bus=function?bus:nullptr;modern040::host.bus_opaque=nullptr;return M040_OK;
 }
+int m040_set_reset_handler(m040_reset_callback function,void *opaque) {
+    if(busy)return M040_BUSY;
+    reset_callback=function;reset_opaque=opaque;
+    modern040::host.reset_hardware=function?reset_hardware:nullptr;modern040::host.reset_opaque=nullptr;return M040_OK;
+}
 int m040_poke(uint32_t address,uint32_t size,uint32_t value) {
     if(busy)return M040_BUSY;
     if((size!=1&&size!=2&&size!=4)||modern040::host.bus)return M040_BAD_ARGUMENT;
@@ -80,7 +92,8 @@ int m040_interrupt(uint32_t vector,uint32_t level,int *accepted,m040_result *out
     if(busy)return M040_BUSY;
     if(!accepted||!out||vector>255||level<1||level>7)return M040_BAD_ARGUMENT;
     *accepted=0;
-    try{Boundary guard;*accepted=modern040::inject_interrupt(int(vector),level);result({modern040::Exit::Budget},*out);return M040_OK;}
+    try{Boundary guard;*accepted=modern040::inject_interrupt(int(vector),level);
+        result({modern040::Exit::Budget,0,0,modern040::regs.instruction_pc,modern040::regs.pc},*out);return M040_OK;}
     catch(const modern040::Stop &event){if(event.result.exit==modern040::Exit::DoubleFault)modern040::host.halted=true;
         if(event.result.exit==modern040::Exit::MemoryFault)modern040::host.access_fault_latched=true;
         if(event.result.exit==modern040::Exit::Unsupported)modern040::host.capability_latched=true;
@@ -103,5 +116,17 @@ int m040_complete_service(m040_result *out) {
     if(busy)return M040_BUSY;
     if(!out||!modern040::host.service)return M040_BAD_ARGUMENT;
     try{Boundary guard;result(modern040::complete_service(),*out);return M040_OK;}catch(...){return failed();}
+}
+int m040_exception(uint32_t vector,m040_result *out) {
+    if(busy)return M040_BUSY;
+    if(!out||vector>255||vector<4)return M040_BAD_ARGUMENT;
+    try{Boundary guard;modern040::host.service.reset();modern040::Exception(int(vector));
+        result({modern040::Exit::Budget,0,0,modern040::regs.instruction_pc,modern040::regs.pc},*out);return M040_OK;}
+    catch(const modern040::Stop &event){
+        if(event.result.exit==modern040::Exit::DoubleFault)modern040::host.halted=true;
+        if(event.result.exit==modern040::Exit::MemoryFault)modern040::host.access_fault_latched=true;
+        if(event.result.exit==modern040::Exit::Unsupported)modern040::host.capability_latched=true;
+        result(event.result,*out);return M040_OK;}
+    catch(...){return failed();}
 }
 }

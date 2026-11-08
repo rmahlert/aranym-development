@@ -14,8 +14,8 @@ Outputs: libmodern040-integer.a, runner-tests, integer-runner and a provenance/
 coverage inventory under an ignored build directory. No production target,
 configure setting, installed emulator or guest image is changed.
 
-The fast040 table now binds 1,807 unchanged generated families /47,612 opcode
-encodings. Another60 families are explicitly excluded with missing-helper names
+The fast040 table now binds 1,808 unchanged generated families /47,613 opcode
+encodings. Another59 families are explicitly excluded with missing-helper names
 in runner-provenance.json. Compiled coverage does not mean every encoding has
 been validated. Real pinned helpers include MakeSR/MakeFromSR_x and its wrappers,
 MOVEC model/mask handling, brief/full020 effective address calculation, portable
@@ -100,6 +100,13 @@ suspension and same-body completion preserve genuine privilege/PC semantics,
 without another fetch/instruction count.10248 normal+ASan assertions and a real
 wrong-PC negative pass. Host replies are mocked; actual NF/EmulOp and nested
 guest execution still need the platform adapter. See service-validation.txt.
+
+The explicit platform RESET callback invokes Atari hardware reset without
+changing CPU registers; absent/failed callbacks stop clearly. A synchronous
+external exception API cancels pending NatFeat completion and delivers a real
+frame before the source PC increment.12 additional focused assertions validate
+these contracts. See ../platform/README.txt for the experimental frontend build
+and actual controlled ROM-attempt results; no production default is changed.
 
 Source/generated function bodies and selected upstream helpers are extracted
 mechanically without replacement instruction code. Provenance includes source

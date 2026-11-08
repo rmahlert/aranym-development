@@ -166,6 +166,11 @@ uae_u32 mmu_set_tc(uae_u32) { stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "MMU tra
 void mmu_tt_modified() { ++host.cache_controls; }
 void flush_icache(int) { ++host.cache_controls; }
 void write_log(const TCHAR *, ...) {}
+bool cpureset() {
+    if(!host.reset_hardware)stop(Exit::Reset,0,regs.pc,2,"RESET requires explicit platform hardware reset callback");
+    if(!host.reset_hardware(host.reset_opaque))stop(Exit::Unsupported,0,regs.pc,2,"platform hardware reset did not complete");
+    return false; // Atari RESET resets hardware, not the CPU PC/registers.
+}
 void m68k_setstopped(int type) { if (!regs.stopped) regs.stopped = type; }
 void do_cycles_stop(int cycles) { host.stop_cycles += cycles; }
 void resume_stopped() {

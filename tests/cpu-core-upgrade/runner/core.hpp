@@ -57,6 +57,7 @@ struct BusRequest {
 // One architectural access per callback. Read returns data in value; write
 // supplies value. false means this access did not complete. No implicit retry.
 using BusAccess = bool (*)(void *opaque,const BusRequest &,uae_u32 &value);
+using ResetHardware = bool (*)(void *opaque);
 struct Access {
     AccessKind kind;
     uae_u32 address;
@@ -96,6 +97,8 @@ struct Host {
     bool lc040_probes = false, capability_latched = false;
     BusAccess bus = nullptr;
     void *bus_opaque = nullptr;
+    ResetHardware reset_hardware=nullptr;
+    void *reset_opaque=nullptr;
     bool private_operations=false, service_resuming=false;
     std::optional<Service> service;
     unsigned exception_depth = 0;
@@ -112,6 +115,7 @@ void m68k_natfeat_id();
 void m68k_natfeat_call();
 void m68k_emulop(uae_u32);
 void m68k_emulop_return();
+bool cpureset();
 extern std::array<Handler, 65536> handlers;
 extern std::array<bool, 65536> legal;
 extern std::array<bool, 65536> requires_lc040_probes;

@@ -46,6 +46,9 @@
 #endif
 #include "fpu/fpu.h"
 #include "natfeats.h"
+#ifdef EXPERIMENTAL_MODERN040
+#include "../../tests/cpu-core-upgrade/platform/adapter.h"
+#endif
 #include "disasm-glue.h"
 #include "nf_objs.h"
 
@@ -552,6 +555,10 @@ static int building_bus_fault_stack_frame=0;
 
 void Exception(int nr, uaecptr oldpc)
 {
+#ifdef EXPERIMENTAL_MODERN040
+    modern040_external_exception(nr);
+    return;
+#endif
     uae_u32 currpc = m68k_getpc ();
     MakeSR();
 
@@ -647,6 +654,10 @@ void Exception(int nr, uaecptr oldpc)
 
 static void Interrupt(int nr)
 {
+#ifdef EXPERIMENTAL_MODERN040
+    modern040_external_interrupt(nr+24,unsigned(nr));
+    return;
+#endif
     assert(nr < 8 && nr >= 0);
     Exception(nr+24, 0);
 
@@ -657,6 +668,10 @@ static void Interrupt(int nr)
 
 static void SCCInterrupt(int nr)
 {
+#ifdef EXPERIMENTAL_MODERN040
+    modern040_external_interrupt(nr,5);
+    return;
+#endif
     // fprintf(stderr, "CPU: in SCCInterrupt\n");
     Exception(nr, 0);
 
@@ -665,6 +680,10 @@ static void SCCInterrupt(int nr)
 
 static void MFPInterrupt(int nr)
 {
+#ifdef EXPERIMENTAL_MODERN040
+    modern040_external_interrupt(nr,6);
+    return;
+#endif
     // fprintf(stderr, "CPU: in MFPInterrupt\n");
     Exception(nr, 0);
 
@@ -1003,6 +1022,9 @@ static int m68k_execute_depth = 0;
 
 void m68k_reset (void)
 {
+#ifdef EXPERIMENTAL_MODERN040
+    modern040_reset_requested();
+#endif
     regs.s = 1;
     regs.m = 0;
     regs.stopped = 0;
@@ -1426,6 +1448,10 @@ int m68k_do_specialties(void)
 
 void m68k_do_execute (void)
 {
+#ifdef EXPERIMENTAL_MODERN040
+    modern040_execute();
+    return;
+#endif
     uae_u32 pc;
     uae_u32 opcode;
     for (;;) {

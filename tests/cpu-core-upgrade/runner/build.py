@@ -29,7 +29,7 @@ CALLS = set("""if while for switch sizeof
     put_bitfield divbyzero_special setdivuflags setdivsflags setchkundefinedflags
     setchk2undefinedflags m68k_mull m68k_divl op_unimpl
     sfc_nommu_get_byte sfc_nommu_get_word sfc_nommu_get_long
-    dfc_nommu_put_byte dfc_nommu_put_word dfc_nommu_put_long""".split())
+    dfc_nommu_put_byte dfc_nommu_put_word dfc_nommu_put_long cpureset""".split())
 HELPERS = {
     "newcpu.cpp": ["activate_trace", "MakeSR", "MakeFromSR_x", "MakeFromSR_T0",
                    "MakeFromSR", "MakeFromSR_STOP", "check_t0_trace", "internalexception", "exception_check_trace",
@@ -264,12 +264,13 @@ def main():
                                              "retained_prefix_sha256":fpu_prefix_hashes},
                             "private_aranym":private_provenance,
                             "profile": "68040 integer, no MMU/JIT/arithmeticFPU, flat RAM or explicit bus callback, gated LC040 probes and real frame delivery"}
-    (build / "runner-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     flags = ["-std=c++20", "-O1" if args.sanitize else "-O2", "-g", "-fwrapv", "-DFPUEMU",
              "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-unused-variable", "-Wno-unused-but-set-variable",
              "-I" + str(HERE), "-I" + str(upstream / "include")]
     if args.sanitize: flags += ["-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"]
     cxx = os.environ.get("CXX", "c++")
+    provenance['runner']['build']={'sanitized':args.sanitize,'compiler':subprocess.check_output([cxx,'--version'],text=True).splitlines()[0],'flags':flags}
+    (build / "runner-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     objects = []
     for source in (build / "integer.cpp", HERE / "core.cpp", HERE / "c-api.cpp"):
         obj = build / (source.stem + ".o")
@@ -284,6 +285,7 @@ def main():
                            ("lc040-probe-tests", "lc040-test.cpp"), ("integer-helper-tests", "integer-helper-test.cpp"),
                            ("bus-tests", "bus-test.cpp"),
                            ("service-tests", "service-test.cpp"),
+                           ("platform-contract-tests", "platform-contract-test.cpp"),
                            ("integer-runner", "main.cpp")]:
         command([cxx, *flags, HERE / driver, build / "libmodern040-integer.a", "-o", build / target])
     print(f"Runner: {len(selected)} generated families, {count} opcodes; {len(excluded)} families explicitly excluded", flush=True)
@@ -303,6 +305,7 @@ def main():
     result=subprocess.run([str(build / "service-tests"),"--negative-pc"])
     if result.returncode!=1: raise RuntimeError(f"Private service checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-pc by actual private service checker",flush=True)
+    command([build / "platform-contract-tests"])
     result=subprocess.run([str(build / "bus-tests"),"--negative-fc"])
     if result.returncode!=1: raise RuntimeError(f"Bus checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-fc by actual bus checker",flush=True)

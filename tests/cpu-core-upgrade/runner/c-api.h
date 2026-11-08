@@ -34,6 +34,7 @@ struct m040_bus_request {
  * No callback may call state/config/run APIs; those reject reentry with BUSY.
  */
 typedef int (*m040_bus_callback)(void *, const struct m040_bus_request *, uint32_t *);
+typedef int (*m040_reset_callback)(void *);
 struct m040_result {
     uint32_t abi_version, exit, vector, instruction_pc, current_pc, address, size;
     uint64_t instructions;
@@ -49,12 +50,18 @@ int m040_get_state(struct m040_state *);
  */
 int m040_set_state(const struct m040_state *);
 int m040_set_bus(m040_bus_callback, void *opaque);
+/* Callback returns1 after platform hardware reset completed,0 on failure. */
+int m040_set_reset_handler(m040_reset_callback, void *opaque);
 int m040_poke(uint32_t address, uint32_t size, uint32_t value);
 int m040_run(uint64_t budget, struct m040_result *);
 int m040_interrupt(uint32_t vector, uint32_t level, int *accepted, struct m040_result *);
 int m040_private_operations(int enabled);
 int m040_get_service(struct m040_service *);
 int m040_complete_service(struct m040_result *);
+/* External synchronous host-service exception. Access/address faults require
+ * richer metadata and are rejected here; they originate through the bus/core.
+ */
+int m040_exception(uint32_t vector, struct m040_result *);
 #ifdef __cplusplus
 }
 #endif

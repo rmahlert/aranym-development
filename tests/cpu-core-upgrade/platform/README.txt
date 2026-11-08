@@ -1,0 +1,73 @@
+Experimental native ARAnyM modern040 test target
+==============================================
+This opt-in test build links the isolated namespaced interpreter to the REAL
+Atari frontend. Normal builds do not define EXPERIMENTAL_MODERN040 and retain
+existing CPU behavior. No production configure setting, installation or public
+release is added. Do not select JIT, MMU or signal/direct addressing for this
+experiment. The bridge rejects those combinations at compile time.
+
+Build (host C++20/Python3/Git/ar/autoconf/SDL2 development prerequisites):
+python3 tests/cpu-core-upgrade/platform/build.py --upstream /absolute/path/WinUAE
+The pinned source remains d82bc2549f27943d11dc59482d5388daf1c0f337. Default build
+and profile paths are siblings of this source checkout, build-experimental and
+profile-experimental. The latter must have a simple path beneath the user's home;
+ARANYMHOME points only at that owned profile. HOME itself is not changed.
+
+The script runs generator/core tests first, builds legacy generator/archive,
+compiles the adapter against ORIGINAL ARAnyM headers and plain c-api.h, appends
+namespaced modern objects to the dedicated test archive and links the frontend.
+The original global regs struct is never cast to a modern type. --reuse-core
+requires exact tracked source hashes and a nonsanitized provenance marker.
+An existing configure tree needs a matching owned configuration marker or the
+explicit --adopt-configured option, which checks the exact experimental flags.
+Changing configure flags requires a fresh build directory, preventing stale
+object reuse. The script does not install or launch the resulting executable.
+modern040-build.json records binary/source/provenance hashes and configuration.
+
+Actual backend contracts implemented:
+- Full integer/SR/banked/control snapshots at instruction boundaries. This initial
+  prototype copies per instruction for observability, so it is NOT a speed result.
+- Original phys_get/put byte/word/long paths, including Atari ROM/RAM/MMIO and
+  accepted RAM-window fixes. EffectiveFC selects access privilege. Original
+  ARAM_PAGE_CHECK shortcuts are invalidated per callback so a cached decision
+  cannot bypass the next access's FC/permissions. Failed native memory exceptions
+  translate to typed modern bus faults; no repeated MMIO or fake restart.
+- Original AtariReset(): hardware, NatFeats and input reset, preserving CPU state.
+  The genuine generated RESET body performs privilege check and PC increment.
+- Original m68k_natfeat_id/call/EmulOp host functions at a suspended private-body
+  boundary. Their host exceptions cancel private completion and enter real modern
+  frames. Generic external access/address exceptions are rejected without metadata.
+- Original timer/event/STOP scheduler. Explicit modern IRQ entry preserves level
+  and custom SCC/MFP vector identity; no inference from vector numbers. Modern
+  trace owns trace flags, avoiding a second old-core trace delivery.
+
+Current limits fail closed with MODERN040_UNSUPPORTED and controlled host exit3:
+format7/accessfault restart/writeback, remaining helpers/activeFPU/MMU/caches,
+transparent-region enable (next stage), and nested guest EmulOp execution.
+This is an experimental attempt target, not full040/LC040 compatibility. Actual
+NF/IRQ/desktop behavior is not inferred merely because its callback compiles.
+
+Controlled native Linux headless attempts, 2026-11-08:
+Source includes accepted private baseline b6735e93 via merge62b5df6a, preserving
+RAM-window/shutdown changes; original production checkout is untouched.
+1. Owned EmuTOS1.4 ROM +NOETH.PRG,64MiB FastRAM, JIT-off, network/audio disabled,
+   SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy:13attempts then unsupported RESET
+   atPC00e0008c, clean exit3. No GUI/Windows launch and no disk image attached.
+2. After genuine RESET/AtariReset hookup:3662attempts then unsupported transparent
+   register enable, MOVEC D0,ITT0 at00e00594, nextPC00e00598; clean exit3.
+   No false boot-success claim. Both logs are retained in the owned boot-smoke
+   evidence directory outside tracked source; both profiles save only owned NVRAM.
+
+ROM SHA256 b723d04ae9912b8e5fdcb9bd2dffacb3d57968ab3e543b7ace5e687a04bef63b
+PRG SHA256 d2dc467e81e5cb6833b88f676a914341b5b902a270fa264dca31be709936e092
+These owned input assets are not committed or redistributed. To reproduce a run,
+create an owned config with explicit input/HostFS paths, no IDE/disk/network,
+and run from its workspace directory:
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy timeout -k5 30 /path/build/src/aranym -c /path/owned/config
+Do not point the test at a user's active mounted image or installed profile.
+
+12 additional normal+ASan/UBSan runner assertions validate platform RESET
+privilege/callback/CPU preservation/failure and actual host-NatFeat-permission
+exception cancellation, format0/faultPC and userRTE recovery. Existing312178core,
+222frame,685LC,72815helper,503bus,90CABI,10248private assertions remain passing.
+Transparent permissions and later actual NatFeat/boot paths remain next gates.
