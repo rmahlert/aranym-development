@@ -117,3 +117,8 @@ Transparent permissions and later actual NatFeat/boot paths remain next gates.
     passes everyCCR/register/frame/bank; wrong-PC checker rejected. The old
     baseline's separate post-exception PC+2 bug is tracked shin-9w5d.
     See emulop-validation.txt; nested LineA has no current caller and stays gated.
+11. Private Windows paired cross-build/runtime now links and passes static
+    profile/PE/import-closure checks; neither EXE launched or installed. Separate
+    generated profile/NVRAM directories prevent default-profile overlap. See
+    windows-validation.txt and windows-test-README.txt; root owns advance notice
+    and closed-copy Windows desktop/application acceptance before benchmarking.
