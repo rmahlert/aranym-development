@@ -87,6 +87,13 @@ privilege/fault order and genuine external-bus frame/RTE. A deliberate wrong-FC
 expectation is rejected. This is a tested bus seam, not an Atari bus/backend;
 see bus-validation.txt for callback guarantees and remaining integration.
 
+Experimental c-api.h offers plain C integer/SR/bank/control snapshots, bus
+registration, bounded run and explicit IRQ results. A pure C11 caller executes
+the real library and passes80 normal+ASan/UBSan assertions and an actual negative
+state expectation. This avoids mixing original and modern UAE header/global
+types in an eventual platform adapter. It is single-instance/serialized, rejects
+callback reentry and contains host exceptions; see c-api-validation.txt.
+
 Source/generated function bodies and selected upstream helpers are extracted
 mechanically without replacement instruction code. Provenance includes source
 pins/hashes, helper hashes and exclusion inventory. GPL-2.0-or-later under the

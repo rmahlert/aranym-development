@@ -220,11 +220,15 @@ def main():
     if args.sanitize: flags += ["-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"]
     cxx = os.environ.get("CXX", "c++")
     objects = []
-    for source in (build / "integer.cpp", HERE / "core.cpp"):
+    for source in (build / "integer.cpp", HERE / "core.cpp", HERE / "c-api.cpp"):
         obj = build / (source.stem + ".o")
         command([cxx, *flags, "-c", source, "-o", obj])
         objects.append(obj)
     command(["ar", "rcs", build / "libmodern040-integer.a", *objects])
+    cflags=["-std=c11","-O1" if args.sanitize else "-O2","-g","-Wall","-Wextra","-I"+str(HERE)]
+    if args.sanitize:cflags += ["-fsanitize=address,undefined","-fno-sanitize-recover=all","-fno-omit-frame-pointer"]
+    command([os.environ.get("CC","cc"),*cflags,"-c",HERE/"c-api-test.c","-o",build/"c-api-test.o"])
+    command([cxx,*flags,build/"c-api-test.o",build/"libmodern040-integer.a","-o",build/"c-api-tests"])
     for target, driver in [("runner-tests", "test.cpp"), ("frame-tests", "frame-test.cpp"),
                            ("lc040-probe-tests", "lc040-test.cpp"), ("integer-helper-tests", "integer-helper-test.cpp"),
                            ("bus-tests", "bus-test.cpp"),
@@ -239,6 +243,10 @@ def main():
     if result.returncode!=1: raise RuntimeError(f"Integer checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-bitfield by actual integer checker",flush=True)
     command([build / "bus-tests"])
+    command([build / "c-api-tests"])
+    result=subprocess.run([str(build / "c-api-tests"),"--negative-state"])
+    if result.returncode!=1: raise RuntimeError(f"C ABI checker returned {result.returncode}, expected1")
+    print("REJECTED deliberate --negative-state by actual C ABI checker",flush=True)
     result=subprocess.run([str(build / "bus-tests"),"--negative-fc"])
     if result.returncode!=1: raise RuntimeError(f"Bus checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-fc by actual bus checker",flush=True)
