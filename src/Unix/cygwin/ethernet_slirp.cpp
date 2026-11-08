@@ -288,6 +288,11 @@ void WinSlirpEthernetHandler::close()
 int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 {
 	for (;;) {
+		/* Winsock select() is not a pthread cancellation point. An idle
+		 * receiver can otherwise prevent stopThread() from joining it.
+		 * Service deferred cancellation while no SLIRP lock is held.
+		 */
+		pthread_testcancel();
 		pthread_mutex_lock(&slirp_lock);
 
 		/*
