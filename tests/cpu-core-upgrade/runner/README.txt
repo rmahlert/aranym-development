@@ -14,8 +14,8 @@ Outputs: libmodern040-integer.a, runner-tests, integer-runner and a provenance/
 coverage inventory under an ignored build directory. No production target,
 configure setting, installed emulator or guest image is changed.
 
-The fast040 table now binds 1,786 unchanged generated families /47,486 opcode
-encodings. Another81 families are explicitly excluded with missing-helper names
+The fast040 table now binds 1,807 unchanged generated families /47,612 opcode
+encodings. Another60 families are explicitly excluded with missing-helper names
 in runner-provenance.json. Compiled coverage does not mean every encoding has
 been validated. Real pinned helpers include MakeSR/MakeFromSR_x and its wrappers,
 MOVEC model/mask handling, brief/full020 effective address calculation, portable
@@ -77,6 +77,15 @@ and faults; word/long divide zero/overflow/remainder,32/64-bit multiply, aliased
 result registers, CHK/CHK2 and genuine divide-fault format2/RTE recovery.
 Normal and ASan/UBSan pass; an actual corrupted expected-register negative is
 rejected. See integer-helper-validation.txt for exact source and scope.
+
+The bus stage adds an explicit callback receiving address/size/direction,
+effective function code and MOVES-selected FC/transfer type. It supports full
+32-bit guest addresses without native guest pointers.21 real MOVES families
+use unchanged pinned alternate-space helpers.503 bus assertions pass normal
+and ASan/UBSan, including high-address mock MMIO read-once, allFC/widths,
+privilege/fault order and genuine external-bus frame/RTE. A deliberate wrong-FC
+expectation is rejected. This is a tested bus seam, not an Atari bus/backend;
+see bus-validation.txt for callback guarantees and remaining integration.
 
 Source/generated function bodies and selected upstream helpers are extracted
 mechanically without replacement instruction code. Provenance includes source

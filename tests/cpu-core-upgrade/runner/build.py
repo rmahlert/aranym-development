@@ -27,12 +27,16 @@ CALLS = set("""if while for switch sizeof
     exception3_read_prefetch_68040bug branch_stack_push branch_stack_pop_rts
     branch_stack_pop_rte fpuop_bcc fpuop_save fpuop_restore get_bitfield
     put_bitfield divbyzero_special setdivuflags setdivsflags setchkundefinedflags
-    setchk2undefinedflags m68k_mull m68k_divl op_unimpl""".split())
+    setchk2undefinedflags m68k_mull m68k_divl op_unimpl
+    sfc_nommu_get_byte sfc_nommu_get_word sfc_nommu_get_long
+    dfc_nommu_put_byte dfc_nommu_put_word dfc_nommu_put_long""".split())
 HELPERS = {
     "newcpu.cpp": ["activate_trace", "MakeSR", "MakeFromSR_x", "MakeFromSR_T0",
                    "MakeFromSR", "MakeFromSR_STOP", "check_t0_trace", "internalexception", "exception_check_trace",
                    "Exception_cpu_oldpc", "Exception", "ExceptionL", "op_unimpl", "exception3f", "exception3_notinstruction",
-                   "exception3_read_prefetch_only", "exception3_read_prefetch", "exception3_read_prefetch_68040bug"],
+                   "exception3_read_prefetch_only", "exception3_read_prefetch", "exception3_read_prefetch_68040bug",
+                   "sfc_nommu_get_byte", "sfc_nommu_get_word", "sfc_nommu_get_long",
+                   "dfc_nommu_put_byte", "dfc_nommu_put_word", "dfc_nommu_put_long"],
     "newcpu_common.cpp": ["movec_illg", "m68k_move2c", "m68k_movec2", "get_disp_ea_020", "exception_pc",
                           "Exception_build_stack_frame_common", "get_bitfield", "put_bitfield",
                           "divbyzero_special", "setdivuflags", "setdivsflags", "setchkundefinedflags",
@@ -208,7 +212,7 @@ def main():
                                               "retained_case_sha256": frame_hashes},
                             "lc040_probes": {"families":len(probe_families),"restriction":"real no-FPU chain; FSAVE/FRESTORE prefixes stop at guard; active arithmetic excluded",
                                              "retained_prefix_sha256":fpu_prefix_hashes},
-                            "profile": "68040 integer, no MMU/JIT/arithmeticFPU, flat RAM, gated LC040 probe subset and real frame delivery"}
+                            "profile": "68040 integer, no MMU/JIT/arithmeticFPU, flat RAM or explicit bus callback, gated LC040 probes and real frame delivery"}
     (build / "runner-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     flags = ["-std=c++20", "-O1" if args.sanitize else "-O2", "-g", "-fwrapv", "-DFPUEMU",
              "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-unused-variable", "-Wno-unused-but-set-variable",
@@ -223,6 +227,7 @@ def main():
     command(["ar", "rcs", build / "libmodern040-integer.a", *objects])
     for target, driver in [("runner-tests", "test.cpp"), ("frame-tests", "frame-test.cpp"),
                            ("lc040-probe-tests", "lc040-test.cpp"), ("integer-helper-tests", "integer-helper-test.cpp"),
+                           ("bus-tests", "bus-test.cpp"),
                            ("integer-runner", "main.cpp")]:
         command([cxx, *flags, HERE / driver, build / "libmodern040-integer.a", "-o", build / target])
     print(f"Runner: {len(selected)} generated families, {count} opcodes; {len(excluded)} families explicitly excluded", flush=True)
@@ -233,6 +238,10 @@ def main():
     result=subprocess.run([str(build / "integer-helper-tests"),"--negative-bitfield"])
     if result.returncode!=1: raise RuntimeError(f"Integer checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-bitfield by actual integer checker",flush=True)
+    command([build / "bus-tests"])
+    result=subprocess.run([str(build / "bus-tests"),"--negative-fc"])
+    if result.returncode!=1: raise RuntimeError(f"Bus checker returned {result.returncode}, expected1")
+    print("REJECTED deliberate --negative-fc by actual bus checker",flush=True)
     for mode in ("--negative-format", "--negative-read"):
         result=subprocess.run([str(build / "lc040-probe-tests"),mode])
         if result.returncode!=1: raise RuntimeError(f"LC040 checker {mode} returned {result.returncode}, expected1")

@@ -46,6 +46,17 @@ inline constexpr unsigned SPCFLAG_TRACE = 1, SPCFLAG_DOTRACE = 2,
     SPCFLAG_INT = 4, SPCFLAG_DOINT = 8, SPCFLAG_END_COMPILE = 16;
 extern State regs;
 enum class AccessKind { Fetch, Read, Write };
+struct BusRequest {
+    AccessKind kind;
+    uae_u32 address;
+    unsigned size, function_code;
+    std::optional<unsigned> alternate_function_code{};
+    unsigned transfer_type=0;
+    bool operator==(const BusRequest &) const = default;
+};
+// One architectural access per callback. Read returns data in value; write
+// supplies value. false means this access did not complete. No implicit retry.
+using BusAccess = bool (*)(void *opaque,const BusRequest &,uae_u32 &value);
 struct Access {
     AccessKind kind;
     uae_u32 address;
@@ -81,10 +92,13 @@ struct Host {
     bool deliver_exceptions = false;
     bool in_instruction = false, access_fault_latched = false, halted = false;
     bool lc040_probes = false, capability_latched = false;
+    BusAccess bus = nullptr;
+    void *bus_opaque = nullptr;
     unsigned exception_depth = 0;
     std::vector<Frame> frames;
 };
 extern Host host;
+extern bool ismoves_nommu;
 using Handler = uae_u32 (*)(uae_u32);
 extern std::array<Handler, 65536> handlers;
 extern std::array<bool, 65536> legal;
@@ -188,8 +202,12 @@ extern bool last_writeaccess_for_exception_3, last_notinstruction_for_exception_
 extern int last_fc_for_exception_3, last_size_for_exception_3, last_di_for_exception_3;
 extern uae_u16 last_sr_for_exception3;
 inline uae_u32 x_get_word(uae_u32 a) { return get_word_jit(a); }
+inline uae_u32 x_get_byte(uae_u32 a) { return get_byte_jit(a); }
+inline uae_u32 x_get_long(uae_u32 a) { return get_long_jit(a); }
+inline void x_put_byte(uae_u32 a, uae_u32 v) { put_byte_jit(a,v); }
 inline void x_put_word(uae_u32 a, uae_u32 v) { put_word_jit(a,v); }
 inline void x_put_long(uae_u32 a, uae_u32 v) { put_long_jit(a,v); }
+bool cpuboard_fc_check(uae_u32,uae_u32 *,int,bool);
 inline void x_do_cycles(unsigned) {} // No CPU-cycle timing profile is implemented.
 inline uae_u32 x_cp_next_iword() { return next_diword(); }
 inline uae_u32 x_cp_next_ilong() { return next_dilong(); }

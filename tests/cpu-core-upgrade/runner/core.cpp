@@ -4,6 +4,7 @@
 namespace modern040 {
 State regs;
 Host host;
+bool ismoves_nommu=false;
 std::array<Handler, 65536> handlers{};
 std::array<bool, 65536> legal{};
 std::array<bool, 65536> requires_lc040_probes{};
@@ -18,13 +19,22 @@ namespace {
     throw Stop{{exit, 0, vector, regs.instruction_pc, regs.pc, address, size, detail}};
 }
 bool valid(AccessKind kind, uae_u32 address, unsigned size) {
-    if (address >= host.ram.size() || size > host.ram.size() - address) return false;
+    if (!host.bus&&(address >= host.ram.size() || size > host.ram.size() - address)) return false;
     if (host.denied && kind == host.denied->kind) {
         const auto first = host.denied->address;
         const auto end = std::uint64_t(first) + host.denied->size;
         if (address < end && std::uint64_t(address) + size > first) return false;
     }
     return true;
+}
+BusRequest request(AccessKind kind,uae_u32 address,unsigned size) {
+    if(!ismoves_nommu)return {kind,address,size,unsigned((regs.s?4:0)|(kind==AccessKind::Fetch?2:1))};
+    const auto selected=unsigned(kind==AccessKind::Write?regs.dfc:regs.sfc)&7;
+    // MC68040UM Table3-2 (PDF71): MOVES instruction-space references
+    // become data references; other alternate spaces use TT=10.
+    const auto effective=(selected==2||selected==6)?selected-1:selected;
+    const unsigned tt=(selected==0||selected==3||selected==4||selected==7)?2:0;
+    return {kind,address,size,effective,selected,tt};
 }
 bool translation_enabled() { return (regs.tcr | regs.itt0 | regs.itt1 | regs.dtt0 | regs.dtt1) & 0x8000; }
 void enter_exception(int nr, bool interrupt, unsigned level) {
@@ -94,12 +104,15 @@ void enter_exception(int nr, bool interrupt, unsigned level) {
 }
 }
 uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
-    if (!valid(kind, address, size)) {
-        if (host.log_accesses) host.accesses.push_back({kind, address, size, 0, false});
-        stop(Exit::MemoryFault, 2, address, size, "flat RAM read/fetch fault; no guest frame delivered");
-    }
     uae_u32 value = 0;
-    for (unsigned i = 0; i < size; ++i) value = (value << 8) | host.ram[address + i];
+    bool ok=valid(kind,address,size);
+    if(ok&&host.bus)ok=host.bus(host.bus_opaque,request(kind,address,size),value);
+    if (!ok) {
+        if (host.log_accesses) host.accesses.push_back({kind, address, size, 0, false});
+        stop(Exit::MemoryFault, 2, address, size, "bus read/fetch fault; access-error continuation not integrated");
+    }
+    if(!host.bus)for (unsigned i = 0; i < size; ++i) value = (value << 8) | host.ram[address + i];
+    if(size<4)value&=(uae_u32{1}<<(size*8))-1;
     if (host.log_accesses) host.accesses.push_back({kind, address, size, value, true});
     // Capability check at the real generated RTE's format-word read. No added
     // read, no modified instruction body and no hidden frame normalization.
@@ -116,13 +129,15 @@ void poke(uae_u32 address, unsigned size, uae_u32 value) {
 }
 void write(uae_u32 address, unsigned size, uae_u32 value) {
     if (size < 4) value &= (uae_u32{1} << (size * 8)) - 1;
-    const bool ok = valid(AccessKind::Write, address, size);
+    bool ok = valid(AccessKind::Write, address, size);
+    if(ok&&host.bus)ok=host.bus(host.bus_opaque,request(AccessKind::Write,address,size),value);
     if (host.log_accesses) host.accesses.push_back({AccessKind::Write, address, size, value, ok});
-    if (!ok) stop(Exit::MemoryFault, 2, address, size, "flat RAM write fault; no guest frame delivered");
-    poke(address, size, value);
+    if (!ok) stop(Exit::MemoryFault, 2, address, size, "bus write fault; access-error continuation not integrated");
+    if(!host.bus)poke(address, size, value);
 }
 void reset() {
     regs = State{}; host = Host{};
+    ismoves_nommu=false;
     last_addr_for_exception_3=last_fault_for_exception_3=last_op_for_exception_3=0;
     last_writeaccess_for_exception_3=last_notinstruction_for_exception_3=false;
     last_fc_for_exception_3=last_size_for_exception_3=last_di_for_exception_3=0;
@@ -133,6 +148,15 @@ void reset() {
         while (bit < 8 && !(i & (1 << bit))) ++bit;
         movem_index1[i] = bit; movem_index2[i] = 7 - bit; movem_next[i] = i & ~(1 << bit);
     }
+}
+bool cpuboard_fc_check(uae_u32 address,uae_u32 *,int size,bool writing) {
+    // This is the platform seam in the real imported MOVES helpers. There is
+    // no Amiga CPU board. An attached bus receives every FC explicitly;
+    // flat RAM supports ordinary user/supervisor data/program spaces only.
+    const auto fc=writing?regs.dfc:regs.sfc;
+    if(!host.bus&&fc!=1&&fc!=2&&fc!=5&&fc!=6)
+        stop(Exit::Unsupported,0,address,1u<<size,"flat RAM has no mapping for this alternate function-code space");
+    return false;
 }
 void checkint() { ++host.irq_checks; }
 void mmu_set_super(bool) { stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "MMU privilege adapter unavailable"); }
@@ -208,6 +232,9 @@ Result run(std::uint64_t budget) {
         }
         return {Exit::Budget, instructions, 0, regs.instruction_pc, regs.pc};
     } catch (const Stop &event) {
+        // Real MOVES helpers clear their transient flag only on normal return.
+        // A host unwind must never leak alternate FC into the next boundary.
+        ismoves_nommu=false;
         if (event.result.exit==Exit::MemoryFault) host.access_fault_latched=true;
         if (event.result.exit==Exit::DoubleFault) host.halted=true;
         if (event.result.exit==Exit::Unsupported) host.capability_latched=true;
