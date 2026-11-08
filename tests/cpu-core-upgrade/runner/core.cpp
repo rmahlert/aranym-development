@@ -5,6 +5,8 @@ namespace modern040 {
 State regs;
 Host host;
 bool ismoves_nommu=false;
+bool mmu_ttr_enabled=false,mmu_ttr_enabled_ins=false,mmu_ttr_enabled_data=false;
+uae_u8 mmu_cache_state=0;
 std::array<Handler, 65536> handlers{};
 std::array<PrivateHandler,65536> private_handlers{};
 std::array<bool, 65536> legal{};
@@ -37,7 +39,13 @@ BusRequest request(AccessKind kind,uae_u32 address,unsigned size) {
     const unsigned tt=(selected==0||selected==3||selected==4||selected==7)?2:0;
     return {kind,address,size,effective,selected,tt};
 }
-bool translation_enabled() { return (regs.tcr | regs.itt0 | regs.itt1 | regs.dtt0 | regs.dtt1) & 0x8000; }
+bool translation_enabled() {
+    // Non-protected transparent regions do not change physical addresses.
+    // Protected-TTR fault/RMW semantics remain explicit unsupported coverage.
+    if(regs.tcr&0x8000)return true;
+    for(auto ttr:{regs.itt0,regs.itt1,regs.dtt0,regs.dtt1})if((ttr&0x8004)==0x8004)return true;
+    return false;
+}
 void enter_exception(int nr, bool interrupt, unsigned level) {
     if (!host.deliver_exceptions) {
         stop(Exit::GuestException,nr,nr==3?last_fault_for_exception_3:regs.pc,nr==3?2:0,"terminal guest exception; frame delivery disabled");
@@ -107,6 +115,10 @@ void enter_exception(int nr, bool interrupt, unsigned level) {
 uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     uae_u32 value = 0;
     bool ok=valid(kind,address,size);
+    if(ok) {
+        const auto req=request(kind,address,size);
+        if(!req.transfer_type)(void)mmu_match_ttr(address,bool(req.function_code&4),kind!=AccessKind::Fetch);
+    }
     if(ok&&host.bus)ok=host.bus(host.bus_opaque,request(kind,address,size),value);
     if (!ok) {
         if (host.log_accesses) host.accesses.push_back({kind, address, size, 0, false});
@@ -131,6 +143,10 @@ void poke(uae_u32 address, unsigned size, uae_u32 value) {
 void write(uae_u32 address, unsigned size, uae_u32 value) {
     if (size < 4) value &= (uae_u32{1} << (size * 8)) - 1;
     bool ok = valid(AccessKind::Write, address, size);
+    if(ok) {
+        const auto req=request(AccessKind::Write,address,size);
+        if(!req.transfer_type)(void)mmu_match_ttr(address,bool(req.function_code&4),true);
+    }
     if(ok&&host.bus)ok=host.bus(host.bus_opaque,request(AccessKind::Write,address,size),value);
     if (host.log_accesses) host.accesses.push_back({AccessKind::Write, address, size, value, ok});
     if (!ok) stop(Exit::MemoryFault, 2, address, size, "bus write fault; access-error continuation not integrated");
@@ -139,6 +155,7 @@ void write(uae_u32 address, unsigned size, uae_u32 value) {
 void reset() {
     regs = State{}; host = Host{};
     ismoves_nommu=false;
+    mmu_ttr_enabled=mmu_ttr_enabled_ins=mmu_ttr_enabled_data=false;mmu_cache_state=0;
     last_addr_for_exception_3=last_fault_for_exception_3=last_op_for_exception_3=0;
     last_writeaccess_for_exception_3=last_notinstruction_for_exception_3=false;
     last_fc_for_exception_3=last_size_for_exception_3=last_di_for_exception_3=0;
@@ -163,7 +180,6 @@ void checkint() { ++host.irq_checks; }
 void mmu_set_super(bool) { stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "MMU privilege adapter unavailable"); }
 void set_cpu_caches(bool) { ++host.cache_controls; }
 uae_u32 mmu_set_tc(uae_u32) { stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "MMU translation unavailable"); }
-void mmu_tt_modified() { ++host.cache_controls; }
 void flush_icache(int) { ++host.cache_controls; }
 void write_log(const TCHAR *, ...) {}
 bool cpureset() {
@@ -243,7 +259,7 @@ Result run(std::uint64_t budget) {
         if (host.access_fault_latched) return {Exit::Unsupported,0,2,regs.instruction_pc,regs.pc,0,0,"access-fault restart requires reset; continuation not integrated"};
         if(host.service)return {Exit::HostService,0,0,regs.instruction_pc,regs.pc,0,0,"private service must complete before fetching another instruction"};
         if (regs.stopped) return {Exit::Stopped, 0};
-        if (translation_enabled()) stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "cannot resume while unsupported MMU/translation is enabled");
+        if (translation_enabled()) stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "paged MMU or protected transparent-region fault profile is unsupported");
         while (instructions < budget) {
             regs.instruction_pc = regs.pc;
             regs.trace_pc = regs.pc;
@@ -270,7 +286,7 @@ Result run(std::uint64_t budget) {
             if(private_handler)private_handler(regs.opcode);
             else handler(regs.opcode);
             if (translation_enabled())
-                stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "MMU/transparent translation enabled by control write");
+                stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "paged MMU or protected transparent-region profile enabled by control write");
             if (regs.spcflags & SPCFLAG_DOTRACE) Exception(9);
             else if (trace_before && host.frames.size()==frames_before) { regs.spcflags |= SPCFLAG_DOTRACE; Exception(9); }
             if (regs.stopped) return {Exit::Stopped, instructions, 0, regs.instruction_pc, regs.pc};

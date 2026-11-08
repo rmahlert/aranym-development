@@ -43,6 +43,7 @@ HELPERS = {
                           "chk2_sub_wrap", "setchk2undefinedflags", "divsl_overflow", "divul_overflow",
                           "divsl_divbyzero", "divul_divbyzero", "m68k_divl", "m68k_mull"],
     "od-unix/machdep/m68k.h": ["cctrue"],
+    "cpummu.cpp": ["mmu_tt_modified","mmu_do_match_ttr","mmu_match_ttr"],
 }
 
 
@@ -201,6 +202,11 @@ def main():
     if subprocess.check_output(["git", "-C", str(upstream), "rev-parse", "HEAD"], text=True).strip() != PIN:
         raise RuntimeError("Incorrect upstream helper pin")
     helper_text, helper_hashes = [], {}
+    for path,prefixes in [('include/cpummu.h',('MMU_TTR_','TTR_')),('include/memory.h',('CACHE_',))]:
+        data=(upstream/path).read_bytes()
+        if data!=subprocess.check_output(['git','-C',str(upstream),'show',f'{PIN}:{path}']):raise RuntimeError('Changed TTR constant input '+path)
+        helper_hashes[path]=hashlib.sha256(data).hexdigest()
+        helper_text += [line for line in data.decode().splitlines() if re.match(r'^#define\s+(?:'+ '|'.join(prefixes)+')',line)]
     for path, names in HELPERS.items():
         data = (upstream / path).read_bytes()
         tracked = subprocess.check_output(["git", "-C", str(upstream), "show", f"{PIN}:{path}"])
@@ -286,6 +292,7 @@ def main():
                            ("bus-tests", "bus-test.cpp"),
                            ("service-tests", "service-test.cpp"),
                            ("platform-contract-tests", "platform-contract-test.cpp"),
+                           ("ttr-tests", "ttr-test.cpp"),
                            ("integer-runner", "main.cpp")]:
         command([cxx, *flags, HERE / driver, build / "libmodern040-integer.a", "-o", build / target])
     print(f"Runner: {len(selected)} generated families, {count} opcodes; {len(excluded)} families explicitly excluded", flush=True)
@@ -306,6 +313,10 @@ def main():
     if result.returncode!=1: raise RuntimeError(f"Private service checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-pc by actual private service checker",flush=True)
     command([build / "platform-contract-tests"])
+    command([build / "ttr-tests"])
+    result=subprocess.run([str(build / "ttr-tests"),"--negative-match"])
+    if result.returncode!=1: raise RuntimeError(f"TTR checker returned {result.returncode}, expected1")
+    print("REJECTED deliberate --negative-match by actual TTR checker",flush=True)
     result=subprocess.run([str(build / "bus-tests"),"--negative-fc"])
     if result.returncode!=1: raise RuntimeError(f"Bus checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-fc by actual bus checker",flush=True)

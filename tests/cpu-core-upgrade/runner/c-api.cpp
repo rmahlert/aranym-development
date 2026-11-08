@@ -65,7 +65,7 @@ int m040_set_state(const m040_state *in) {
         IMPORT(vbr);IMPORT(sfc);IMPORT(dfc);IMPORT(cacr);IMPORT(caar);IMPORT(itt0);IMPORT(itt1);IMPORT(dtt0);IMPORT(dtt1);
         IMPORT(tcr);IMPORT(mmusr);IMPORT(urp);IMPORT(srp);IMPORT(buscr);IMPORT(pcr);
 #undef IMPORT
-        modern040::MakeFromSR();return M040_OK;}catch(...){return failed();}
+        modern040::MakeFromSR();modern040::mmu_tt_modified();return M040_OK;}catch(...){return failed();}
 }
 int m040_set_bus(m040_bus_callback function,void *opaque) {
     if(busy)return M040_BUSY;

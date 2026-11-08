@@ -43,7 +43,7 @@ Actual backend contracts implemented:
 
 Current limits fail closed with MODERN040_UNSUPPORTED and controlled host exit3:
 format7/accessfault restart/writeback, remaining helpers/activeFPU/MMU/caches,
-transparent-region enable (next stage), and nested guest EmulOp execution.
+protected transparent-region enable, and nested guest EmulOp execution.
 This is an experimental attempt target, not full040/LC040 compatibility. Actual
 NF/IRQ/desktop behavior is not inferred merely because its callback compiles.
 
@@ -57,6 +57,11 @@ RAM-window/shutdown changes; original production checkout is untouched.
    register enable, MOVEC D0,ITT0 at00e00594, nextPC00e00598; clean exit3.
    No false boot-success claim. Both logs are retained in the owned boot-smoke
    evidence directory outside tracked source; both profiles save only owned NVRAM.
+3. Genuine transparent matcher/unprotected profile now passes that register
+   update;3670attempts reach excluded cache opcodef4d8 at00e005b4, controlled
+   exit3. Paged MMU and enabled protected regions stay blocked before fetch.
+   See runner/ttr-validation.txt for1048593 matching/dispatch assertions and
+   exact manual/source scope; this result is not a completed firmware boot.
 
 ROM SHA256 b723d04ae9912b8e5fdcb9bd2dffacb3d57968ab3e543b7ace5e687a04bef63b
 PRG SHA256 d2dc467e81e5cb6833b88f676a914341b5b902a270fa264dca31be709936e092

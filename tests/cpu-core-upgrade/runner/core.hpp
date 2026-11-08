@@ -106,6 +106,9 @@ struct Host {
 };
 extern Host host;
 extern bool ismoves_nommu;
+extern bool mmu_ttr_enabled,mmu_ttr_enabled_ins,mmu_ttr_enabled_data;
+extern uae_u8 mmu_cache_state;
+int mmu_match_ttr(uae_u32,bool,bool);
 using Handler = uae_u32 (*)(uae_u32);
 using PrivateHandler = void (*)(uae_u32);
 extern std::array<PrivateHandler,65536> private_handlers;
