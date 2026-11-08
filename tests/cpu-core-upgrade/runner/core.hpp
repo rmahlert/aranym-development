@@ -87,6 +87,7 @@ struct Frame {
     bool interrupt;
 };
 struct CacheOperation { int cache,scope;uae_u32 address;bool push,invalidate; };
+struct BusFault { BusRequest request;uae_u16 opcode;bool in_instruction; };
 struct Host {
     std::array<uae_u8, 65536> ram{};
     std::vector<Access> accesses;
@@ -101,6 +102,9 @@ struct Host {
     ResetHardware reset_hardware=nullptr;
     void *reset_opaque=nullptr;
     bool private_operations=false, service_resuming=false;
+    bool read_probe_exceptions=false, delivering_read_probe=false;
+    uae_u32 read_probe_next_pc=0;
+    std::optional<BusFault> bus_fault;
     std::optional<Service> service;
     unsigned exception_depth = 0;
     std::vector<Frame> frames;

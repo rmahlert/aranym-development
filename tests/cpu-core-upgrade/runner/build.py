@@ -295,6 +295,7 @@ def main():
                            ("platform-contract-tests", "platform-contract-test.cpp"),
                            ("ttr-tests", "ttr-test.cpp"),
                            ("cache-tests", "cache-test.cpp"),
+                           ("read-probe-tests", "read-probe-test.cpp"),
                            ("integer-runner", "main.cpp")]:
         command([cxx, *flags, HERE / driver, build / "libmodern040-integer.a", "-o", build / target])
     print(f"Runner: {len(selected)} generated families, {count} opcodes; {len(excluded)} families explicitly excluded", flush=True)
@@ -323,6 +324,10 @@ def main():
     result=subprocess.run([str(build / "cache-tests"),"--negative-selector"])
     if result.returncode!=1: raise RuntimeError(f"Cache checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-selector by actual cache checker",flush=True)
+    command([build / "read-probe-tests"])
+    result=subprocess.run([str(build / "read-probe-tests"),"--negative-pc"])
+    if result.returncode!=1: raise RuntimeError(f"Read-probe checker returned {result.returncode}, expected1")
+    print("REJECTED deliberate read-probe --negative-pc by actual frame checker",flush=True)
     result=subprocess.run([str(build / "bus-tests"),"--negative-fc"])
     if result.returncode!=1: raise RuntimeError(f"Bus checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-fc by actual bus checker",flush=True)

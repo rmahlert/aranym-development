@@ -50,7 +50,7 @@ void enter_exception(int nr, bool interrupt, unsigned level) {
     if (!host.deliver_exceptions) {
         stop(Exit::GuestException,nr,nr==3?last_fault_for_exception_3:regs.pc,nr==3?2:0,"terminal guest exception; frame delivery disabled");
     }
-    if (nr==2) stop(Exit::Unsupported,2,regs.mmu_fault_addr,0,"format7 access-fault continuation/writeback not integrated");
+    if (nr==2&&!host.delivering_read_probe) stop(Exit::Unsupported,2,regs.mmu_fault_addr,0,"format7 access-fault continuation/writeback not integrated");
     if (!interrupt&&nr>=48&&nr<=55) stop(Exit::Unsupported,nr,regs.pc,0,"floating-point arithmetic exception profile not integrated");
     if (host.exception_depth>=2) stop(Exit::DoubleFault,nr,regs.pc,0,"nested exception delivery limit");
     struct Depth {
@@ -85,6 +85,10 @@ void enter_exception(int nr, bool interrupt, unsigned level) {
         } else if (interrupt) {
             Exception_build_stack_frame(oldpc,current_pc,0,nr,0);
             stacked_pc=current_pc;
+        } else if(nr==2) {
+            stacked_pc=host.read_probe_next_pc;
+            Exception_build_stack_frame(oldpc,stacked_pc,regs.mmu_ssw,nr,7);
+            format=7;
         } else if (nr==3) {
             Exception_build_stack_frame(last_fault_for_exception_3,current_pc,0,nr,2);
             format=2; stacked_pc=current_pc;
@@ -97,7 +101,7 @@ void enter_exception(int nr, bool interrupt, unsigned level) {
         const auto frame_sr=uae_u16(format==1?(saved_sr|0x2000):nr==3&&(last_op_for_exception_3&0x10000)?last_sr_for_exception3:saved_sr);
         host.frames.push_back({nr,format,regs.regs[15],handler,stacked_pc,frame_sr,interrupt});
         if (handler&1) {
-            if (nr==3) stop(Exit::DoubleFault,nr,handler,2,"odd address-error vector");
+            if (nr==2||nr==3) stop(Exit::DoubleFault,nr,handler,2,"odd bus/address-error vector");
             complete_exception_trace(nr);
             exception3_notinstruction(regs.opcode,handler);
             return;
@@ -121,6 +125,7 @@ uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     }
     if(ok&&host.bus)ok=host.bus(host.bus_opaque,request(kind,address,size),value);
     if (!ok) {
+        host.bus_fault=BusFault{request(kind,address,size),regs.opcode,host.in_instruction};
         if (host.log_accesses) host.accesses.push_back({kind, address, size, 0, false});
         stop(Exit::MemoryFault, 2, address, size, "bus read/fetch fault; access-error continuation not integrated");
     }
@@ -149,7 +154,10 @@ void write(uae_u32 address, unsigned size, uae_u32 value) {
     }
     if(ok&&host.bus)ok=host.bus(host.bus_opaque,request(AccessKind::Write,address,size),value);
     if (host.log_accesses) host.accesses.push_back({AccessKind::Write, address, size, value, ok});
-    if (!ok) stop(Exit::MemoryFault, 2, address, size, "bus write fault; access-error continuation not integrated");
+    if (!ok) {
+        host.bus_fault=BusFault{request(AccessKind::Write,address,size),regs.opcode,host.in_instruction};
+        stop(Exit::MemoryFault, 2, address, size, "bus write fault; access-error continuation not integrated");
+    }
     if(!host.bus)poke(address, size, value);
 }
 void reset() {
@@ -302,10 +310,33 @@ Result run(std::uint64_t budget) {
         // Real MOVES helpers clear their transient flag only on normal return.
         // A host unwind must never leak alternate FC into the next boundary.
         ismoves_nommu=false;
-        if (event.result.exit==Exit::MemoryFault) host.access_fault_latched=true;
-        if (event.result.exit==Exit::DoubleFault) host.halted=true;
-        if (event.result.exit==Exit::Unsupported) host.capability_latched=true;
-        auto result = event.result; result.instructions = instructions; return result;
+        const auto terminal=[&](const Stop &stopped) {
+            if(stopped.result.exit==Exit::MemoryFault)host.access_fault_latched=true;
+            if(stopped.result.exit==Exit::DoubleFault)host.halted=true;
+            if(stopped.result.exit==Exit::Unsupported)host.capability_latched=true;
+            auto result=stopped.result;result.instructions=instructions;return result;
+        };
+        // Narrow firmware probe profile: the genuine pinned TST.B(An) body
+        // performs just this read before any flags/registers/PC change. There
+        // are no pending writes in this synchronous empty-cache interpreter.
+        // Full continuation/RTE7 remains blocked, including traced accesses.
+        if(event.result.exit==Exit::MemoryFault&&host.read_probe_exceptions&&host.deliver_exceptions&&host.bus_fault) {
+            const auto fault=*host.bus_fault;const auto &req=fault.request;
+            if(fault.in_instruction&&(fault.opcode&0xfff8)==0x4a10&&req.kind==AccessKind::Read&&req.size==1&&
+               !req.alternate_function_code&&!req.transfer_type&&req.address==regs.regs[8+(fault.opcode&7)]&&
+               regs.pc==regs.instruction_pc&&!regs.t0&&!regs.t1&&!(regs.spcflags&(SPCFLAG_TRACE|SPCFLAG_DOTRACE))) {
+                regs.mmu_fault_addr=req.address;regs.mmu_effective_addr=0;regs.mmu_ssw=uae_u16(0x0120|req.function_code);
+                regs.wb2_status=regs.wb3_status=0;regs.wb2_address=regs.wb3_data=0;
+                for(auto &word:mmu040_move16)word=0;
+                host.read_probe_next_pc=regs.instruction_pc+2;
+                struct Delivery {Delivery(){host.delivering_read_probe=true;}~Delivery(){host.delivering_read_probe=false;}} delivery;
+                try {
+                    Exception(2);
+                    return {Exit::Budget,instructions,2,event.result.instruction_pc,regs.pc,req.address,1,"delivered bounded TST.B(An) read-probe format7; RTE7 continuation unsupported"};
+                } catch(const Stop &nested){return terminal(nested);}
+            }
+        }
+        return terminal(event);
     }
 }
 const char *exit_name(Exit exit) {

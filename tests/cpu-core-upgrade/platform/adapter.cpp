@@ -73,6 +73,7 @@ void initialize() {
     checked(m040_reset(&options),"reset modern core");checked(m040_set_bus(memory,0),"attach original Atari physical bus");
     checked(m040_set_reset_handler([](void *){AtariReset();return 1;},0),"attach original Atari RESET hardware/NatFeat/input path");
     checked(m040_private_operations(1),"enable ARAnyM extension decoder");initialized=true;
+    checked(m040_read_probe_exceptions(1),"enable bounded trace-free TST.B(An) probe fault delivery");
     std::fprintf(stderr,"MODERN040_EXPERIMENTAL source=d82bc254 profile=integer-lc040-probes noMMU noJIT fault-restart=unsupported\n");
 }
 bool acceptable(const m040_result &result){return result.exit==M040_BUDGET||result.exit==M040_STOPPED||result.exit==M040_HOST_RETURN;}
@@ -110,6 +111,8 @@ void modern040_execute() {
     initialize();from_old();
     for(;;) {
         m040_result result;checked(m040_run(1,&result),"bounded modern dispatch");attempted+=result.instructions;to_old();
+        if(result.exit==M040_BUDGET&&result.vector==2)
+            std::fprintf(stderr,"MODERN040_PROBE_DELIVERED instruction=%08x fault=%08x handler=%08x\n",result.instruction_pc,result.address,result.current_pc);
         if(result.exit==M040_HOST_SERVICE)service(result);
         if(!acceptable(result))fail("modern dispatch unsupported",&result);
         if(result.exit==M040_HOST_RETURN||quit_program>0)return;

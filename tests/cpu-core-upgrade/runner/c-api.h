@@ -62,6 +62,8 @@ int m040_complete_service(struct m040_result *);
  * richer metadata and are rejected here; they originate through the bus/core.
  */
 int m040_exception(uint32_t vector, struct m040_result *);
+/* Narrow trace-free TST.B(An) failed-read delivery; generic RTE7 stays blocked. */
+int m040_read_probe_exceptions(int enabled);
 #ifdef __cplusplus
 }
 #endif

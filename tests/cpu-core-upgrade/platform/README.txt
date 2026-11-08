@@ -42,7 +42,7 @@ Actual backend contracts implemented:
   trace owns trace flags, avoiding a second old-core trace delivery.
 
 Current limits fail closed with MODERN040_UNSUPPORTED and controlled host exit3:
-format7/accessfault restart/writeback, remaining helpers/activeFPU/MMU/caches,
+generic format7/accessfault restart/writeback, remaining helpers/activeFPU/MMU,
 protected transparent-region enable, and nested guest EmulOp execution.
 This is an experimental attempt target, not full040/LC040 compatibility. Actual
 NF/IRQ/desktop behavior is not inferred merely because its callback compiles.
@@ -66,6 +66,13 @@ RAM-window/shutdown changes; original production checkout is untouched.
    stop on physical byte-read fault050fffff, TST.B(A0) at00e00cba, just beyond
    configured64MiB FastRAM. No fault restart/repeated reads are silently added.
    Read-probe frame delivery/discard recovery remains the next gate.
+5. Narrow trace-free TST.B(An) physical-read faults now deliver genuineformat7
+   for a guest discard-frame handler; generic RTE7/restart/writeback stays
+   blocked. Actual RAMprobe logs00e00cba/050fffff ->00e00cc0, then real
+   NF_BOOTSTRAP_ARGS/NF_BOOTSTRAP loads64994-byte NOETH.PRG at0100010c.
+   The30s bounded run times out124 after a VDI640x4801plane banner, without
+   expected NF_SHUTDOWN. This is partial progress, not successful completion;
+   guest flow/exception diagnostics are the next gate. See read-probe-validation.
 
 ROM SHA256 b723d04ae9912b8e5fdcb9bd2dffacb3d57968ab3e543b7ace5e687a04bef63b
 PRG SHA256 d2dc467e81e5cb6833b88f676a914341b5b902a270fa264dca31be709936e092

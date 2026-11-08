@@ -129,4 +129,9 @@ int m040_exception(uint32_t vector,m040_result *out) {
         result(event.result,*out);return M040_OK;}
     catch(...){return failed();}
 }
+int m040_read_probe_exceptions(int enabled) {
+    if(busy||modern040::host.service)return M040_BUSY;
+    if(enabled!=0&&enabled!=1)return M040_BAD_ARGUMENT;
+    modern040::host.read_probe_exceptions=enabled;return M040_OK;
+}
 }
