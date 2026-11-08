@@ -48,6 +48,7 @@ def main():
     parser.add_argument("--build-dir", type=Path, default=HERE / "build")
     parser.add_argument("--sanitize", action="store_true")
     parser.add_argument("--benchmark", action="store_true", help="record handler-only throughput; not emulator speed")
+    parser.add_argument("--compare-old", action="store_true", help="compare generated c7620462 handlers with exact per-case expectations")
     args = parser.parse_args()
     upstream = args.upstream.resolve()
     build = args.build_dir.resolve()
@@ -99,6 +100,10 @@ def main():
                   "commit_date": git(upstream, "show", "-s", "--format=%cI", "HEAD"),
                   "generator_inputs_sha256": {name: hashlib.sha256((upstream / name).read_bytes()).hexdigest()
                                                for name in inputs},
+                  "harness_sources_sha256": {name: hashlib.sha256((HERE / name).read_bytes()).hexdigest()
+                                             for name in ("adapter.hpp", "adapter.cpp", "bench.cpp", "test.cpp", "decode.cpp",
+                                                          "run.py", "legacy.py", "legacy.hpp", "host/sysdeps.h",
+                                                          "host/sysconfig.h", "host/tchar.h")},
                   "generated_cpuemu40_sha256": hashlib.sha256((build / "cpuemu_40.cpp").read_bytes()).hexdigest(),
                   "dispatch_table": "op_smalltbl_41 (fast direct 68040)",
                   "families": {f"{opcode:04x}": name for opcode, name in selected.items()},
@@ -115,7 +120,15 @@ def main():
              "-I" + str(HERE / "host"), "-I" + str(upstream / "include")]
     if args.sanitize:
         flags += ["-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"]
-    command([cxx, *flags, build / "handlers.cpp", HERE / "adapter.cpp", HERE / "test.cpp",
+    sources = [build / "handlers.cpp", HERE / "adapter.cpp"]
+    if args.compare_old:
+        import legacy
+        provenance["legacy"] = legacy.generate(cxx, upstream, build, dispatch)
+        (build / "legacy-provenance.json").write_text(json.dumps(provenance["legacy"], indent=2) + "\n")
+        (build / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
+        sources.append(build / "legacy-handlers.cpp")
+        flags.append("-DCOMPARE_LEGACY")
+    command([cxx, *flags, *sources, HERE / "test.cpp",
              "-o", build / "core-harness"])
     print(f"Pinned {PIN}; {len(functions)} handler families, {len(dispatch)} mapped opcodes", flush=True)
     command([build / "core-harness"])
@@ -124,11 +137,27 @@ def main():
         if result.returncode != 1:
             raise RuntimeError(f"Checker mutation {mutation} returned {result.returncode}, expected 1")
     print("PASS: all six deliberately corrupted snapshots rejected", flush=True)
+    if args.compare_old:
+        result = subprocess.run([str(build / "core-harness"), "--negative-backend"])
+        if result.returncode != 1:
+            raise RuntimeError(f"Executed legacy PC corruption returned {result.returncode}, expected rejection 1")
+        print("PASS: executed legacy PC corruption rejected by differential checker", flush=True)
     if args.benchmark:
         if args.sanitize:
             raise RuntimeError("Run performance measurements without sanitizer instrumentation")
-        command([cxx, *flags, build / "handlers.cpp", HERE / "adapter.cpp", HERE / "bench.cpp",
+        command([cxx, *flags, *sources, HERE / "bench.cpp",
                  "-o", build / "core-bench"])
+        if args.compare_old:
+            assembly = subprocess.check_output(["objdump", "-d", "-C", str(build / "core-bench")], text=True)
+            symbols = dict(re.findall(r"^[0-9a-f]+ <([^>]+)>:\n(.*?)(?=\n\n|\Z)", assembly, re.M | re.S))
+            audit = []
+            for symbol in ("legacy_op_5080_0(unsigned int)", "legacy_op_d180_0(unsigned int)",
+                           "op_5080_40_ff(unsigned int)", "op_d180_40_ff(unsigned int)"):
+                code = symbols[symbol]
+                if re.search(r"\b(?:callq?|jmpq?)\s", code):
+                    raise RuntimeError("Benchmark native arithmetic handler calls/jumps; audit before timing " + symbol)
+                audit += [symbol, code]
+            (build / "benchmark-native-handler-audit.txt").write_text("\n".join(audit))
         measurement = json.loads(subprocess.check_output([str(build / "core-bench")], text=True))
         measurement["provenance"] = provenance
         measurement["compile_flags"] = flags

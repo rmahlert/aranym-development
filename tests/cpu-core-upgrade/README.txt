@@ -21,6 +21,8 @@ From the ARAnyM source root:
   python3 tests/cpu-core-upgrade/run.py --upstream /absolute/path/to/WinUAE
   ASAN_OPTIONS=detect_leaks=0 python3 tests/cpu-core-upgrade/run.py --upstream /absolute/path/to/WinUAE --sanitize --build-dir tests/cpu-core-upgrade/build-sanitize
   python3 tests/cpu-core-upgrade/run.py --upstream /absolute/path/to/WinUAE --benchmark
+  python3 tests/cpu-core-upgrade/run.py --upstream /absolute/path/to/WinUAE --compare-old --benchmark --build-dir tests/cpu-core-upgrade/build-differential
+  ASAN_OPTIONS=detect_leaks=0 python3 tests/cpu-core-upgrade/run.py --upstream /absolute/path/to/WinUAE --compare-old --sanitize --build-dir tests/cpu-core-upgrade/build-differential-sanitize
 
 The sanitizer environment above disables LeakSanitizer only; the current sandbox
 prevents its process inspection. AddressSanitizer and UndefinedBehaviorSanitizer
@@ -54,7 +56,7 @@ Unselected instructions fail explicitly; they never silently execute as NOP.
 Meaningful first-stage coverage
 -------------------------------
 
-14,768 independent expected-state comparisons cover:
+14,769 independent expected-state comparisons cover:
  - MOVEQ all 256 immediate encodings and all eight destinations.
  - ADDQ all eight quick encodings/destinations and arithmetic boundary values.
  - ADDX/SUBX byte/word/long edge pairs with all 32 incoming CCR combinations,
@@ -93,11 +95,32 @@ or platform signals. The NatFeat test service is synthetic and does not establis
 ARAnyM callback compatibility. EmulOp/nested guest calls, FPU, JIT, full SR/memory
 banking, IRQ/event integration and real application boot are unsupported.
 
-No existing ARAnyM full-core differential run has been performed. Its baseline
-source in this isolated branch is c762046250551840d9c0f32c607713f71a05afa3. The old
-core is a useful regression reference, not an ISA correctness oracle. Follow-up
-integration must compare common guest bytes/state/accesses and resolve differences
-against independent expectations or hardware-backed tests.
+--compare-old extracts matching generator/decoder/header inputs with git show
+from c762046250551840d9c0f32c607713f71a05afa3, compiles its unmodified generator,
+and uses its actual resolved cpufunctbl. It verifies that its selected families
+cover exactly the same 2,770 opcodes. Bodies are extracted without alteration;
+legacy.hpp explicitly binds its memory/helpers and maps the fault_pc bookkeeping
+slot to the snapshot's instruction_pc slot. This is an adapter view, not proof
+that the production fields can be renamed or substituted.
+
+For each instruction checkpoint the checker runs modern and old handlers on
+identical guest bytes, registers, RAM, existing bus events and access-denial rules.
+Both must satisfy independent full snapshots. It restores modern state after
+checking the old result so the next checkpoint continues the same known program.
+14,761 checkpoints require strict full-snapshot equality; eight have individually
+specified, source-audited old/new outcomes. Four strict cases exercise the shared
+synthetic NatFeat stub rather than different generated CPU instructions. No
+blanket normalization or timing waiver hides the differences. See the exact
+audit in differential-validation-2026-11-08.txt and integration-boundary.txt.
+An additional negative run corrupts PC after actual legacy execution and must
+be rejected by the complete differential path, not only the snapshot comparator.
+
+This compares the bounded generated subset under matched adapters, not two full
+cores or their real interpreter/event loops. Legacy fixup metadata is present
+for generated code, but exception rollback/frames remain unimplemented. The old
+core is a regression reference, not an ISA correctness oracle. Differences on
+fault paths need full frame/restart validation before either behavior is chosen
+for integration.
 
 Timing and future system benchmarks
 ----------------------------------
@@ -112,6 +135,19 @@ JIT, emulator, boot, disk, desktop or HighWire performance. No speedup percentag
 is justified without equivalent old-core work under identical conditions.
 benchmark.json records raw samples, checksums, full pin/compiler/host provenance
 and actual compile flags. A dated initial result is retained alongside this file.
+
+With --compare-old, the benchmark warms up each backend, alternates order for
+seven pairs, and calls both native handler ABIs through the same templated loop.
+The legacy correctness adapter's void-to-u32 wrapper is deliberately bypassed:
+disassembly showed that wrapping ADDX could add an extra native call. Both hot
+native instruction bodies must pass an objdump gate rejecting nested calls/jumps
+before matched timing runs. The modern cycle return is unused; legacy uses its
+actual void ABI. No extra wrapper is timed. Both use the same register/flag/PC
+view, build flags, dispatch count, initialization and checksum expectations.
+The plain-C flag path is selected for both; production assembly flag macros and
+native PC pointers are not represented. GNU objdump is needed for this mode.
+Raw paired results are in differential-benchmark-2026-11-08.json; this workload
+showed essentially equal throughput and establishes no emulator performance gain.
 
 Once a complete optional core can boot, compare GEMBench (or an available Atari
 system benchmark) with the exact same version/hash, guest image/configuration,

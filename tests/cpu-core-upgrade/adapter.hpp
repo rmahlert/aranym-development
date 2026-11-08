@@ -56,6 +56,11 @@ extern Registers regs;
 extern Snapshot machine;
 using Handler = uae_u32 (*)(uae_u32);
 extern std::array<Handler, 65536> handlers;
+extern std::array<Handler, 65536> legacy_handlers;
+using LegacyHandler = void (*)(uae_u32);
+extern std::array<LegacyHandler, 65536> legacy_native_handlers;
+enum class Backend { Modern, Legacy };
+extern Snapshot before_instruction;
 inline constexpr unsigned imm8_table[] = {8, 1, 2, 3, 4, 5, 6, 7};
 inline constexpr unsigned areg_byteinc[] = {1, 1, 1, 1, 1, 1, 1, 2};
 #define m68k_dreg(state, index) ((state).r[(index)])
@@ -92,9 +97,11 @@ inline void check_t0_trace() { ++machine.trace_checks; }
 void exception3_read_prefetch(uae_u32 opcode, uae_u32 address);
 void exception3_read_prefetch_only(uae_u32 opcode, uae_u32 address);
 void install_generated_handlers();
+void install_legacy_handlers();
 void reset_machine();
 void poke(uae_u32 address, unsigned size, uae_u32 value);
 void deny_access(uae_u32 first, uae_u32 last, Kind kind);
-bool step();
+bool step(Backend backend = Backend::Modern);
 Snapshot snapshot();
+void restore(const Snapshot &state);
 std::string difference(const Snapshot &expected, const Snapshot &actual);

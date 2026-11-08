@@ -11,13 +11,43 @@
 
 namespace {
 unsigned checks = 0;
+unsigned matches = 0, audited_differences = 0;
+bool inject_legacy_pc_error = false;
 void require(bool condition, const std::string &message) {
     if (!condition) throw std::runtime_error(message);
 }
-void compare(const Snapshot &expected, const std::string &name) {
+void compare(const Snapshot &expected, const std::string &name,
+             const std::optional<Snapshot> &legacy_expected = std::nullopt) {
     ++checks;
-    const auto delta = difference(expected, snapshot());
+    const auto modern = snapshot();
+    const auto delta = difference(expected, modern);
     require(delta.empty(), name + ": " + delta);
+#ifdef COMPARE_LEGACY
+    const auto initial = before_instruction;
+    restore(initial);
+    step(Backend::Legacy);
+    if (inject_legacy_pc_error) regs.pc += 2;
+    const auto old = snapshot();
+    const auto &old_expected = legacy_expected ? *legacy_expected : expected;
+    const auto old_delta = difference(old_expected, old);
+    require(old_delta.empty(), name + " legacy expectation: " + old_delta);
+    if (difference(old_expected, expected).empty()) {
+        require(difference(old, modern).empty(), name + " old/modern differential");
+        ++matches;
+    } else {
+        ++audited_differences;
+        std::cout << "AUDITED " << name << ": PC=" << std::hex << modern.registers.pc
+                  << '/' << old.registers.pc << " cursor=" << modern.registers.instruction_pc
+                  << '/' << old.registers.instruction_pc << " A7=" << modern.registers.r[15]
+                  << '/' << old.registers.r[15] << std::dec << " fault="
+                  << (modern.fault ? modern.fault->vector : 0) << '/'
+                  << (old.fault ? old.fault->vector : 0) << " trace="
+                  << modern.trace_checks << '/' << old.trace_checks << " (modern/legacy)\n";
+    }
+    restore(modern);
+#else
+    (void)legacy_expected;
+#endif
 }
 void word(uae_u32 address, uae_u16 opcode) { poke(address, 2, opcode); }
 void expected_bytes(Snapshot &state, uae_u32 address, unsigned size, uae_u32 value) {
@@ -186,7 +216,9 @@ void test_big_endian_and_mmio() {
         }
         expected.registers.pc = pc + 2;
         require(step(), "memory/MMIO sequence faulted");
-        compare(expected, "big-endian RAM and exact read-sensitive MMIO exposure");
+        auto old_expected = expected;
+        if (i == 1) old_expected.registers.instruction_pc = pc + 2;
+        compare(expected, "big-endian RAM and exact read-sensitive MMIO exposure", old_expected);
     }
 }
 
@@ -206,7 +238,10 @@ void test_calls_and_trace() {
     expected.registers.pc = 0x200;
     expected.trace_checks = 1;
     require(step(), "JSR faulted");
-    compare(expected, "JSR exact return PC/stack/trace");
+    auto old_expected = expected;
+    old_expected.registers.instruction_pc = 0x200;
+    old_expected.trace_checks = 0; // Legacy T0 tracing belongs to its outer loop.
+    compare(expected, "JSR exact return PC/stack/trace", old_expected);
     fetch(expected, 0x200, 0x4e75);
     expected.accesses.push_back({Kind::Read, 0x7fc, 4, 0x102});
     expected.registers.r[15] = 0x800;
@@ -214,7 +249,9 @@ void test_calls_and_trace() {
     expected.registers.instruction_pc = 0x102;
     expected.trace_checks = 2;
     require(step(), "RTS faulted");
-    compare(expected, "RTS return PC/stack/trace");
+    old_expected = expected;
+    old_expected.trace_checks = 1; // Same initial snapshot, no legacy handler trace.
+    compare(expected, "RTS return PC/stack/trace", old_expected);
 }
 
 void test_control_faults() {
@@ -232,8 +269,19 @@ void test_control_faults() {
         const auto instruction_pc = opcode == 0x4e75 ? 0x201u : 0x100u;
         expected.registers.instruction_pc = instruction_pc;
         expected.fault = Fault{3, Kind::Fetch, 0x201, 2, instruction_pc, current_pc};
+        // The legacy generated handlers/helpers do not perform these immediate
+        // target-alignment checks. Assert their exact effects under the same
+        // synthetic bus, rather than pretending their exception behavior matches.
+        auto old_expected = expected;
+        old_expected.fault.reset();
+        old_expected.registers.pc = old_expected.registers.instruction_pc = 0x201;
+        if (opcode == 0x4e90) {
+            old_expected.registers.r[15] = 0x7fc;
+            old_expected.accesses.push_back({Kind::Write, 0x7fc, 4, 0x102});
+            expected_bytes(old_expected, 0x7fc, 4, 0x102);
+        } else if (opcode == 0x4e75) old_expected.registers.r[15] = 0x804;
         require(!step(), "odd control target must fault");
-        compare(expected, "generated JSR/JMP/RTS odd-target exception seam");
+        compare(expected, "generated JSR/JMP/RTS odd-target exception seam", old_expected);
     }
     for (uae_u32 address : {0xffffu, 0xffffffffu}) {
         reset_machine();
@@ -256,8 +304,27 @@ void test_control_faults() {
     expected.accesses.push_back({Kind::Write, 0x7fc, 4, 0x102, false});
     expected.registers.pc = 0x200;
     expected.fault = Fault{2, Kind::Write, 0x7fc, 4, 0x100, 0x200};
+    auto old_expected = expected;
+    old_expected.registers.pc = 0x100;
+    old_expected.fault->current_pc = 0x100;
     require(!step(), "JSR stack write must fault");
-    compare(expected, "JSR failed stack write does not decrement A7");
+    compare(expected, "JSR failed stack write does not decrement A7", old_expected);
+
+    reset_machine();
+    word(0x100, 0x2080); // MOVE.L D0,(A0), with a denied write.
+    regs.r[0] = 0x12345678;
+    regs.r[8] = 0x400;
+    deny_access(0x400, 0x403, Kind::Write);
+    expected = snapshot();
+    fetch(expected, 0x100, 0x2080);
+    move_flags(expected.registers, 0x12345678, 32);
+    expected.accesses.push_back({Kind::Write, 0x400, 4, 0x12345678, false});
+    expected.fault = Fault{2, Kind::Write, 0x400, 4, 0x100, 0x100};
+    old_expected = expected;
+    old_expected.registers.pc = old_expected.registers.instruction_pc = 0x102;
+    old_expected.fault->instruction_pc = old_expected.fault->current_pc = 0x102;
+    require(!step(), "MOVE stack write must fault");
+    compare(expected, "MOVE.L failed write PC/fault cursor ordering", old_expected);
 }
 
 void test_natfeat_seam() {
@@ -308,6 +375,21 @@ int negative_check(std::string_view mutation) {
 int main(int argc, char **argv) {
     try {
         install_generated_handlers();
+#ifdef COMPARE_LEGACY
+        install_legacy_handlers();
+        if (argc == 2 && std::string_view(argv[1]) == "--negative-backend") {
+            inject_legacy_pc_error = true;
+            try {
+                test_moveq();
+            } catch (const std::runtime_error &error) {
+                if (std::string_view(error.what()).find("legacy expectation: PC/instruction PC") == std::string_view::npos)
+                    throw;
+                std::cout << "REJECTED deliberate executed legacy PC corruption by differential checker\n";
+                return 1;
+            }
+            return 0; // Driver must reject unexpected acceptance of corrupted execution.
+        }
+#endif
         if (argc == 3 && std::string_view(argv[1]) == "--negative-check") return negative_check(argv[2]);
         require(argc == 1, "unknown arguments");
         test_moveq();
@@ -319,6 +401,10 @@ int main(int argc, char **argv) {
         test_control_faults();
         test_natfeat_seam();
         std::cout << "PASS: " << checks << " full architectural/bus snapshot comparisons\n";
+#ifdef COMPARE_LEGACY
+        std::cout << "PASS: " << checks << " legacy independent expectations; " << matches
+                  << " strict old/modern matches; " << audited_differences << " exact audited differences\n";
+#endif
         std::cout << "Scope: generated integer subset; synthetic host bus/fault/NatFeat seams; no MMU/FPU/JIT/frames\n";
         return 0;
     } catch (const std::exception &error) {

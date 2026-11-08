@@ -7,6 +7,9 @@
 Registers regs;
 Snapshot machine;
 std::array<Handler, 65536> handlers{};
+std::array<Handler, 65536> legacy_handlers{};
+std::array<LegacyHandler, 65536> legacy_native_handlers{};
+Snapshot before_instruction;
 namespace {
 struct StopAccess {};
 std::vector<std::tuple<uae_u32, uae_u32, Kind>> denied;
@@ -86,15 +89,16 @@ void poke(uae_u32 address, unsigned size, uae_u32 value) {
     }
 }
 void deny_access(uae_u32 first, uae_u32 last, Kind kind) { denied.emplace_back(first, last, kind); }
-bool step() {
+bool step(Backend backend) {
     if (machine.fault) throw std::logic_error("step after terminal synthetic fault");
+    if (backend == Backend::Modern) before_instruction = snapshot();
     regs.instruction_pc = regs.pc;
     try {
         if (regs.pc & 1) fault(3, Kind::Fetch, regs.pc, 2);
         const auto opcode = bus_read(Kind::Fetch, regs.pc, 2);
         if (opcode == 0x7300 || opcode == 0x7301) natfeat(opcode);
         else {
-            const auto handler = handlers[opcode];
+            const auto handler = backend == Backend::Modern ? handlers[opcode] : legacy_handlers[opcode];
             if (!handler) throw std::runtime_error("unsupported instruction " + std::to_string(opcode));
             handler(opcode);
         }
@@ -107,6 +111,10 @@ Snapshot snapshot() {
     auto result = machine;
     result.registers = regs;
     return result;
+}
+void restore(const Snapshot &state) {
+    machine = state;
+    regs = state.registers;
 }
 std::string difference(const Snapshot &expected, const Snapshot &actual) {
     if (expected.registers.r != actual.registers.r) return "D/A registers";
