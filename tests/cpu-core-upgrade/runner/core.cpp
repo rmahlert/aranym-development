@@ -6,6 +6,7 @@ State regs;
 Host host;
 bool ismoves_nommu=false;
 std::array<Handler, 65536> handlers{};
+std::array<PrivateHandler,65536> private_handlers{};
 std::array<bool, 65536> legal{};
 std::array<bool, 65536> requires_lc040_probes{};
 int movem_index1[256], movem_index2[256], movem_next[256];
@@ -181,9 +182,45 @@ void op_illg(uae_u32 opcode) { Exception((opcode & 0xf000)==0xa000?10:(opcode & 
 [[noreturn]] void unsupported_fpu_body() { stop(Exit::Unsupported,0,regs.pc,0,"active-FPU/arithmetic tail outside declared absent-LC040 probe profile"); }
 bool inject_interrupt(int vector, unsigned level) {
     if (vector<0||vector>255||level<1||level>7) throw std::invalid_argument("invalid architectural interrupt request");
-    if (level<=unsigned(regs.intmask)&&level!=7) return false;
+    if (host.service||(level<=unsigned(regs.intmask)&&level!=7)) return false;
     enter_exception(vector,true,level);
     return true;
+}
+namespace {
+void private_service(ServiceKind kind) {
+    if(host.service_resuming)return;
+    host.service=Service{kind,regs.opcode,regs.pc,regs.regs[15]+4,regs.s,regs.t1};
+    stop(Exit::HostService,0,regs.pc,2,"ARAnyM private instruction awaits external host service");
+}
+}
+void m68k_natfeat_id() { private_service(ServiceKind::NatFeatId); }
+void m68k_natfeat_call() { private_service(ServiceKind::NatFeatCall); }
+void m68k_emulop(uae_u32) { private_service(ServiceKind::EmulOp); }
+void m68k_emulop_return() {
+    private_service(ServiceKind::EmulOpReturn);
+    stop(Exit::HostReturn,0,regs.pc,2,"ARAnyM nested EmulOp return");
+}
+Result complete_service() {
+    if(!host.service)throw std::invalid_argument("no pending private host service");
+    const auto service=*host.service;
+    if(host.capability_latched||host.access_fault_latched||host.halted||regs.pc!=service.pc)
+        return {Exit::Unsupported,0,0,regs.instruction_pc,regs.pc,0,0,"cannot complete changed/unsafe private service context"};
+    struct Resume {
+        Resume(){host.service_resuming=host.in_instruction=true;}
+        ~Resume(){host.service_resuming=host.in_instruction=false;host.service.reset();}
+    } guard;
+    try {
+        // Resume the unchanged generated body at its side-effect-free helper:
+        // no opcode refetch/count and the genuine body performs PC advancement.
+        private_handlers[service.opcode](service.opcode);
+        if((regs.spcflags&SPCFLAG_DOTRACE)||service.trace)Exception(9);
+        return {Exit::Budget,0,0,regs.instruction_pc,regs.pc};
+    } catch(const Stop &event) {
+        if(event.result.exit==Exit::DoubleFault)host.halted=true;
+        if(event.result.exit==Exit::MemoryFault)host.access_fault_latched=true;
+        if(event.result.exit==Exit::Unsupported)host.capability_latched=true;
+        return event.result;
+    }
 }
 State architectural_state() {
     MakeSR();
@@ -199,6 +236,7 @@ Result run(std::uint64_t budget) {
         if (host.halted) return {Exit::DoubleFault,0,0,regs.instruction_pc,regs.pc,0,0,"halted until reset"};
         if (host.capability_latched) return {Exit::Unsupported,0,0,regs.instruction_pc,regs.pc,0,0,"unsupported capability requires reset before continuation"};
         if (host.access_fault_latched) return {Exit::Unsupported,0,2,regs.instruction_pc,regs.pc,0,0,"access-fault restart requires reset; continuation not integrated"};
+        if(host.service)return {Exit::HostService,0,0,regs.instruction_pc,regs.pc,0,0,"private service must complete before fetching another instruction"};
         if (regs.stopped) return {Exit::Stopped, 0};
         if (translation_enabled()) stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "cannot resume while unsupported MMU/translation is enabled");
         while (instructions < budget) {
@@ -213,7 +251,8 @@ Result run(std::uint64_t budget) {
             if(requires_lc040_probes[regs.opcode]&&!host.lc040_probes)
                 stop(Exit::Unsupported,0,regs.pc,2,"explicit LC040 probe profile required for recognized FPU opcodes");
             const auto handler = handlers[regs.opcode];
-            if (!handler) {
+            const auto private_handler=host.private_operations?private_handlers[regs.opcode]:nullptr;
+            if (!handler&&!private_handler) {
                 if (!legal[regs.opcode]) { op_illg(regs.opcode); continue; }
                 stop(Exit::Unsupported, 0, regs.pc, 2, "legal instruction excluded by current helper/profile inventory");
             }
@@ -223,7 +262,8 @@ Result run(std::uint64_t budget) {
                 Instruction() { host.in_instruction=true; }
                 ~Instruction() { host.in_instruction=false; }
             } instruction;
-            handler(regs.opcode);
+            if(private_handler)private_handler(regs.opcode);
+            else handler(regs.opcode);
             if (translation_enabled())
                 stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "MMU/transparent translation enabled by control write");
             if (regs.spcflags & SPCFLAG_DOTRACE) Exception(9);
@@ -247,6 +287,7 @@ const char *exit_name(Exit exit) {
     case Exit::GuestException: return "guest_exception"; case Exit::MemoryFault: return "memory_fault";
     case Exit::Unsupported: return "unsupported"; case Exit::UnsupportedMmu: return "unsupported_mmu";
     case Exit::Reset: return "reset"; case Exit::DoubleFault: return "double_fault";
+    case Exit::HostService:return "host_service";case Exit::HostReturn:return "host_return";
     }
     return "invalid";
 }

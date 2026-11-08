@@ -21,7 +21,7 @@ static int bus(void *opaque,const struct m040_bus_request *request,uint32_t *val
 }
 static int invalid_bus(void *opaque,const struct m040_bus_request *request,uint32_t *value) {(void)opaque;(void)request;(void)value;return -7;}
 int main(int argc,char **argv) {
-    struct m040_state state,copy;struct m040_result result;int accepted;struct device dev={{0},0,0};unsigned i;
+    struct m040_state state,copy;struct m040_result result;struct m040_service service;int accepted;struct device dev={{0},0,0};unsigned i;
     if(argc>2||(argc==2&&strcmp(argv[1],"--negative-state")))return 2;
     wrong_state=argc==2;
     expect(m040_reset(0)==M040_BAD_ARGUMENT,"null options rejected");
@@ -70,5 +70,14 @@ int main(int argc,char **argv) {
     expect(m040_run(1,&result)==M040_OK&&result.exit==M040_UNSUPPORTED_MMU&&result.instructions==0,"C ABI cannot silently execute unsupported MMU profile");
     for(i=0;i<sizeof(result.detail);++i)if(result.detail[i]==0)break;
     expect(i<sizeof(result.detail),"bounded terminated result detail");
+    expect(m040_reset(&options)==M040_OK&&m040_private_operations(1)==M040_OK&&m040_get_state(&state)==M040_OK,"C private platform extension opt-in");
+    state.regs[15]=state.isp=0x9000;expect(m040_set_state(&state)==M040_OK,"C service argument stack");word(0x100,0x7300);
+    expect(m040_run(10,&result)==M040_OK&&result.exit==M040_HOST_SERVICE&&result.instructions==1,"C runner suspends actual generated NatFeat body");
+    expect(m040_get_service(&service)==M040_OK&&service.kind==M040_NATFEAT_ID&&service.opcode==0x7300&&service.pc==0x100&&service.stack==0x9004&&service.supervisor,"C service metadata exposes real stack ABI");
+    expect(m040_private_operations(0)==M040_BUSY,"C cannot disable pending source continuation");
+    expect(m040_get_state(&state)==M040_OK,"C host can inspect pending registers");state.regs[0]=42;
+    expect(m040_set_state(&state)==M040_OK&&m040_complete_service(&result)==M040_OK&&result.exit==M040_BUDGET&&result.instructions==0,"C reply completes actual generated body without extra guest count");
+    expect(m040_get_state(&state)==M040_OK&&state.pc==0x102&&state.regs[0]==42&&state.sr==0x2700,"C service completion preserves expected PC/D0/SR");
+    expect(m040_complete_service(&result)==M040_BAD_ARGUMENT&&m040_get_service(&service)==M040_BAD_ARGUMENT,"C cannot complete same private call twice");
     printf("PASS: %u pure C integration ABI assertions\n",checks);return 0;
 }

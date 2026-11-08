@@ -47,6 +47,7 @@ int m040_set_state(const m040_state *in) {
     if(!in||in->abi_version!=M040_ABI_VERSION||in->stopped>2||in->sfc>7||in->dfc>7)return M040_BAD_ARGUMENT;
     const auto bank=!(in->sr&0x2000)?in->usp:(in->sr&0x1000)?in->msp:in->isp;
     if(in->regs[15]!=bank)return M040_BAD_ARGUMENT;
+    if(modern040::host.service&&in->pc!=modern040::host.service->pc)return M040_BAD_ARGUMENT;
     try{Boundary guard;auto &state=modern040::regs;
         // Set both old/new bank selectors before the real SR helper so it does
         // not replace the caller's already canonical active A7 with old state.
@@ -85,5 +86,22 @@ int m040_interrupt(uint32_t vector,uint32_t level,int *accepted,m040_result *out
         if(event.result.exit==modern040::Exit::Unsupported)modern040::host.capability_latched=true;
         result(event.result,*out);return M040_OK;}
     catch(...){return failed();}
+}
+int m040_private_operations(int enabled) {
+    if(busy||modern040::host.service)return M040_BUSY;
+    if(enabled!=0&&enabled!=1)return M040_BAD_ARGUMENT;
+    modern040::host.private_operations=enabled;return M040_OK;
+}
+int m040_get_service(m040_service *out) {
+    if(busy)return M040_BUSY;
+    if(!out||!modern040::host.service)return M040_BAD_ARGUMENT;
+    const auto &service=*modern040::host.service;
+    *out={M040_ABI_VERSION,uint32_t(service.kind),service.opcode,service.pc,service.stack,uint32_t(service.supervisor)};
+    return M040_OK;
+}
+int m040_complete_service(m040_result *out) {
+    if(busy)return M040_BUSY;
+    if(!out||!modern040::host.service)return M040_BAD_ARGUMENT;
+    try{Boundary guard;result(modern040::complete_service(),*out);return M040_OK;}catch(...){return failed();}
 }
 }

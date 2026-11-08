@@ -66,7 +66,9 @@ struct Access {
     bool operator==(const Access &) const = default;
 };
 enum class Exit { Budget, Stopped, GuestException, MemoryFault, Unsupported,
-                  UnsupportedMmu, Reset, DoubleFault };
+                  UnsupportedMmu, Reset, DoubleFault, HostService, HostReturn };
+enum class ServiceKind { NatFeatId=1, NatFeatCall, EmulOp, EmulOpReturn };
+struct Service { ServiceKind kind; uae_u16 opcode; uae_u32 pc, stack; bool supervisor, trace; };
 struct Result {
     Exit exit;
     std::uint64_t instructions = 0;
@@ -94,12 +96,22 @@ struct Host {
     bool lc040_probes = false, capability_latched = false;
     BusAccess bus = nullptr;
     void *bus_opaque = nullptr;
+    bool private_operations=false, service_resuming=false;
+    std::optional<Service> service;
     unsigned exception_depth = 0;
     std::vector<Frame> frames;
 };
 extern Host host;
 extern bool ismoves_nommu;
 using Handler = uae_u32 (*)(uae_u32);
+using PrivateHandler = void (*)(uae_u32);
+extern std::array<PrivateHandler,65536> private_handlers;
+void install_private_handlers();
+Result complete_service();
+void m68k_natfeat_id();
+void m68k_natfeat_call();
+void m68k_emulop(uae_u32);
+void m68k_emulop_return();
 extern std::array<Handler, 65536> handlers;
 extern std::array<bool, 65536> legal;
 extern std::array<bool, 65536> requires_lc040_probes;

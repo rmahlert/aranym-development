@@ -13,8 +13,10 @@ extern "C" {
 #define M040_BUSY -2
 #define M040_HOST_ERROR -3
 enum m040_exit { M040_BUDGET, M040_STOPPED, M040_GUEST_EXCEPTION, M040_MEMORY_FAULT,
-    M040_UNSUPPORTED, M040_UNSUPPORTED_MMU, M040_RESET, M040_DOUBLE_FAULT };
+    M040_UNSUPPORTED, M040_UNSUPPORTED_MMU, M040_RESET, M040_DOUBLE_FAULT,
+    M040_HOST_SERVICE, M040_HOST_RETURN };
 enum m040_access_kind { M040_FETCH, M040_READ, M040_WRITE };
+enum m040_service_kind { M040_NATFEAT_ID=1, M040_NATFEAT_CALL, M040_EMULOP, M040_EMULOP_RETURN };
 struct m040_options { uint32_t abi_version; uint32_t deliver_exceptions, lc040_probes, log_accesses; };
 struct m040_state {
     uint32_t abi_version;
@@ -37,6 +39,9 @@ struct m040_result {
     uint64_t instructions;
     char detail[192];
 };
+struct m040_service {
+    uint32_t abi_version, kind, opcode, pc, stack, supervisor;
+};
 int m040_reset(const struct m040_options *);
 int m040_get_state(struct m040_state *);
 /* Requires canonical active-bank/A7 consistency. Retains nonarchitectural
@@ -47,6 +52,9 @@ int m040_set_bus(m040_bus_callback, void *opaque);
 int m040_poke(uint32_t address, uint32_t size, uint32_t value);
 int m040_run(uint64_t budget, struct m040_result *);
 int m040_interrupt(uint32_t vector, uint32_t level, int *accepted, struct m040_result *);
+int m040_private_operations(int enabled);
+int m040_get_service(struct m040_service *);
+int m040_complete_service(struct m040_result *);
 #ifdef __cplusplus
 }
 #endif

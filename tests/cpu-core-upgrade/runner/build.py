@@ -130,6 +130,54 @@ def absent_fpu_helpers(source):
     return prefix,hashes
 
 
+def private_aranym_handlers(generated):
+    """Keep original generated extension bodies and their resolved decoder.
+
+    These are ARAnyM platform opcodes absent in public WinUAE's decoder, not
+    replacements for modern architecture instruction bodies.
+    """
+    target=generated/'legacy'
+    provenance=json.loads((generated/'legacy-provenance.json').read_text())
+    pin='c762046250551840d9c0f32c607713f71a05afa3'
+    if provenance['commit']!=pin:raise RuntimeError('Unexpected ARAnyM extension source pin')
+    for name,expected in provenance['source_sha256'].items():
+        data=(target/'source'/name).read_bytes()
+        if hashlib.sha256(data).hexdigest()!=expected:raise RuntimeError('Changed extension generator input '+name)
+        if data!=subprocess.check_output(['git','-C',str(HARNESS.parents[1]),'show',f'{pin}:src/uae_cpu/{name}']):
+            raise RuntimeError('Unpinned extension generator input '+name)
+    source=(target/'cpuemu.cpp').read_text()
+    if hashlib.sha256(source.encode()).hexdigest()!=provenance['generated_cpuemu_sha256']:
+        raise RuntimeError('Changed generated ARAnyM extension bodies')
+    table=(target/'cpufunctbl.cpp').read_text().split('#else\n',1)[0]
+    rows=re.findall(r'^\s*(?:CPUFUNC(?:_FF)?\((op_[0-9a-f]+_[0-9]+)\)|(op_illg_1)),? /\*',table,re.M)
+    if len(rows)!=65536:raise RuntimeError('Bad private resolved decoder')
+    names=('op_7100_0','op_7101_0','op_7300_0','op_7301_0')
+    text=['namespace private_aranym {','#define CPUFUNC(name) name','#define cpuop_begin() do {} while(0)',
+          '#define cpuop_end() do {} while(0)',
+          'static void Exception(int nr,uae_u32 oldpc) { if(oldpc) unsupported_frame(-1); modern040::Exception(nr); }']
+    hashes={}
+    for name in names:
+        match=re.search(r'^void REGPARAM2 CPUFUNC\('+name+r'\)\(uae_u32 opcode\) /\* [^\n]* \*/\n\{',source,re.M)
+        if not match:raise RuntimeError('Missing actual extension '+name)
+        end=match.end();depth=1
+        while depth:
+            if source[end]=='{':depth+=1
+            elif source[end]=='}':depth-=1
+            end+=1
+        body=source[match.start():end];text.append(body);hashes[name]=hashlib.sha256(body.encode()).hexdigest()
+    text+=['#undef cpuop_begin','#undef cpuop_end','#undef CPUFUNC','}',
+           'void install_private_handlers() { private_handlers.fill(nullptr);']
+    mappings=[]
+    for opcode,(name,_) in enumerate(rows):
+        if name in names:
+            text.append(f'private_handlers[0x{opcode:04x}]=private_aranym::{name};');mappings.append(opcode)
+    expected=list(range(0x7100,0x7200))+[0x7300,0x7301]
+    if mappings!=expected:raise RuntimeError('ARAnyM private mapping changed; audit before integration')
+    text.append('}')
+    return text,{'pin':pin,'body_sha256':hashes,'resolved_opcodes':len(mappings),
+                 'restriction':'unchanged generated private bodies; external service suspension/completion seam, no platform backend supplied'}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--upstream", required=True, type=Path)
@@ -166,6 +214,7 @@ def main():
         raise RuntimeError('Modified upstream no-FPU helper input')
     fpu_helpers,fpu_prefix_hashes=absent_fpu_helpers(fpu_source.decode())
     helper_text += fpu_helpers
+    private_text,private_provenance=private_aranym_handlers(generated)
     helper_hashes['fpp.cpp']=hashlib.sha256(fpu_source).hexdigest()
     tables = (generated / "cpustbl.cpp").read_text()
     table = tables.split("const struct cputbl op_smalltbl_41[] = {\n", 1)[1].split("\n{ 0 }};", 1)[0]
@@ -187,7 +236,7 @@ def main():
     body = ['// Mechanically extracted, unmodified pinned WinUAE/UAE generated bodies and helpers.',
             '// Copyright Bernd Schmidt and WinUAE/ARAnyM contributors; retain upstream licenses.',
             '#include "core.hpp"', '#include <cstdlib>', 'namespace modern040 {',
-            *helper_text, *functions.values(),
+            *helper_text, *functions.values(), *private_text,
             f'extern const unsigned supported_families = {len(selected)};',
             'struct Dispatch { uae_u16 opcode; Handler handler; bool lc040_probe; };',
             'static const Dispatch dispatch[] = {']
@@ -202,6 +251,7 @@ def main():
     body += ['};', 'void install_handlers() {',
              'handlers.fill(nullptr); legal.fill(false); requires_lc040_probes.fill(false);',
              'for (const auto &entry : dispatch) { legal[entry.opcode] = true; handlers[entry.opcode] = entry.handler; requires_lc040_probes[entry.opcode]=entry.lc040_probe; }',
+             'install_private_handlers();',
              '}', f'extern const unsigned supported_opcodes = {count};', '}']
     (build / "integer.cpp").write_text("\n".join(body) + "\n")
     provenance["runner"] = {"supported_families": len(selected), "supported_opcodes": count,
@@ -212,6 +262,7 @@ def main():
                                               "retained_case_sha256": frame_hashes},
                             "lc040_probes": {"families":len(probe_families),"restriction":"real no-FPU chain; FSAVE/FRESTORE prefixes stop at guard; active arithmetic excluded",
                                              "retained_prefix_sha256":fpu_prefix_hashes},
+                            "private_aranym":private_provenance,
                             "profile": "68040 integer, no MMU/JIT/arithmeticFPU, flat RAM or explicit bus callback, gated LC040 probes and real frame delivery"}
     (build / "runner-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     flags = ["-std=c++20", "-O1" if args.sanitize else "-O2", "-g", "-fwrapv", "-DFPUEMU",
@@ -232,6 +283,7 @@ def main():
     for target, driver in [("runner-tests", "test.cpp"), ("frame-tests", "frame-test.cpp"),
                            ("lc040-probe-tests", "lc040-test.cpp"), ("integer-helper-tests", "integer-helper-test.cpp"),
                            ("bus-tests", "bus-test.cpp"),
+                           ("service-tests", "service-test.cpp"),
                            ("integer-runner", "main.cpp")]:
         command([cxx, *flags, HERE / driver, build / "libmodern040-integer.a", "-o", build / target])
     print(f"Runner: {len(selected)} generated families, {count} opcodes; {len(excluded)} families explicitly excluded", flush=True)
@@ -247,6 +299,10 @@ def main():
     result=subprocess.run([str(build / "c-api-tests"),"--negative-state"])
     if result.returncode!=1: raise RuntimeError(f"C ABI checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-state by actual C ABI checker",flush=True)
+    command([build / "service-tests"])
+    result=subprocess.run([str(build / "service-tests"),"--negative-pc"])
+    if result.returncode!=1: raise RuntimeError(f"Private service checker returned {result.returncode}, expected1")
+    print("REJECTED deliberate --negative-pc by actual private service checker",flush=True)
     result=subprocess.run([str(build / "bus-tests"),"--negative-fc"])
     if result.returncode!=1: raise RuntimeError(f"Bus checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-fc by actual bus checker",flush=True)

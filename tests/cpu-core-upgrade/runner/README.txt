@@ -89,10 +89,17 @@ see bus-validation.txt for callback guarantees and remaining integration.
 
 Experimental c-api.h offers plain C integer/SR/bank/control snapshots, bus
 registration, bounded run and explicit IRQ results. A pure C11 caller executes
-the real library and passes80 normal+ASan/UBSan assertions and an actual negative
+the real library and passes90 normal+ASan/UBSan assertions and an actual negative
 state expectation. This avoids mixing original and modern UAE header/global
 types in an eventual platform adapter. It is single-instance/serialized, rejects
 callback reentry and contains host exceptions; see c-api-validation.txt.
+
+Actual ARAnyM private generated bodies/decoder from immutable c7620462 are
+separately imported for7100/71xx/7300/7301, under explicit opt-in. Typed service
+suspension and same-body completion preserve genuine privilege/PC semantics,
+without another fetch/instruction count.10248 normal+ASan assertions and a real
+wrong-PC negative pass. Host replies are mocked; actual NF/EmulOp and nested
+guest execution still need the platform adapter. See service-validation.txt.
 
 Source/generated function bodies and selected upstream helpers are extracted
 mechanically without replacement instruction code. Provenance includes source
