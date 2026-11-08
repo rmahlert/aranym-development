@@ -12,6 +12,7 @@
 #define REGPARAM2
 #define REGPARAM3
 #define REGPARAM
+#define UVAL64(value) value##ULL
 namespace modern040 {
 struct State {
     uae_u32 regs[16]{};
@@ -37,7 +38,7 @@ struct State {
 struct Preferences {
     const int cpu_model = 68040, mmu_model = 0, fpu_model = 0, cachesize = 0;
     const int fpu_revision = 0;
-    const bool compfpu = false;
+    const bool compfpu = false, int_no_unimplemented = false;
 };
 inline constexpr Preferences currprefs;
 inline constexpr bool m68k_accurate_ipl = false;
@@ -136,6 +137,9 @@ inline uae_u32 get_long(uae_u32 a) { return get_long_jit(a); }
 inline void put_byte_jit(uae_u32 a, uae_u32 v) { write(a, 1, v); }
 inline void put_word_jit(uae_u32 a, uae_u32 v) { write(a, 2, v); }
 inline void put_long_jit(uae_u32 a, uae_u32 v) { write(a, 4, v); }
+inline void put_byte(uae_u32 a, uae_u32 v) { put_byte_jit(a,v); }
+inline void put_word(uae_u32 a, uae_u32 v) { put_word_jit(a,v); }
+inline void put_long(uae_u32 a, uae_u32 v) { put_long_jit(a,v); }
 inline uae_u32 get_dibyte(int offset) { return read(AccessKind::Fetch, regs.pc + offset + 1, 1); }
 inline uae_u32 get_diword(int offset) { return read(AccessKind::Fetch, regs.pc + offset, 2); }
 inline uae_u32 get_dilong(int offset) { return read(AccessKind::Fetch, regs.pc + offset, 4); }
@@ -162,6 +166,7 @@ void m68k_setstopped(int);
 void do_cycles_stop(int);
 void resume_stopped();
 void Exception(int);
+void ExceptionL(int, uae_u32);
 void Exception_cpu_oldpc(int, uae_u32);
 void ExceptionX(int, uae_u32, uae_u32);
 void complete_exception_trace(int);

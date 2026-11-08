@@ -14,8 +14,8 @@ Outputs: libmodern040-integer.a, runner-tests, integer-runner and a provenance/
 coverage inventory under an ignored build directory. No production target,
 configure setting, installed emulator or guest image is changed.
 
-The fast040 table now binds 1,651 unchanged generated families /45,384 opcode
-encodings. Another216 families are explicitly excluded with missing-helper names
+The fast040 table now binds 1,786 unchanged generated families /47,486 opcode
+encodings. Another81 families are explicitly excluded with missing-helper names
 in runner-provenance.json. Compiled coverage does not mean every encoding has
 been validated. Real pinned helpers include MakeSR/MakeFromSR_x and its wrappers,
 MOVEC model/mask handling, brief/full020 effective address calculation, portable
@@ -69,6 +69,14 @@ paths, legal effective addresses, privilege ordering, format4 nextPC/EA/faultPC,
 actual RTE4 and an EmuTOS-shaped probe/recovery sequence. Two negative controls
 reject wrong frame format and an added operand read after absence. Both normal
 and ASan/UBSan builds pass. See lc040-validation.txt for the exact subset.
+
+Integer-helper stage adds72,815 assertions using independent bitstream and
+wide-arithmetic oracles through actual generated dispatch: all32 bitfield widths,
+signed offsets, dynamic widths, outside-field preservation, five-byte bus order
+and faults; word/long divide zero/overflow/remainder,32/64-bit multiply, aliased
+result registers, CHK/CHK2 and genuine divide-fault format2/RTE recovery.
+Normal and ASan/UBSan pass; an actual corrupted expected-register negative is
+rejected. See integer-helper-validation.txt for exact source and scope.
 
 Source/generated function bodies and selected upstream helpers are extracted
 mechanically without replacement instruction code. Provenance includes source

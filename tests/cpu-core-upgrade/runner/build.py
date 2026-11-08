@@ -25,14 +25,19 @@ CALLS = set("""if while for switch sizeof
     m68k_movec2 m68k_setstopped do_cycles_stop checkint m68k_do_rts m68k_do_bsr
     exception3_read_prefetch exception3_read_prefetch_only
     exception3_read_prefetch_68040bug branch_stack_push branch_stack_pop_rts
-    branch_stack_pop_rte fpuop_bcc fpuop_save fpuop_restore""".split())
+    branch_stack_pop_rte fpuop_bcc fpuop_save fpuop_restore get_bitfield
+    put_bitfield divbyzero_special setdivuflags setdivsflags setchkundefinedflags
+    setchk2undefinedflags m68k_mull m68k_divl op_unimpl""".split())
 HELPERS = {
     "newcpu.cpp": ["activate_trace", "MakeSR", "MakeFromSR_x", "MakeFromSR_T0",
                    "MakeFromSR", "MakeFromSR_STOP", "check_t0_trace", "internalexception", "exception_check_trace",
-                   "Exception_cpu_oldpc", "Exception", "exception3f", "exception3_notinstruction",
+                   "Exception_cpu_oldpc", "Exception", "ExceptionL", "op_unimpl", "exception3f", "exception3_notinstruction",
                    "exception3_read_prefetch_only", "exception3_read_prefetch", "exception3_read_prefetch_68040bug"],
     "newcpu_common.cpp": ["movec_illg", "m68k_move2c", "m68k_movec2", "get_disp_ea_020", "exception_pc",
-                          "Exception_build_stack_frame_common"],
+                          "Exception_build_stack_frame_common", "get_bitfield", "put_bitfield",
+                          "divbyzero_special", "setdivuflags", "setdivsflags", "setchkundefinedflags",
+                          "chk2_sub_wrap", "setchk2undefinedflags", "divsl_overflow", "divul_overflow",
+                          "divsl_divbyzero", "divul_divbyzero", "m68k_divl", "m68k_mull"],
     "od-unix/machdep/m68k.h": ["cctrue"],
 }
 
@@ -217,12 +222,17 @@ def main():
         objects.append(obj)
     command(["ar", "rcs", build / "libmodern040-integer.a", *objects])
     for target, driver in [("runner-tests", "test.cpp"), ("frame-tests", "frame-test.cpp"),
-                           ("lc040-probe-tests", "lc040-test.cpp"), ("integer-runner", "main.cpp")]:
+                           ("lc040-probe-tests", "lc040-test.cpp"), ("integer-helper-tests", "integer-helper-test.cpp"),
+                           ("integer-runner", "main.cpp")]:
         command([cxx, *flags, HERE / driver, build / "libmodern040-integer.a", "-o", build / target])
     print(f"Runner: {len(selected)} generated families, {count} opcodes; {len(excluded)} families explicitly excluded", flush=True)
     command([build / "runner-tests"])
     command([build / "frame-tests"])
     command([build / "lc040-probe-tests"])
+    command([build / "integer-helper-tests"])
+    result=subprocess.run([str(build / "integer-helper-tests"),"--negative-bitfield"])
+    if result.returncode!=1: raise RuntimeError(f"Integer checker returned {result.returncode}, expected1")
+    print("REJECTED deliberate --negative-bitfield by actual integer checker",flush=True)
     for mode in ("--negative-format", "--negative-read"):
         result=subprocess.run([str(build / "lc040-probe-tests"),mode])
         if result.returncode!=1: raise RuntimeError(f"LC040 checker {mode} returned {result.returncode}, expected1")
