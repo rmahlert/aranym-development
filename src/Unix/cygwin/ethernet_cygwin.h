@@ -21,10 +21,12 @@ class WinTapEthernetHandler : public ETHERNETDriver::Handler {
 	OVERLAPPED write_overlapped;
 	HANDLE device_handle;
 	char *device;
-	char *iface;
+	bool media_connected;
+	bool read_pending;
+	bool write_pending;
 
-	int device_total_in;
-	int device_total_out;
+	unsigned long long device_total_in;
+	unsigned long long device_total_out;
 
 public:
 	WinTapEthernetHandler(int eth_idx);

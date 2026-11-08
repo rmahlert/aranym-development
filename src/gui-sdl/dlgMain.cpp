@@ -46,6 +46,8 @@
 	extern void refreshMenuKeys();
 #endif
 
+static char active_config[75];
+
 /* The main dialog: */
 #define SDLGUI_INCLUDE_MAINDLG
 #include "sdlgui.sdl"
@@ -101,6 +103,14 @@ DlgMain::DlgMain(SGOBJ *dlg)
 	// if no bootOs available then disable the Reboot button
 	setState(WARMREBOOT, SG_DISABLED, bootOs == NULL);
 	setState(COLDREBOOT, SG_DISABLED, bootOs == NULL);
+}
+
+void DlgMain::init(void)
+{
+	char *filename = (char *)getConfigFile();
+	strcpy(active_config, "Config: ");
+	File_ShrinkName(active_config + 8, filename, sizeof(active_config) - 9);
+	Dialog::init();
 }
 
 DlgMain::~DlgMain()
@@ -255,6 +265,8 @@ void DlgMain::processResult(void)
 					unsigned long old_fixed_memory_offset = fixed_memory_offset;
 #endif
 					bool ret = loadSettings(path);
+					if (ret)
+						setConfigFile(path);
 					if (ret && (FastRAMSize != old_FastRAMSize
 #if FIXED_ADDRESSING
 						|| fixed_memory_offset != old_fixed_memory_offset
@@ -280,7 +292,11 @@ void DlgMain::processResult(void)
 			if (dlgFileSelect) {
 				/* Save setting if pressed OK in fileselector */
 				if (dlgFileSelect->pressedOk()) {
-					saveSettings(path);
+					char previous_config[1024];
+					safe_strncpy(previous_config, getConfigFile(), sizeof(previous_config));
+					setConfigFile(path);
+					if (!saveSettings(path))
+						setConfigFile(previous_config);
 				}
 			}
 			break;

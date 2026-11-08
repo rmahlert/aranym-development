@@ -142,7 +142,12 @@ Function un.InstallLog
     ${Case} "DIR"
       RMDir $R0
     ${Case} "FIL"
-      Delete $R0
+      ; Older installers logged the user-editable data-directory config.
+      ; Retain it even when its entry is still in an upgrade's old log.
+      ${If} $R0 != "$INSTDIR\aranym\config"
+      ${AndIf} $R0 != "$PROFILE\aranym\config"
+        Delete $R0
+      ${EndIf}
     ${Case} "KEY"
       ${WordFind} $R0 " " "+1{" $R3
       ${WordFind} $R0 " " "+1}" $R0

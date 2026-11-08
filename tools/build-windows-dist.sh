@@ -16,6 +16,10 @@
 #   OUTPUT_DIR       where to write the packages (default dist/windows)
 #   VERSION_SUFFIX   appended to the package name (default -unofficial)
 #   STRIP            cross strip tool (derived from MINGW_TOOL_PREFIX)
+#   FVDI_UPDATE_ZIP  checked fVDI update archive and corresponding sources
+#   INSTALLER_ONLY   set to 1 to build only the setup executable
+#   EASY_DATA_VERSION versioned user data directory for optional Atari drives
+#   ATARI_TAP_SETUP_ZIP optional shared TAP setup kit, with matching .sha256
 
 set -eu
 
@@ -47,6 +51,13 @@ if ! grep -Eq '^[[:space:]]*#define[[:space:]]+ETHERNET_SUPPORT[[:space:]]+1([[:
 	echo "$0: $exe has SLIRP but the NatFeat Ethernet device is disabled" >&2
 	echo "$0: refusing to package a build that the MiNTNet driver cannot use" >&2
 	exit 1
+fi
+# EasyMiNT starts NFJPEG.PRG during boot. Without the host service that
+# program stops at a key prompt instead of reaching the desktop unattended.
+if test -n "${EASYARAMINT_DIR:-}" && test -f "$EASYARAMINT_DIR/config" &&
+    ! grep -Eq '^[[:space:]]*#define[[:space:]]+NFJPEG_SUPPORT([[:space:]]|$)' "$config_header"; then
+    echo "$0: EasyMiNT requires a Windows build with NatFeat JPEG support" >&2
+    exit 1
 fi
 package_objdump=${OBJDUMP:-${MINGW_TOOL_PREFIX:-x86_64-w64-mingw32}-objdump}
 if ! type "$package_objdump" > /dev/null 2>&1; then
@@ -116,6 +127,21 @@ for f in nfeth.xif nfeth-config netsetup.prg eth0-config.sh README-setup.txt; do
 	cp -a "$root/data/network/$f" "$stage/aranym/network/$f"
 done
 
+if test -n "${FVDI_UPDATE_ZIP:-}"; then
+    python3 "$root/tools/stage-fvdi-update.py" "$FVDI_UPDATE_ZIP" "$stage/fvdi"
+fi
+
+if test -d "$MINGW_ROOT/share/licenses/libjpeg-turbo"; then
+    mkdir -p "$stage/LICENSES"
+    cp -a "$MINGW_ROOT/share/licenses/libjpeg-turbo" "$stage/LICENSES/"
+fi
+
+tap_define=
+if test -n "${ATARI_TAP_SETUP_ZIP:-}"; then
+    python3 "$root/tools/stage-tap-setup.py" "$ATARI_TAP_SETUP_ZIP" "$stage/aranym/network"
+    tap_define=-DTAP_SETUP
+fi
+
 easy_define=
 if test -n "${EASYARAMINT_DIR:-}" && test -f "$EASYARAMINT_DIR/config"; then
 	echo "including EasyARAnyM drives from $EASYARAMINT_DIR"
@@ -131,18 +157,21 @@ fi
 # in so they do not end up installed on the target machine.
 (
 	cd "$stage"
-	find . -type d | sed -e 's|^./\(.*\)$|${CreateDirectory} "$INSTDIR\\\1"|' -e '/^\.$/d' | tr '/' '\\' > aranym.files
-	find . -type f ! -name aranym.files ! -path './aranym/emutos-aranym.img' |
+	find . -path './aranym/atari' -prune -o -type d -print | sed -e 's|^./\(.*\)$|${CreateDirectory} "$INSTDIR\\\1"|' -e '/^\.$/d' | tr '/' '\\' > aranym.files
+	find . -path './aranym/atari' -prune -o -type f ! -name aranym.files ! -path './aranym/emutos-aranym.img' ! -path './aranym/config' -print |
 		sed -e 's|^./\(.*\)$|${File} "\1"|' | tr '/' '\\' >> aranym.files
 )
 
 mkdir -p "$OUTPUT_DIR"
 
+if test "${INSTALLER_ONLY:-0}" != 1; then
 echo "creating zip"
 # zip adds to an existing archive rather than replacing it, which would
 # silently merge a previous release into this one.
 package_zip="$work/$name.zip"
 ( cd "$work" && zip -qr "$package_zip" "$name" -x "$name/aranym.files" )
+
+fi
 
 echo "creating installer"
 cp "$root/tools/aranym.nsi" "$stage/aranym.nsi"
@@ -152,13 +181,17 @@ done
 ( cd "$stage" && makensis -V2 -NOCD \
 	-DVER_MAJOR="$major" -DVER_MINOR="$minor" -DVER_MICRO="$micro" \
 	$easy_define \
+    $tap_define \
+    -DEASY_DATA_VERSION="${EASY_DATA_VERSION:-EasyMiNT}" \
 	-DOUTFILE="$work/$name-setup.exe" \
 	aranym.nsi )
 
 # Publish only after both artifacts have been built successfully.
-cp "$package_zip" "$OUTPUT_DIR/$name.zip"
+if test "${INSTALLER_ONLY:-0}" != 1; then
+  cp "$package_zip" "$OUTPUT_DIR/$name.zip"
+fi
 cp "$work/$name-setup.exe" "$OUTPUT_DIR/$name-setup.exe"
 
 echo
-echo "$OUTPUT_DIR/$name.zip"
+if test "${INSTALLER_ONLY:-0}" != 1; then echo "$OUTPUT_DIR/$name.zip"; fi
 echo "$OUTPUT_DIR/$name-setup.exe"

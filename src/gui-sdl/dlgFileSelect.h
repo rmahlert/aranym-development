@@ -29,7 +29,7 @@ class DlgFileSelect: public Dialog
 		char *path_and_name;
 
 		char file_path[MAX_FILENAME_LENGTH];
-		char file_fname[128];
+		char file_fname[MAX_FILENAME_LENGTH];
 
 		/* Do we have to reload the directory file list? */
 		bool reloaddir;
@@ -40,7 +40,7 @@ class DlgFileSelect: public Dialog
 		int selection, ypos;
 		bool eol, pressed_ok, redraw;
 
-		void confirm(void);
+		bool confirm(void);
  		void idle(void);
  		void processResult(void);
 		void refreshEntries(void);
