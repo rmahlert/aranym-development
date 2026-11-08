@@ -36,7 +36,7 @@ legacy_op_5080_0(unsigned int)
     7f02:	c3                   	ret
     7f03:	66 90                	xchg   %ax,%ax
     7f05:	66 66 2e 0f 1f 84 00 	data16 cs nopw 0x0(%rax,%rax,1)
-    7f0c:	00 00 00 00 
+    7f0c:	00 00 00 00
 legacy_op_d180_0(unsigned int)
     8220:	f3 0f 1e fa          	endbr64
     8224:	89 f8                	mov    %edi,%eax
@@ -82,7 +82,7 @@ legacy_op_d180_0(unsigned int)
     82b0:	c3                   	ret
     82b1:	0f 1f 40 00          	nopl   0x0(%rax)
     82b5:	66 66 2e 0f 1f 84 00 	data16 cs nopw 0x0(%rax,%rax,1)
-    82bc:	00 00 00 00 
+    82bc:	00 00 00 00
 op_5080_40_ff(unsigned int)
     30a0:	f3 0f 1e fa          	endbr64
     30a4:	89 f8                	mov    %edi,%eax
@@ -121,7 +121,7 @@ op_5080_40_ff(unsigned int)
     3112:	31 c0                	xor    %eax,%eax
     3114:	c3                   	ret
     3115:	66 66 2e 0f 1f 84 00 	data16 cs nopw 0x0(%rax,%rax,1)
-    311c:	00 00 00 00 
+    311c:	00 00 00 00
 op_d180_40_ff(unsigned int)
     3440:	f3 0f 1e fa          	endbr64
     3444:	89 f8                	mov    %edi,%eax
@@ -168,4 +168,4 @@ op_d180_40_ff(unsigned int)
     34d2:	c3                   	ret
     34d3:	66 90                	xchg   %ax,%ax
     34d5:	66 66 2e 0f 1f 84 00 	data16 cs nopw 0x0(%rax,%rax,1)
-    34dc:	00 00 00 00 
+    34dc:	00 00 00 00
