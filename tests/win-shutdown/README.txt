@@ -38,3 +38,17 @@ These tests establish a host-thread shutdown defect independently of the old
 MiNT shutdown menu mode. The owner's full Windows guest still needs a matched
 same-action test before claiming that all reported shutdown behavior is fixed.
 No debugger, injected DLL, forced production close, or kernel change is used.
+
+Full MiNT integration regression:
+Build mint-poweroff-guest.c with the same compiler/options and -lgem. On a
+restored DISPOSABLE EasyMiNT snapshot, hold the fVDI core/driver/config and
+NVDI/XBoot selections fixed, and replace only that snapshot's desktop shell
+application with this test. It registers as an AES client, ensures ETHERNET
+receiver0 is active, and invokes GEMDOS Shutdown(0). It does not call the
+host-shutdown NatFeat directly. Never install it as the owner's desktop.
+
+Compare emulator executables, restoring the identical modified snapshot
+between arms. Both should show the test marker and kernel close/sync/unmount/
+final-sync messages. In the reproduced old build the host remains alive;
+with the cancellation repair it exits0. This tests actual MiNT poweroff with
+an active receiver, not which option an owner selected inside shutdown.app.
