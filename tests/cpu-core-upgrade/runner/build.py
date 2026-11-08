@@ -25,7 +25,7 @@ CALLS = set("""if while for switch sizeof
     m68k_movec2 m68k_setstopped do_cycles_stop checkint m68k_do_rts m68k_do_bsr
     exception3_read_prefetch exception3_read_prefetch_only
     exception3_read_prefetch_68040bug branch_stack_push branch_stack_pop_rts
-    branch_stack_pop_rte""".split())
+    branch_stack_pop_rte fpuop_bcc fpuop_save fpuop_restore""".split())
 HELPERS = {
     "newcpu.cpp": ["activate_trace", "MakeSR", "MakeFromSR_x", "MakeFromSR_T0",
                    "MakeFromSR", "MakeFromSR_STOP", "check_t0_trace", "internalexception", "exception_check_trace",
@@ -37,12 +37,12 @@ HELPERS = {
 }
 
 
-def extract(source, name):
+def extract(source, name, occurrence=None):
     pattern = r"^.*\b" + re.escape(name) + r"\s*\([^;\n]*\)\n\{"
     matches = list(re.finditer(pattern, source, re.M))
-    if len(matches) != 1:
+    if occurrence is None and len(matches) != 1:
         raise RuntimeError(f"Expected one function {name}, found {len(matches)}")
-    match = matches[0]
+    match = matches[0 if occurrence is None else occurrence]
     depth, pos, mode = 1, match.end(), "code"
     while depth:
         if pos == len(source): raise RuntimeError("Unclosed function " + name)
@@ -88,6 +88,39 @@ def frame_builder_040(source):
     return full[:begin]+''.join(selected)+"\tdefault: unsupported_frame(format);"+full[footer:], hashes
 
 
+def absent_fpu_helpers(source):
+    """Real source no-FPU chain + exact EA/decode prefixes for FSAVE/FRESTORE.
+
+    Tail slicing is explicit: only code through fault_if_no_fpu is retained;
+    reaching an active-FPU tail fails closed. No FPU arithmetic is synthesized.
+    """
+    prefix = ['namespace absent_fpu {',
+              'static bool support_exceptions=false, fpu_mmu_fixup=false;',
+              'static int warned=0;',
+              'struct Fixup { int reg=-1; uae_u32 value=0; }; static Fixup mmufixup[1];',
+              'static int fpp_cond(uae_u32) { unsupported_fpu_body(); }']
+    # These are exactly the upstream non-cycle-exact empty timing functions.
+    prefix += [extract(source,'fpu_timing_begin',-1),extract(source,'fpu_timing_cond',-1)]
+    for name in ('jit_fpu','fp_exception_pending','fp_unimp_instruction_exception_pending',
+                 'fpu_op_illg','if_no_fpu','fault_if_no_fpu','fault_if_no_6888x',
+                 'get_fpu_version','get_fp_ad','maybe_idle_state','fpuop_bcc'):
+        prefix.append(extract(source,name))
+    hashes={}
+    for name in ('fpuop_save','fpuop_restore'):
+        function=extract(source,name)
+        marker=re.search(r'\tif \(fault_if_no_fpu \(opcode, 0, ad, adset, pc\)\)\n\t\treturn;\n',function)
+        if not marker: raise RuntimeError('No exact no-FPU guard boundary in '+name)
+        kept=function[:marker.end()]
+        hashes[name]=hashlib.sha256(kept.encode()).hexdigest()
+        prefix.append(kept+'\tunsupported_fpu_body();\n}')
+    prefix += ['}',
+               'static void require_absent_profile() { if(!host.lc040_probes||regs.fp_exp_pend||regs.fp_unimp_pend||regs.fp_branch) unsupported_fpu_body(); }',
+               'void fpuop_bcc(uae_u32 op,uaecptr pc,uae_u32 extra) { require_absent_profile(); absent_fpu::fpuop_bcc(op,pc,extra); }',
+               'void fpuop_save(uae_u32 op) { require_absent_profile(); absent_fpu::fpuop_save(op); }',
+               'void fpuop_restore(uae_u32 op) { require_absent_profile(); absent_fpu::fpuop_restore(op); }']
+    return prefix,hashes
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--upstream", required=True, type=Path)
@@ -119,11 +152,17 @@ def main():
         helper_text += [extract(data.decode(), name) for name in names]
     frame, frame_hashes = frame_builder_040((upstream / "newcpu_common.cpp").read_text())
     helper_text += [frame, 'void complete_exception_trace(int nr) { exception_check_trace(nr); }']
+    fpu_source=(upstream/'fpp.cpp').read_bytes()
+    if fpu_source!=subprocess.check_output(['git','-C',str(upstream),'show',f'{PIN}:fpp.cpp']):
+        raise RuntimeError('Modified upstream no-FPU helper input')
+    fpu_helpers,fpu_prefix_hashes=absent_fpu_helpers(fpu_source.decode())
+    helper_text += fpu_helpers
+    helper_hashes['fpp.cpp']=hashlib.sha256(fpu_source).hexdigest()
     tables = (generated / "cpustbl.cpp").read_text()
     table = tables.split("const struct cputbl op_smalltbl_41[] = {\n", 1)[1].split("\n{ 0 }};", 1)[0]
     rows = re.findall(r"\{ (op_[0-9a-f]+_[0-9]+_ff), NULL, 0x([0-9a-f]+),[^\n]*/\* ([^*]+) \*/", table)
     source = (generated / "cpuemu_40.cpp").read_text()
-    functions, selected, excluded = {}, {}, {}
+    functions, selected, excluded, probe_families = {}, {}, {}, set()
     for name, opcode, mnemonic in rows:
         body = extract(source, name)
         code = re.sub(r"/\*.*?\*/|//[^\n]*", "", body, flags=re.S)
@@ -134,25 +173,26 @@ def main():
         else:
             selected[int(opcode, 16)] = name
             functions[name] = body
+            if calls & {'fpuop_bcc','fpuop_save','fpuop_restore'}: probe_families.add(int(opcode,16))
     decoded = subprocess.check_output([str(generated / "decode")], text=True)
     body = ['// Mechanically extracted, unmodified pinned WinUAE/UAE generated bodies and helpers.',
             '// Copyright Bernd Schmidt and WinUAE/ARAnyM contributors; retain upstream licenses.',
             '#include "core.hpp"', '#include <cstdlib>', 'namespace modern040 {',
             *helper_text, *functions.values(),
             f'extern const unsigned supported_families = {len(selected)};',
-            'struct Dispatch { uae_u16 opcode; Handler handler; };',
+            'struct Dispatch { uae_u16 opcode; Handler handler; bool lc040_probe; };',
             'static const Dispatch dispatch[] = {']
     count = 0
     for line in decoded.splitlines():
         opcode, family = (int(x, 16) for x in line.split())
         if family in selected:
-            body.append(f'{{0x{opcode:04x}, {selected[family]}}},')
+            body.append(f'{{0x{opcode:04x}, {selected[family]}, {str(family in probe_families).lower()}}},')
             count += 1
         else:
-            body.append(f'{{0x{opcode:04x}, nullptr}},')
+            body.append(f'{{0x{opcode:04x}, nullptr, false}},')
     body += ['};', 'void install_handlers() {',
-             'handlers.fill(nullptr); legal.fill(false);',
-             'for (const auto &entry : dispatch) { legal[entry.opcode] = true; handlers[entry.opcode] = entry.handler; }',
+             'handlers.fill(nullptr); legal.fill(false); requires_lc040_probes.fill(false);',
+             'for (const auto &entry : dispatch) { legal[entry.opcode] = true; handlers[entry.opcode] = entry.handler; requires_lc040_probes[entry.opcode]=entry.lc040_probe; }',
              '}', f'extern const unsigned supported_opcodes = {count};', '}']
     (build / "integer.cpp").write_text("\n".join(body) + "\n")
     provenance["runner"] = {"supported_families": len(selected), "supported_opcodes": count,
@@ -161,9 +201,11 @@ def main():
                                               for p in HERE.iterdir() if p.is_file()},
                             "frame_builder": {"restriction": "exact upstream cases0/1/2/3/4/7 and common writes; other model cases fail closed",
                                               "retained_case_sha256": frame_hashes},
-                            "profile": "68040 integer, no MMU/JIT/FPU, flat RAM, optional genuine frame delivery"}
+                            "lc040_probes": {"families":len(probe_families),"restriction":"real no-FPU chain; FSAVE/FRESTORE prefixes stop at guard; active arithmetic excluded",
+                                             "retained_prefix_sha256":fpu_prefix_hashes},
+                            "profile": "68040 integer, no MMU/JIT/arithmeticFPU, flat RAM, gated LC040 probe subset and real frame delivery"}
     (build / "runner-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
-    flags = ["-std=c++20", "-O1" if args.sanitize else "-O2", "-g", "-fwrapv",
+    flags = ["-std=c++20", "-O1" if args.sanitize else "-O2", "-g", "-fwrapv", "-DFPUEMU",
              "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-unused-variable", "-Wno-unused-but-set-variable",
              "-I" + str(HERE), "-I" + str(upstream / "include")]
     if args.sanitize: flags += ["-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"]
@@ -174,11 +216,16 @@ def main():
         command([cxx, *flags, "-c", source, "-o", obj])
         objects.append(obj)
     command(["ar", "rcs", build / "libmodern040-integer.a", *objects])
-    for target, driver in [("runner-tests", "test.cpp"), ("frame-tests", "frame-test.cpp"), ("integer-runner", "main.cpp")]:
+    for target, driver in [("runner-tests", "test.cpp"), ("frame-tests", "frame-test.cpp"),
+                           ("lc040-probe-tests", "lc040-test.cpp"), ("integer-runner", "main.cpp")]:
         command([cxx, *flags, HERE / driver, build / "libmodern040-integer.a", "-o", build / target])
     print(f"Runner: {len(selected)} generated families, {count} opcodes; {len(excluded)} families explicitly excluded", flush=True)
     command([build / "runner-tests"])
     command([build / "frame-tests"])
+    command([build / "lc040-probe-tests"])
+    for mode in ("--negative-format", "--negative-read"):
+        result=subprocess.run([str(build / "lc040-probe-tests"),mode])
+        if result.returncode!=1: raise RuntimeError(f"LC040 checker {mode} returned {result.returncode}, expected1")
     for mode in ("--negative-m-clear", "--negative-frame-pc"):
         result=subprocess.run([str(build / "frame-tests"),mode])
         if result.returncode!=1: raise RuntimeError(f"Frame checker {mode} returned {result.returncode}, expected1")

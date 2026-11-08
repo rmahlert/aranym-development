@@ -22,7 +22,7 @@ uae_u32 address(const char *text) {
 }
 int main(int argc, char **argv) {
     try {
-        bool demo = false, exceptions = false;
+        bool demo = false, exceptions = false, lc040_probes = false;
         std::string image;
         std::uint64_t budget = 1000;
         uae_u32 load = 0x100, pc = 0x100;
@@ -30,6 +30,7 @@ int main(int argc, char **argv) {
             const std::string arg = argv[i];
             if (arg == "--demo") demo = true;
             else if (arg == "--exceptions") exceptions = true;
+            else if (arg == "--lc040-probes") lc040_probes = exceptions = true;
             else if (i+1 < argc && arg == "--image") image = argv[++i];
             else if (i+1 < argc && arg == "--budget") budget = number(argv[++i]);
             else if (i+1 < argc && arg == "--load") load = address(argv[++i]);
@@ -39,6 +40,7 @@ int main(int argc, char **argv) {
         if (demo == !image.empty() || budget > 1000000) throw std::runtime_error("choose demo or raw image; budget <=1000000");
         reset(); install_handlers(); regs.pc = regs.instruction_pc = pc;
         host.deliver_exceptions=exceptions;
+        host.lc040_probes=lc040_probes;
         regs.regs[15] = regs.isp = 0xff00; regs.usp = 0x8000; regs.msp = 0xf000;
         if (demo) {
             const uae_u16 code[] = {0x7003,0x7200,0x5281,0x51c8,0xfffc,0x41f9,0,0x0400,0x2081,0x4e72,0x2700};

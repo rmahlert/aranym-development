@@ -30,12 +30,14 @@ struct State {
     uae_u32 mmu_fault_addr = 0, mmu_effective_addr = 0, wb2_address = 0, wb3_data = 0;
     uae_u16 mmu_ssw = 0;
     uae_u8 wb2_status = 0, wb3_status = 0;
-    uae_u32 fp_ea = 0, fp_opword = 0, fp_unimp_pend = 0, fpiar = 0;
+    uae_u32 fp_ea = 0, fp_opword = 0, fp_unimp_pend = 0, fp_exp_pend = 0, fpiar = 0, fpu_state = 0;
     bool fp_unimp_ins = false, fpu_exp_pre = false, fp_exception = false, fp_ea_set = false, fp_branch = false;
     bool operator==(const State &) const = default;
 };
 struct Preferences {
     const int cpu_model = 68040, mmu_model = 0, fpu_model = 0, cachesize = 0;
+    const int fpu_revision = 0;
+    const bool compfpu = false;
 };
 inline constexpr Preferences currprefs;
 inline constexpr bool m68k_accurate_ipl = false;
@@ -77,6 +79,7 @@ struct Host {
     bool log_accesses = true;
     bool deliver_exceptions = false;
     bool in_instruction = false, access_fault_latched = false, halted = false;
+    bool lc040_probes = false, capability_latched = false;
     unsigned exception_depth = 0;
     std::vector<Frame> frames;
 };
@@ -84,6 +87,7 @@ extern Host host;
 using Handler = uae_u32 (*)(uae_u32);
 extern std::array<Handler, 65536> handlers;
 extern std::array<bool, 65536> legal;
+extern std::array<bool, 65536> requires_lc040_probes;
 extern const unsigned supported_families, supported_opcodes;
 extern int movem_index1[256], movem_index2[256], movem_next[256];
 inline constexpr int imm8_table[] = {8, 1, 2, 3, 4, 5, 6, 7};
@@ -111,6 +115,7 @@ inline constexpr int areg_byteinc[] = {1, 1, 1, 1, 1, 1, 1, 2};
 #define FLAGVAL_C (1u << FLAGBIT_C)
 #define FLAGVAL_V (1u << FLAGBIT_V)
 #define GET_CZNV() ((uae_u32(regs.n) << FLAGBIT_N) | (uae_u32(regs.z) << FLAGBIT_Z) | (uae_u32(regs.c) << FLAGBIT_C) | (uae_u32(regs.v) << FLAGBIT_V))
+#define M68K_GETPC m68k_getpc()
 #define SET_ALWAYS_CFLG(value) SET_CFLG(value)
 #define SET_ALWAYS_NFLG(value) SET_NFLG(value)
 inline uae_u32 m68k_getpc() { return regs.pc; }
@@ -181,6 +186,13 @@ inline uae_u32 x_get_word(uae_u32 a) { return get_word_jit(a); }
 inline void x_put_word(uae_u32 a, uae_u32 v) { put_word_jit(a,v); }
 inline void x_put_long(uae_u32 a, uae_u32 v) { put_long_jit(a,v); }
 inline void x_do_cycles(unsigned) {} // No CPU-cycle timing profile is implemented.
+inline uae_u32 x_cp_next_iword() { return next_diword(); }
+inline uae_u32 x_cp_next_ilong() { return next_dilong(); }
+inline uae_u32 x_cp_get_disp_ea_020(uae_u32 base,int index) { return get_disp_ea_020(base,index); }
+void fpuop_bcc(uae_u32,uaecptr,uae_u32);
+void fpuop_save(uae_u32);
+void fpuop_restore(uae_u32);
+[[noreturn]] void unsupported_fpu_body();
 void install_handlers();
 void reset();
 void poke(uae_u32 address, unsigned size, uae_u32 value);

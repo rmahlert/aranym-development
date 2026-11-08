@@ -14,8 +14,8 @@ Outputs: libmodern040-integer.a, runner-tests, integer-runner and a provenance/
 coverage inventory under an ignored build directory. No production target,
 configure setting, installed emulator or guest image is changed.
 
-The fast040 table now binds 1,635 unchanged generated families /45,186 opcode
-encodings. Another232 families are explicitly excluded with missing-helper names
+The fast040 table now binds 1,651 unchanged generated families /45,384 opcode
+encodings. Another216 families are explicitly excluded with missing-helper names
 in runner-provenance.json. Compiled coverage does not mean every encoding has
 been validated. Real pinned helpers include MakeSR/MakeFromSR_x and its wrappers,
 MOVEC model/mask handling, brief/full020 effective address calculation, portable
@@ -40,8 +40,10 @@ excluded opcodes fail explicitly rather than execute as NOP.
 Illegal/A-line/privileged instructions report their architectural vector; FPU is
 explicitly unsupported. Enabling TCR/TTR translation stops before further fetch.
 No FPU/MMU/JIT, caches/timing, Atari bus/events/IRQ, NatFeat/EmulOp or guest boot
-is established. Cache-control registers are stored but hardware cache behavior
-is absent. Access-error continuation/writebacks, FPU probes and Atari integration
+is established. --lc040-probes explicitly enables the tested absent-FPU probe
+subset, including genuine format4 recovery; active FPU operations stay excluded.
+Cache-control registers are stored but hardware cache behavior
+is absent. Access-error continuation/writebacks and Atari integration
 remain explicit gates before firmware/Atari boot claims.
 
 312,178 stage1 assertions pass normally and with ASan/UBSan. Coverage includes all
@@ -61,6 +63,12 @@ RTE are checked. Frame7 layout is tested with synthetic inputs only; real access
 fault continuation remains BLOCKED. RTE cannot silently skip unsupported FPU or
 access-error frames, and partially committed access faults cannot resume.
 See frame-validation.txt for scope, manual MCP citations and remaining contracts.
+
+LC040 stage adds685 assertions for recognized FSAVE/FRESTORE/FBcc absent-FPU
+paths, legal effective addresses, privilege ordering, format4 nextPC/EA/faultPC,
+actual RTE4 and an EmuTOS-shaped probe/recovery sequence. Two negative controls
+reject wrong frame format and an added operand read after absence. Both normal
+and ASan/UBSan builds pass. See lc040-validation.txt for the exact subset.
 
 Source/generated function bodies and selected upstream helpers are extracted
 mechanically without replacement instruction code. Provenance includes source

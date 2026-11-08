@@ -6,6 +6,7 @@ State regs;
 Host host;
 std::array<Handler, 65536> handlers{};
 std::array<bool, 65536> legal{};
+std::array<bool, 65536> requires_lc040_probes{};
 int movem_index1[256], movem_index2[256], movem_next[256];
 uae_u32 mmu040_move16[4]{};
 uae_u32 last_addr_for_exception_3 = 0, last_fault_for_exception_3 = 0, last_op_for_exception_3 = 0;
@@ -49,7 +50,9 @@ void enter_exception(int nr, bool interrupt, unsigned level) {
             regs.s=true;
         }
         unsigned format=0;
-        uae_u32 stacked_pc=exception_pc(nr);
+        const bool absent_fpu=nr==11&&regs.fp_unimp_ins;
+        if(absent_fpu&&!host.lc040_probes) stop(Exit::Unsupported,nr,regs.pc,0,"LC040 recognized-FPU profile disabled");
+        uae_u32 stacked_pc=absent_fpu?current_pc:exception_pc(nr);
         if (interrupt && regs.m) {
             // Master entry: original context on MSP; throwaway context on ISP.
             // The throwaway SR retains M=1 so upstream RTE switches back to MSP.
@@ -68,7 +71,6 @@ void enter_exception(int nr, bool interrupt, unsigned level) {
             format=2; stacked_pc=current_pc;
             if (last_op_for_exception_3 & 0x10000) x_put_word(regs.regs[15],last_sr_for_exception3);
         } else {
-            const bool absent_fpu=nr==11&&regs.fp_unimp_ins;
             Exception_build_stack_frame_common(oldpc,stacked_pc,regs.mmu_ssw,nr,nr);
             format=absent_fpu?4:(nr==5||nr==6||nr==7||nr==9)?2:0;
         }
@@ -103,7 +105,7 @@ uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     // read, no modified instruction body and no hidden frame normalization.
     if (host.in_instruction && regs.opcode==0x4e73 && kind==AccessKind::Read && size==2 && address==regs.regs[15]+6) {
         const auto format=value>>12;
-        if (format==3||format==4||format==7)
+        if (format==3||(format==4&&!host.lc040_probes)||format==7)
             stop(Exit::Unsupported,0,address,2,"RTE FPU/access-error continuation profile not integrated");
     }
     return value;
@@ -152,6 +154,7 @@ void ExceptionX(int nr, uae_u32, uae_u32 oldpc) {
 }
 void op_illg(uae_u32 opcode) { Exception((opcode & 0xf000)==0xa000?10:(opcode & 0xf000)==0xf000?11:4); }
 [[noreturn]] void unsupported_frame(int format) { stop(Exit::Unsupported,14,regs.pc,unsigned(format),"non-040 exception frame format excluded"); }
+[[noreturn]] void unsupported_fpu_body() { stop(Exit::Unsupported,0,regs.pc,0,"active-FPU/arithmetic tail outside declared absent-LC040 probe profile"); }
 bool inject_interrupt(int vector, unsigned level) {
     if (vector<0||vector>255||level<1||level>7) throw std::invalid_argument("invalid architectural interrupt request");
     if (level<=unsigned(regs.intmask)&&level!=7) return false;
@@ -170,6 +173,7 @@ Result run(std::uint64_t budget) {
     std::uint64_t instructions = 0;
     try {
         if (host.halted) return {Exit::DoubleFault,0,0,regs.instruction_pc,regs.pc,0,0,"halted until reset"};
+        if (host.capability_latched) return {Exit::Unsupported,0,0,regs.instruction_pc,regs.pc,0,0,"unsupported capability requires reset before continuation"};
         if (host.access_fault_latched) return {Exit::Unsupported,0,2,regs.instruction_pc,regs.pc,0,0,"access-fault restart requires reset; continuation not integrated"};
         if (regs.stopped) return {Exit::Stopped, 0};
         if (translation_enabled()) stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "cannot resume while unsupported MMU/translation is enabled");
@@ -182,6 +186,8 @@ Result run(std::uint64_t budget) {
             }
             regs.opcode = read(AccessKind::Fetch, regs.pc, 2);
             ++instructions;
+            if(requires_lc040_probes[regs.opcode]&&!host.lc040_probes)
+                stop(Exit::Unsupported,0,regs.pc,2,"explicit LC040 probe profile required for recognized FPU opcodes");
             const auto handler = handlers[regs.opcode];
             if (!handler) {
                 if (!legal[regs.opcode]) { op_illg(regs.opcode); continue; }
@@ -204,6 +210,7 @@ Result run(std::uint64_t budget) {
     } catch (const Stop &event) {
         if (event.result.exit==Exit::MemoryFault) host.access_fault_latched=true;
         if (event.result.exit==Exit::DoubleFault) host.halted=true;
+        if (event.result.exit==Exit::Unsupported) host.capability_latched=true;
         auto result = event.result; result.instructions = instructions; return result;
     }
 }
