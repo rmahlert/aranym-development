@@ -5,12 +5,14 @@
 #include "main.h"
 #include "cpu_emulation.h"
 #include "newcpu.h"
+#include "fpu/fpu.h"
 #include "../runner/c-api.h"
 #include "adapter.h"
 #include <cstdio>
 #include <cstdlib>
 namespace {
 bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
+bool legacy_fpu=false,fpu_exception_delivered=false;
 bool diagnostics=false;uint64_t last_exception=0;unsigned service_messages=0,guest_messages=0,guest_traps=0;
 void checked(int,const char *);
 void diagnostic_exception() {
@@ -30,10 +32,10 @@ void fail(const char *where,const m040_result *result=0) {
     std::fputc('\n',stderr);std::fflush(stderr);QuitEmulator(3);
 }
 void checked(int status,const char *where){if(status!=M040_OK)fail(where);}
-void from_old() {
+void from_old(bool preserve_instruction=false) {
     m040_state state;checked(m040_get_state(&state),"read modern state");MakeSR();
     for(unsigned i=0;i<16;++i)state.regs[i]=regs.regs[i];
-    state.pc=state.instruction_pc=m68k_getpc();state.sr=regs.sr;
+    state.pc=m68k_getpc();if(!preserve_instruction)state.instruction_pc=state.pc;state.sr=regs.sr;
     state.usp=regs.usp;state.isp=regs.isp;state.msp=regs.msp;
     if(!regs.s)state.usp=regs.regs[15];else if(regs.m)state.msp=regs.regs[15];else state.isp=regs.regs[15];
     state.stopped=regs.stopped;state.vbr=regs.vbr;state.sfc=regs.sfc;state.dfc=regs.dfc;
@@ -82,13 +84,15 @@ void initialize() {
 #if defined(USE_JIT) || defined(FULLMMU) || defined(HW_SIGSEGV)
 #error Experimental modern040 requires JIT-off/MMU-off/normal addressing
 #endif
-    const m040_options options={M040_ABI_VERSION,1,1,0};
+    legacy_fpu=std::getenv("ARANYM_MODERN040_LEGACY_FPU")!=0;
+    const m040_options options={M040_ABI_VERSION,1,uint32_t(!legacy_fpu),0};
     diagnostics=std::getenv("ARANYM_MODERN040_DIAGNOSTICS")!=0;
     checked(m040_reset(&options),"reset modern core");checked(m040_set_bus(memory,0),"attach original Atari physical bus");
     checked(m040_set_reset_handler([](void *){AtariReset();return 1;},0),"attach original Atari RESET hardware/NatFeat/input path");
+    checked(m040_legacy_fpu_operations(legacy_fpu),"select explicit original FPU backend");
     checked(m040_private_operations(1),"enable ARAnyM extension decoder");initialized=true;
     checked(m040_read_probe_exceptions(1),"enable bounded trace-free pure-read probe fault delivery");
-    std::fprintf(stderr,"MODERN040_EXPERIMENTAL source=d82bc254 profile=integer-lc040-probes noMMU noJIT fault-restart=unsupported\n");
+    std::fprintf(stderr,"MODERN040_EXPERIMENTAL source=d82bc254 profile=%s noMMU noJIT fault-restart=unsupported\n",legacy_fpu?"modern-integer-original-ieee-fpu":"integer-lc040-probes");
 }
 bool acceptable(const m040_result &result){return result.exit==M040_BUDGET||result.exit==M040_STOPPED||result.exit==M040_HOST_RETURN;}
 void service(m040_result &result) {
@@ -101,10 +105,32 @@ void service(m040_result &result) {
         case M040_NATFEAT_CALL:m68k_natfeat_call();break;
         case M040_EMULOP:m68k_emulop(call.opcode);break;
         case M040_EMULOP_RETURN:m68k_emulop_return();break;
+        case M040_LEGACY_FPU: {
+            if(!legacy_fpu||CPUType!=4)fail("legacy FPU requires explicit native 68040 profile");
+            if(fpu_get_fpcr()&0xff00)fail("enabled legacy FPU arithmetic exception mode not qualified");
+            fpu_exception_delivered=false;
+            // The original native table and generated entry argument use host
+            // fetch encoding; the modern boundary exports numeric BE opcode.
+            uae_u32 encoded=call.opcode;
+#if defined(HAVE_GET_WORD_UNSWAPPED) && !defined(FULLMMU)
+            encoded=do_byteswap_16(encoded);
+#endif
+            cpufunctbl[encoded](encoded); // real original body, exactly once.
+            break;
+        }
         default:fail("unknown private instruction kind");
         }
-        from_old();checked(m040_complete_service(&result),"complete private source body");
+        if(call.kind==M040_LEGACY_FPU&&fpu_exception_delivered) {
+            m040_state state;checked(m040_get_state(&state),"read FPU exception target");
+            if(state.pc!=m68k_getpc())fail("legacy FPU body changed delivered exception target");
+            result={};result.abi_version=M040_ABI_VERSION;result.exit=M040_BUDGET;
+            result.current_pc=state.pc;result.instruction_pc=state.instruction_pc;
+        } else {
+            from_old(call.kind==M040_LEGACY_FPU);
+            checked(m040_complete_service(&result),"complete external source body");
+        }
     } CATCH(prb) {
+        if(call.kind==M040_LEGACY_FPU)fail("legacy FPU operand fault/restart not integrated");
         from_old();checked(m040_exception(int(prb),&result),"NatFeat host exception boundary");
     }
     to_old();
@@ -114,7 +140,9 @@ void service(m040_result &result) {
 void modern040_reset_requested(){initialized=false;}
 void modern040_external_exception(int vector) {
     if(!initialized)fail("external exception before initialization");
-    from_old();m040_result result;checked(m040_exception(vector,&result),"external exception");to_old();
+    m040_service pending;const bool fpu=m040_get_service(&pending)==M040_OK&&pending.kind==M040_LEGACY_FPU;
+    from_old(fpu);m040_result result;checked(m040_exception(vector,&result),"external exception");to_old();
+    if(fpu)fpu_exception_delivered=true;
     if(!acceptable(result))fail("external exception unsupported",&result);
 }
 void modern040_external_interrupt(int vector,unsigned level) {

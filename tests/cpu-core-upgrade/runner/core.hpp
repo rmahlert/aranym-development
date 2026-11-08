@@ -68,7 +68,7 @@ struct Access {
 };
 enum class Exit { Budget, Stopped, GuestException, MemoryFault, Unsupported,
                   UnsupportedMmu, Reset, DoubleFault, HostService, HostReturn };
-enum class ServiceKind { NatFeatId=1, NatFeatCall, EmulOp, EmulOpReturn };
+enum class ServiceKind { NatFeatId=1, NatFeatCall, EmulOp, EmulOpReturn, LegacyFpu };
 struct Service { ServiceKind kind; uae_u16 opcode; uae_u32 pc, stack; bool supervisor, trace; };
 struct Result {
     Exit exit;
@@ -102,6 +102,7 @@ struct Host {
     ResetHardware reset_hardware=nullptr;
     void *reset_opaque=nullptr;
     bool private_operations=false, service_resuming=false;
+    bool legacy_fpu_operations=false;
     bool read_probe_exceptions=false, delivering_read_probe=false;
     uae_u32 read_probe_next_pc=0;
     std::optional<BusFault> bus_fault;
@@ -128,6 +129,7 @@ bool cpureset();
 extern std::array<Handler, 65536> handlers;
 extern std::array<bool, 65536> legal;
 extern std::array<bool, 65536> requires_lc040_probes;
+extern std::array<bool,65536> legacy_fpu_opcodes;
 extern const unsigned supported_families, supported_opcodes;
 extern int movem_index1[256], movem_index2[256], movem_next[256];
 inline constexpr int imm8_table[] = {8, 1, 2, 3, 4, 5, 6, 7};

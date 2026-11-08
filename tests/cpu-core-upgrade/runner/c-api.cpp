@@ -54,7 +54,7 @@ int m040_set_state(const m040_state *in) {
     if(!in||in->abi_version!=M040_ABI_VERSION||in->stopped>2||in->sfc>7||in->dfc>7)return M040_BAD_ARGUMENT;
     const auto bank=!(in->sr&0x2000)?in->usp:(in->sr&0x1000)?in->msp:in->isp;
     if(in->regs[15]!=bank)return M040_BAD_ARGUMENT;
-    if(modern040::host.service&&in->pc!=modern040::host.service->pc)return M040_BAD_ARGUMENT;
+    if(modern040::host.service&&modern040::host.service->kind!=modern040::ServiceKind::LegacyFpu&&in->pc!=modern040::host.service->pc)return M040_BAD_ARGUMENT;
     try{Boundary guard;auto &state=modern040::regs;
         // Set both old/new bank selectors before the real SR helper so it does
         // not replace the caller's already canonical active A7 with old state.
@@ -141,5 +141,10 @@ int m040_get_exception_event(m040_exception_event *out) {
     if(out->count){const auto &frame=modern040::host.frames.back();out->vector=frame.vector;out->format=frame.format;
         out->stack=frame.stack;out->handler=frame.handler;out->stacked_pc=frame.stacked_pc;out->saved_sr=frame.stacked_sr;out->interrupt=frame.interrupt;}
     return M040_OK;
+}
+int m040_legacy_fpu_operations(int enabled) {
+    if(busy||modern040::host.service)return M040_BUSY;
+    if(enabled!=0&&enabled!=1)return M040_BAD_ARGUMENT;
+    modern040::host.legacy_fpu_operations=enabled;return M040_OK;
 }
 }

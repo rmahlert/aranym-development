@@ -77,3 +77,13 @@ depth constant. Compare the same hashed GEMBench binary with repeated CPU,
 memory and graphics results separately. Repeat real HighWire interaction/boot
 and clean networking shutdown. Interpreter handler timing is independent of
 future native x86/ARM64 JIT performance and cannot establish those gains.
+
+2026-11-08 experimental qualification update
+An opt-in platform target now boots one owned EmuTOS1.4/MiNT/XaAES/fVDI7a17
+profile and completes actual guest GEMDOS shutdown. It uses modern integer
+handlers with original IEEE FPU bodies (explicit runtime selection), real
+Atari bus/events/private NatFeats, and the narrow documented discard-frame
+read probes. General format7/RTE7/restart, MMU and JIT remain unsupported; these
+paths fail closed rather than being treated as prerequisites for reporting this
+specific observed boot. No general compatibility, full FPU upgrade or speedup
+is inferred. See platform/legacy-fpu-validation.txt and recorded input hashes.

@@ -119,3 +119,12 @@ Source/generated function bodies and selected upstream helpers are extracted
 mechanically without replacement instruction code. Provenance includes source
 pins/hashes, helper hashes and exclusion inventory. GPL-2.0-or-later under the
 repository COPYING; preserve upstream notices and attribution.
+
+Latest optional platform stage (2026-11-08): platform/legacy-fpu-validation.txt
+records an explicit external original IEEE FPU boundary and real native Linux
+EmuTOS/MiNT/fVDI/XaAES boot plus guest shutdown. This changes the scope of the
+older flat-runner-only boot exclusions above: the isolated runner supplies no
+FPU engine, while its opt-in Atari frontend delegates qualified FPU instructions
+to genuine original handlers. Forty families are externally classified;1828
+modern generated integer/probe/cache families and47805 opcodes remain selected.
+Trace/arithmetic-FPU-trap modes and general fault continuation still fail closed.

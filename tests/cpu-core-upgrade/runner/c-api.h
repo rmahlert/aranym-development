@@ -16,7 +16,7 @@ enum m040_exit { M040_BUDGET, M040_STOPPED, M040_GUEST_EXCEPTION, M040_MEMORY_FA
     M040_UNSUPPORTED, M040_UNSUPPORTED_MMU, M040_RESET, M040_DOUBLE_FAULT,
     M040_HOST_SERVICE, M040_HOST_RETURN };
 enum m040_access_kind { M040_FETCH, M040_READ, M040_WRITE };
-enum m040_service_kind { M040_NATFEAT_ID=1, M040_NATFEAT_CALL, M040_EMULOP, M040_EMULOP_RETURN };
+enum m040_service_kind { M040_NATFEAT_ID=1, M040_NATFEAT_CALL, M040_EMULOP, M040_EMULOP_RETURN, M040_LEGACY_FPU };
 struct m040_options { uint32_t abi_version; uint32_t deliver_exceptions, lc040_probes, log_accesses; };
 struct m040_state {
     uint32_t abi_version;
@@ -69,6 +69,10 @@ int m040_exception(uint32_t vector, struct m040_result *);
 /* Whitelisted trace-free pure-read probes; generic RTE7 stays blocked. */
 int m040_read_probe_exceptions(int enabled);
 int m040_get_exception_event(struct m040_exception_event *);
+/* Explicit external engine selection; defaultoff. Suspends before extension
+ * fetch, permits already-executed external advanced PC, and never replays it.
+ * No FPU register file/engine is supplied by this C boundary. */
+int m040_legacy_fpu_operations(int enabled);
 #ifdef __cplusplus
 }
 #endif

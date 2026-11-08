@@ -42,7 +42,7 @@ Actual backend contracts implemented:
   trace owns trace flags, avoiding a second old-core trace delivery.
 
 Current limits fail closed with MODERN040_UNSUPPORTED and controlled host exit3:
-generic format7/accessfault restart/writeback, remaining helpers/activeFPU/MMU,
+generic format7/accessfault restart/writeback, remaining helpers/MMU,
 protected transparent-region enable, and nested guest EmulOp execution.
 This is an experimental attempt target, not full040/LC040 compatibility. Actual
 NF/IRQ/desktop behavior is not inferred merely because its callback compiles.
@@ -100,3 +100,10 @@ privilege/callback/CPU preservation/failure and actual host-NatFeat-permission
 exception cancellation, format0/faultPC and userRTE recovery. Existing312178core,
 222frame,685LC,72815helper,503bus,90CABI,10248private assertions remain passing.
 Transparent permissions and later actual NatFeat/boot paths remain next gates.
+
+8. Explicit ARANYM_MODERN040_LEGACY_FPU=1 now delegates to original generated
+   IEEE FPU bodies exactly once. Same actual FP fixture passes old+modern;
+   original hard-FPU NOETH and unchanged LC040 NOFP both exit0. Own disposable
+   MiNT image installs fVDI7a17, reaches XaAES/AES test shell and completes real
+   GEMDOS shutdown with hostexit0. This is NOT a modern FPU/JIT/MMU claim.
+   See legacy-fpu-validation.txt for actual state/endian/frame tests and limits.

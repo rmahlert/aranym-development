@@ -227,11 +227,12 @@ def main():
     table = tables.split("const struct cputbl op_smalltbl_41[] = {\n", 1)[1].split("\n{ 0 }};", 1)[0]
     rows = re.findall(r"\{ (op_[0-9a-f]+_[0-9]+_ff), NULL, 0x([0-9a-f]+),[^\n]*/\* ([^*]+) \*/", table)
     source = (generated / "cpuemu_40.cpp").read_text()
-    functions, selected, excluded, probe_families = {}, {}, {}, set()
+    functions, selected, excluded, probe_families,legacy_fpu_families = {}, {}, {}, set(),set()
     for name, opcode, mnemonic in rows:
         body = extract(source, name)
         code = re.sub(r"/\*.*?\*/|//[^\n]*", "", body, flags=re.S)
         calls = set(re.findall(r"\b([A-Za-z_]\w*)\s*\(", code)) - {name, "REGPARAM2"}
+        if calls&{'fpuop_arithmetic','fpuop_scc','fpuop_trapcc','fpuop_dbcc','fpuop_bcc','fpuop_save','fpuop_restore'}:legacy_fpu_families.add(int(opcode,16))
         missing = sorted(calls - CALLS)
         if missing:
             excluded[opcode] = {"mnemonic": mnemonic, "missing_helpers": missing}
@@ -245,19 +246,19 @@ def main():
             '#include "core.hpp"', '#include <cstdlib>', '#define MMU_ICACHE 0', 'namespace modern040 {',
             *helper_text, *functions.values(), *private_text,
             f'extern const unsigned supported_families = {len(selected)};',
-            'struct Dispatch { uae_u16 opcode; Handler handler; bool lc040_probe; };',
+            'struct Dispatch { uae_u16 opcode; Handler handler; bool lc040_probe,legacy_fpu; };',
             'static const Dispatch dispatch[] = {']
     count = 0
     for line in decoded.splitlines():
         opcode, family = (int(x, 16) for x in line.split())
         if family in selected:
-            body.append(f'{{0x{opcode:04x}, {selected[family]}, {str(family in probe_families).lower()}}},')
+            body.append(f'{{0x{opcode:04x}, {selected[family]}, {str(family in probe_families).lower()}, {str(family in legacy_fpu_families).lower()}}},')
             count += 1
         else:
-            body.append(f'{{0x{opcode:04x}, nullptr, false}},')
+            body.append(f'{{0x{opcode:04x}, nullptr, false, {str(family in legacy_fpu_families).lower()}}},')
     body += ['};', 'void install_handlers() {',
-             'handlers.fill(nullptr); legal.fill(false); requires_lc040_probes.fill(false);',
-             'for (const auto &entry : dispatch) { legal[entry.opcode] = true; handlers[entry.opcode] = entry.handler; requires_lc040_probes[entry.opcode]=entry.lc040_probe; }',
+             'handlers.fill(nullptr); legal.fill(false); requires_lc040_probes.fill(false); legacy_fpu_opcodes.fill(false);',
+             'for (const auto &entry : dispatch) { legal[entry.opcode] = true; handlers[entry.opcode] = entry.handler; requires_lc040_probes[entry.opcode]=entry.lc040_probe; legacy_fpu_opcodes[entry.opcode]=entry.legacy_fpu; }',
              'install_private_handlers();',
              '}', f'extern const unsigned supported_opcodes = {count};', '}']
     (build / "integer.cpp").write_text("\n".join(body) + "\n")
@@ -270,6 +271,7 @@ def main():
                             "lc040_probes": {"families":len(probe_families),"restriction":"real no-FPU chain; FSAVE/FRESTORE prefixes stop at guard; active arithmetic excluded",
                                              "retained_prefix_sha256":fpu_prefix_hashes},
                             "private_aranym":private_provenance,
+                            "legacy_fpu_boundary":{"families":len(legacy_fpu_families),"scope":"decoder classification/external single-execution service only; actual legacy backend separately tested in frontend"},
                             "profile": "68040 integer, no MMU/JIT/arithmeticFPU, flat RAM or explicit bus callback, gated LC040 probes and real frame delivery"}
     flags = ["-std=c++20", "-O1" if args.sanitize else "-O2", "-g", "-fwrapv", "-DFPUEMU",
              "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-unused-variable", "-Wno-unused-but-set-variable",
@@ -293,6 +295,7 @@ def main():
                            ("bus-tests", "bus-test.cpp"),
                            ("service-tests", "service-test.cpp"),
                            ("platform-contract-tests", "platform-contract-test.cpp"),
+                           ("legacy-fpu-tests", "legacy-fpu-test.cpp"),
                            ("ttr-tests", "ttr-test.cpp"),
                            ("cache-tests", "cache-test.cpp"),
                            ("read-probe-tests", "read-probe-test.cpp"),
@@ -316,6 +319,10 @@ def main():
     if result.returncode!=1: raise RuntimeError(f"Private service checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-pc by actual private service checker",flush=True)
     command([build / "platform-contract-tests"])
+    command([build / "legacy-fpu-tests"])
+    result=subprocess.run([str(build / "legacy-fpu-tests"),"--negative-pc"])
+    if result.returncode!=1: raise RuntimeError(f"FPU boundary checker returned {result.returncode}, expected1")
+    print("REJECTED deliberate legacy FPU --negative-pc by actual boundary checker",flush=True)
     command([build / "ttr-tests"])
     result=subprocess.run([str(build / "ttr-tests"),"--negative-match"])
     if result.returncode!=1: raise RuntimeError(f"TTR checker returned {result.returncode}, expected1")

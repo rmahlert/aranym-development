@@ -11,6 +11,7 @@ std::array<Handler, 65536> handlers{};
 std::array<PrivateHandler,65536> private_handlers{};
 std::array<bool, 65536> legal{};
 std::array<bool, 65536> requires_lc040_probes{};
+std::array<bool,65536> legacy_fpu_opcodes{};
 int movem_index1[256], movem_index2[256], movem_next[256];
 uae_u32 mmu040_move16[4]{};
 uae_u32 last_addr_for_exception_3 = 0, last_fault_for_exception_3 = 0, last_op_for_exception_3 = 0;
@@ -238,16 +239,16 @@ void m68k_emulop_return() {
 Result complete_service() {
     if(!host.service)throw std::invalid_argument("no pending private host service");
     const auto service=*host.service;
-    if(host.capability_latched||host.access_fault_latched||host.halted||regs.pc!=service.pc)
+    if(host.capability_latched||host.access_fault_latched||host.halted||(service.kind!=ServiceKind::LegacyFpu&&regs.pc!=service.pc))
         return {Exit::Unsupported,0,0,regs.instruction_pc,regs.pc,0,0,"cannot complete changed/unsafe private service context"};
     struct Resume {
         Resume(){host.service_resuming=host.in_instruction=true;}
         ~Resume(){host.service_resuming=host.in_instruction=false;host.service.reset();}
     } guard;
     try {
-        // Resume the unchanged generated body at its side-effect-free helper:
-        // no opcode refetch/count and the genuine body performs PC advancement.
-        private_handlers[service.opcode](service.opcode);
+        // Private instructions resume at their unchanged side-effect-free helper.
+        // The external FPU body already ran once and must never be replayed.
+        if(service.kind!=ServiceKind::LegacyFpu)private_handlers[service.opcode](service.opcode);
         if((regs.spcflags&SPCFLAG_DOTRACE)||service.trace)Exception(9);
         return {Exit::Budget,0,0,regs.instruction_pc,regs.pc};
     } catch(const Stop &event) {
@@ -283,6 +284,11 @@ Result run(std::uint64_t budget) {
             }
             regs.opcode = read(AccessKind::Fetch, regs.pc, 2);
             ++instructions;
+            if(host.legacy_fpu_operations&&legacy_fpu_opcodes[regs.opcode]) {
+                if(regs.t0||regs.t1||(regs.spcflags&(SPCFLAG_TRACE|SPCFLAG_DOTRACE)))
+                    stop(Exit::Unsupported,0,regs.pc,2,"traced legacy FPU instruction boundary not integrated");
+                private_service(ServiceKind::LegacyFpu);
+            }
             if(requires_lc040_probes[regs.opcode]&&!host.lc040_probes)
                 stop(Exit::Unsupported,0,regs.pc,2,"explicit LC040 probe profile required for recognized FPU opcodes");
             const auto handler = handlers[regs.opcode];

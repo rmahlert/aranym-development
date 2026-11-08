@@ -60,7 +60,12 @@ def main():
     cxx=os.environ.get('CXX','g++')
     sdl=shlex.split(subprocess.check_output(['pkg-config','--cflags','sdl2'],text=True))
     adapter=build/'modern040-aranym-adapter.o'
-    run([cxx,'-DHAVE_CONFIG_H','-DEXPERIMENTAL_MODERN040','-I'+str(build),'-I'+str(build/'src'),
+    # Match the native translation units' public header ABI (flags, opcode
+    # fetch encoding, FPU register type), not only config.h feature probes.
+    native_defines=shlex.split(next(line.partition(' = ')[2] for line in
+        (build/'src/Makefile').read_text().splitlines() if line.startswith('DEFINES = ')))
+    if '-DFPU_IEEE' not in native_defines:raise RuntimeError('only the original IEEE FPU backend is qualified by this experimental adapter')
+    run([cxx,*native_defines,'-DHAVE_CONFIG_H','-DEXPERIMENTAL_MODERN040','-I'+str(build),'-I'+str(build/'src'),
          '-I'+str(ROOT/'src/include'),'-I'+str(ROOT/'src/Unix'),'-I'+str(ROOT/'src/uae_cpu'),
          '-I'+str(build/'src/uae_cpu'),*sdl,'-O2','-Wall','-Wextra','-c',HERE/'adapter.cpp','-o',adapter],cwd=build)
     objects=[adapter]
@@ -71,7 +76,7 @@ def main():
     run(['ar','rcs',build/'src/libaranym.a',*objects],cwd=build)
     run(['make','-j8','-C','src','aranym'],cwd=build)
     binary=build/'src/aranym'
-    identity={'experimental':True,'binary':str(binary),'binary_sha256':digest(binary),'configuration':configuration,
+    identity={'experimental':True,'binary':str(binary),'binary_sha256':digest(binary),'configuration':configuration,'adapter_native_defines':native_defines,
               'source_commit':subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True).strip(),
               'source_sha256':{str(p.relative_to(ROOT)):digest(p) for p in (ROOT/'src/uae_cpu/newcpu.cpp',HERE/'adapter.cpp',HERE/'adapter.h')},
               'core_provenance_sha256':digest(core/'runner-provenance.json'),'profile':str(profile),
