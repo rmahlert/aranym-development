@@ -1,4 +1,4 @@
-Isolated modern040 integer library/runner — stage 1
+Isolated modern040 integer library/runner
 ==================================================
 
 From the ARAnyM source root (C++20, Python3, Git and ar required):
@@ -34,14 +34,15 @@ an unfetched stopped/unsupported-MMU continuation is not. The demo uses actual
 MOVEQ/ADDQ/DBF/LEA/store/STOP and reaches STOP after13 attempts with D1=4 and
 RAM400=4. STOP retains its PC until explicit resume advances past its immediate.
 
-Stage1 has terminal typed guest-exception/memory-fault exits, not guest frame
-delivery. Legal excluded opcodes fail explicitly rather than execute as NOP.
+Default mode has terminal typed guest-exception/memory-fault exits. --exceptions
+enables tested real format0/1/2 entry and actual generated RTE recovery. Legal
+excluded opcodes fail explicitly rather than execute as NOP.
 Illegal/A-line/privileged instructions report their architectural vector; FPU is
 explicitly unsupported. Enabling TCR/TTR translation stops before further fetch.
 No FPU/MMU/JIT, caches/timing, Atari bus/events/IRQ, NatFeat/EmulOp or guest boot
 is established. Cache-control registers are stored but hardware cache behavior
-is absent. Stage2 must implement real frames/restart/probe recovery, with manual-
-derived assertions, before firmware/Atari boot claims.
+is absent. Access-error continuation/writebacks, FPU probes and Atari integration
+remain explicit gates before firmware/Atari boot claims.
 
 312,178 stage1 assertions pass normally and with ASan/UBSan. Coverage includes all
 65,536 SR encodings and bank transitions; legal/illegal/control-register masks
@@ -50,6 +51,16 @@ all32 CCR inputs through the NEW runner dispatch; A7 byte/fault and JSR/RTS acce
 order; all16 Scc conditions; brief/full/indirect indexed addressing; T1 deferral;
 STOP/budget and memory/unsupported exits. Prior differential remains independent
 and passes14,769 expectations per backend/14,761 strict matches/eight exact audits.
+
+Frame stage adds222 manual-derived assertions and two negative frame controls.
+Synchronous master exceptions retainM. Explicit interrupt metadata controls the
+MSP format0 +ISP format1 sequence even for custom vectors, and real RTE restores
+the selected bank. Real guest ADDQ-to-stacked-PC/RTE handlers recover from
+illegal/privilege/A-line/F-line faults. T1/STOP trace entry and deferred trace on
+RTE are checked. Frame7 layout is tested with synthetic inputs only; real access
+fault continuation remains BLOCKED. RTE cannot silently skip unsupported FPU or
+access-error frames, and partially committed access faults cannot resume.
+See frame-validation.txt for scope, manual MCP citations and remaining contracts.
 
 Source/generated function bodies and selected upstream helpers are extracted
 mechanically without replacement instruction code. Provenance includes source

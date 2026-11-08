@@ -18,6 +18,7 @@ struct State {
     uae_u32 pc = 0x100, instruction_pc = 0x100, trace_pc = 0;
     uae_u32 usp = 0, isp = 0, msp = 0;
     uae_u16 sr = 0x2700, opcode = 0, ir = 0, irc = 0;
+    uae_u16 read_buffer = 0;
     bool x = false, n = false, z = false, v = false, c = false;
     bool t1 = false, t0 = false, s = true, m = false;
     int intmask = 7, stopped = 0;
@@ -26,6 +27,11 @@ struct State {
     uae_u32 tcr = 0, mmusr = 0, urp = 0, srp = 0, buscr = 0, pcr = 0;
     uae_u32 spcflags = 0;
     int ipl[2]{}, ipl_pin = 0;
+    uae_u32 mmu_fault_addr = 0, mmu_effective_addr = 0, wb2_address = 0, wb3_data = 0;
+    uae_u16 mmu_ssw = 0;
+    uae_u8 wb2_status = 0, wb3_status = 0;
+    uae_u32 fp_ea = 0, fp_opword = 0, fp_unimp_pend = 0, fpiar = 0;
+    bool fp_unimp_ins = false, fpu_exp_pre = false, fp_exception = false, fp_ea_set = false, fp_branch = false;
     bool operator==(const State &) const = default;
 };
 struct Preferences {
@@ -56,12 +62,23 @@ struct Result {
     std::string detail{};
 };
 struct Stop { Result result; };
+struct Frame {
+    int vector;
+    unsigned format;
+    uae_u32 stack, handler, stacked_pc;
+    uae_u16 stacked_sr;
+    bool interrupt;
+};
 struct Host {
     std::array<uae_u8, 65536> ram{};
     std::vector<Access> accesses;
     std::optional<Access> denied;
     std::uint64_t irq_checks = 0, stop_cycles = 0, cache_controls = 0;
     bool log_accesses = true;
+    bool deliver_exceptions = false;
+    bool in_instruction = false, access_fault_latched = false, halted = false;
+    unsigned exception_depth = 0;
+    std::vector<Frame> frames;
 };
 extern Host host;
 using Handler = uae_u32 (*)(uae_u32);
@@ -139,12 +156,31 @@ uae_u32 get_disp_ea_020(uae_u32, int);
 void m68k_setstopped(int);
 void do_cycles_stop(int);
 void resume_stopped();
-[[noreturn]] void Exception(int);
-[[noreturn]] void Exception_cpu_oldpc(int, uae_u32);
-[[noreturn]] void op_illg(uae_u32);
-[[noreturn]] void exception3_read_prefetch(uae_u32, uae_u32);
-[[noreturn]] void exception3_read_prefetch_only(uae_u32, uae_u32);
-[[noreturn]] void exception3_read_prefetch_68040bug(uae_u32, uae_u32, uae_u16);
+void Exception(int);
+void Exception_cpu_oldpc(int, uae_u32);
+void ExceptionX(int, uae_u32, uae_u32);
+void complete_exception_trace(int);
+void op_illg(uae_u32);
+void exception3_read_prefetch(uae_u32, uae_u32);
+void exception3_read_prefetch_only(uae_u32, uae_u32);
+void exception3_read_prefetch_68040bug(uae_u32, uae_u32, uae_u16);
+void exception3_notinstruction(uae_u32, uae_u32);
+void Exception_build_stack_frame(uae_u32, uae_u32, uae_u32, int, int);
+void Exception_build_stack_frame_common(uae_u32, uae_u32, uae_u32, int, int);
+uae_u32 exception_pc(int);
+[[noreturn]] void unsupported_frame(int);
+bool inject_interrupt(int vector, unsigned level);
+inline constexpr int sz_byte = 0, sz_word = 1, sz_long = 2;
+inline constexpr unsigned cpucycleunit = 1;
+extern uae_u32 mmu040_move16[4];
+extern uae_u32 last_addr_for_exception_3, last_fault_for_exception_3, last_op_for_exception_3;
+extern bool last_writeaccess_for_exception_3, last_notinstruction_for_exception_3;
+extern int last_fc_for_exception_3, last_size_for_exception_3, last_di_for_exception_3;
+extern uae_u16 last_sr_for_exception3;
+inline uae_u32 x_get_word(uae_u32 a) { return get_word_jit(a); }
+inline void x_put_word(uae_u32 a, uae_u32 v) { put_word_jit(a,v); }
+inline void x_put_long(uae_u32 a, uae_u32 v) { put_long_jit(a,v); }
+inline void x_do_cycles(unsigned) {} // No CPU-cycle timing profile is implemented.
 void install_handlers();
 void reset();
 void poke(uae_u32 address, unsigned size, uae_u32 value);

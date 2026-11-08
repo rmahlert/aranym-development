@@ -7,6 +7,11 @@ Host host;
 std::array<Handler, 65536> handlers{};
 std::array<bool, 65536> legal{};
 int movem_index1[256], movem_index2[256], movem_next[256];
+uae_u32 mmu040_move16[4]{};
+uae_u32 last_addr_for_exception_3 = 0, last_fault_for_exception_3 = 0, last_op_for_exception_3 = 0;
+bool last_writeaccess_for_exception_3 = false, last_notinstruction_for_exception_3 = false;
+int last_fc_for_exception_3 = 0, last_size_for_exception_3 = 0, last_di_for_exception_3 = 0;
+uae_u16 last_sr_for_exception3 = 0;
 namespace {
 [[noreturn]] void stop(Exit exit, int vector, uae_u32 address, unsigned size, const char *detail) {
     throw Stop{{exit, 0, vector, regs.instruction_pc, regs.pc, address, size, detail}};
@@ -21,6 +26,70 @@ bool valid(AccessKind kind, uae_u32 address, unsigned size) {
     return true;
 }
 bool translation_enabled() { return (regs.tcr | regs.itt0 | regs.itt1 | regs.dtt0 | regs.dtt1) & 0x8000; }
+void enter_exception(int nr, bool interrupt, unsigned level) {
+    if (!host.deliver_exceptions) {
+        stop(Exit::GuestException,nr,nr==3?last_fault_for_exception_3:regs.pc,nr==3?2:0,"terminal guest exception; frame delivery disabled");
+    }
+    if (nr==2) stop(Exit::Unsupported,2,regs.mmu_fault_addr,0,"format7 access-fault continuation/writeback not integrated");
+    if (!interrupt&&nr>=48&&nr<=55) stop(Exit::Unsupported,nr,regs.pc,0,"floating-point arithmetic exception profile not integrated");
+    if (host.exception_depth>=2) stop(Exit::DoubleFault,nr,regs.pc,0,"nested exception delivery limit");
+    struct Depth {
+        Depth() { ++host.exception_depth; }
+        ~Depth() { --host.exception_depth; }
+    } depth;
+    try {
+        resume_stopped();
+        MakeSR();
+        const auto saved_sr=regs.sr;
+        const auto current_pc=regs.pc;
+        const auto oldpc=regs.instruction_pc;
+        if (!regs.s) {
+            regs.usp=regs.regs[15];
+            regs.regs[15]=regs.m?regs.msp:regs.isp;
+            regs.s=true;
+        }
+        unsigned format=0;
+        uae_u32 stacked_pc=exception_pc(nr);
+        if (interrupt && regs.m) {
+            // Master entry: original context on MSP; throwaway context on ISP.
+            // The throwaway SR retains M=1 so upstream RTE switches back to MSP.
+            Exception_build_stack_frame(oldpc,current_pc,0,nr,0);
+            regs.msp=regs.regs[15];
+            regs.sr|=0x2000;
+            regs.m=false;
+            regs.regs[15]=regs.isp;
+            Exception_build_stack_frame(oldpc,current_pc,0,nr,1);
+            format=1; stacked_pc=current_pc;
+        } else if (interrupt) {
+            Exception_build_stack_frame(oldpc,current_pc,0,nr,0);
+            stacked_pc=current_pc;
+        } else if (nr==3) {
+            Exception_build_stack_frame(last_fault_for_exception_3,current_pc,0,nr,2);
+            format=2; stacked_pc=current_pc;
+            if (last_op_for_exception_3 & 0x10000) x_put_word(regs.regs[15],last_sr_for_exception3);
+        } else {
+            const bool absent_fpu=nr==11&&regs.fp_unimp_ins;
+            Exception_build_stack_frame_common(oldpc,stacked_pc,regs.mmu_ssw,nr,nr);
+            format=absent_fpu?4:(nr==5||nr==6||nr==7||nr==9)?2:0;
+        }
+        const auto handler=read(AccessKind::Read,regs.vbr+4u*uae_u32(nr),4);
+        const auto frame_sr=uae_u16(format==1?(saved_sr|0x2000):nr==3&&(last_op_for_exception_3&0x10000)?last_sr_for_exception3:saved_sr);
+        host.frames.push_back({nr,format,regs.regs[15],handler,stacked_pc,frame_sr,interrupt});
+        if (handler&1) {
+            if (nr==3) stop(Exit::DoubleFault,nr,handler,2,"odd address-error vector");
+            complete_exception_trace(nr);
+            exception3_notinstruction(regs.opcode,handler);
+            return;
+        }
+        if (interrupt) regs.intmask=int(level);
+        m68k_setpc(handler);
+        complete_exception_trace(nr);
+    } catch (const Stop &event) {
+        if (event.result.exit==Exit::MemoryFault)
+            stop(Exit::DoubleFault,event.result.vector,event.result.address,event.result.size,"fault while writing frame or fetching vector");
+        throw;
+    }
+}
 }
 uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     if (!valid(kind, address, size)) {
@@ -30,6 +99,13 @@ uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     uae_u32 value = 0;
     for (unsigned i = 0; i < size; ++i) value = (value << 8) | host.ram[address + i];
     if (host.log_accesses) host.accesses.push_back({kind, address, size, value, true});
+    // Capability check at the real generated RTE's format-word read. No added
+    // read, no modified instruction body and no hidden frame normalization.
+    if (host.in_instruction && regs.opcode==0x4e73 && kind==AccessKind::Read && size==2 && address==regs.regs[15]+6) {
+        const auto format=value>>12;
+        if (format==3||format==4||format==7)
+            stop(Exit::Unsupported,0,address,2,"RTE FPU/access-error continuation profile not integrated");
+    }
     return value;
 }
 void poke(uae_u32 address, unsigned size, uae_u32 value) {
@@ -45,6 +121,11 @@ void write(uae_u32 address, unsigned size, uae_u32 value) {
 }
 void reset() {
     regs = State{}; host = Host{};
+    last_addr_for_exception_3=last_fault_for_exception_3=last_op_for_exception_3=0;
+    last_writeaccess_for_exception_3=last_notinstruction_for_exception_3=false;
+    last_fc_for_exception_3=last_size_for_exception_3=last_di_for_exception_3=0;
+    last_sr_for_exception3=0;
+    for(auto &word:mmu040_move16) word=0;
     for (int i = 0; i < 256; ++i) {
         int bit = 0;
         while (bit < 8 && !(i & (1 << bit))) ++bit;
@@ -65,14 +146,18 @@ void resume_stopped() {
     else if (regs.stopped == 2) regs.pc += 6;
     regs.stopped = 0;
 }
-[[noreturn]] void Exception(int nr) { stop(Exit::GuestException, nr, regs.pc, 0, "terminal guest exception; frame delivery not enabled"); }
-[[noreturn]] void Exception_cpu_oldpc(int nr, uae_u32) { Exception(nr); }
-[[noreturn]] void op_illg(uae_u32 opcode) { Exception((opcode & 0xf000) == 0xa000 ? 10 : (opcode & 0xf000) == 0xf000 ? 11 : 4); }
-[[noreturn]] void exception3_read_prefetch(uae_u32, uae_u32 address) {
-    stop(Exit::GuestException, 3, address, 2, "address error; frame delivery not enabled");
+void ExceptionX(int nr, uae_u32, uae_u32 oldpc) {
+    if (oldpc!=0xffffffff) regs.instruction_pc=oldpc;
+    enter_exception(nr,false,0);
 }
-[[noreturn]] void exception3_read_prefetch_only(uae_u32 opcode, uae_u32 address) { exception3_read_prefetch(opcode, address); }
-[[noreturn]] void exception3_read_prefetch_68040bug(uae_u32 opcode, uae_u32 address, uae_u16) { exception3_read_prefetch(opcode, address); }
+void op_illg(uae_u32 opcode) { Exception((opcode & 0xf000)==0xa000?10:(opcode & 0xf000)==0xf000?11:4); }
+[[noreturn]] void unsupported_frame(int format) { stop(Exit::Unsupported,14,regs.pc,unsigned(format),"non-040 exception frame format excluded"); }
+bool inject_interrupt(int vector, unsigned level) {
+    if (vector<0||vector>255||level<1||level>7) throw std::invalid_argument("invalid architectural interrupt request");
+    if (level<=unsigned(regs.intmask)&&level!=7) return false;
+    enter_exception(vector,true,level);
+    return true;
+}
 State architectural_state() {
     MakeSR();
     auto state = regs;
@@ -84,29 +169,41 @@ State architectural_state() {
 Result run(std::uint64_t budget) {
     std::uint64_t instructions = 0;
     try {
+        if (host.halted) return {Exit::DoubleFault,0,0,regs.instruction_pc,regs.pc,0,0,"halted until reset"};
+        if (host.access_fault_latched) return {Exit::Unsupported,0,2,regs.instruction_pc,regs.pc,0,0,"access-fault restart requires reset; continuation not integrated"};
         if (regs.stopped) return {Exit::Stopped, 0};
         if (translation_enabled()) stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "cannot resume while unsupported MMU/translation is enabled");
         while (instructions < budget) {
             regs.instruction_pc = regs.pc;
             regs.trace_pc = regs.pc;
-            if (regs.pc & 1) exception3_read_prefetch(0, regs.pc);
+            if (regs.pc & 1) {
+                exception3_read_prefetch(0, regs.pc);
+                continue;
+            }
             regs.opcode = read(AccessKind::Fetch, regs.pc, 2);
             ++instructions;
             const auto handler = handlers[regs.opcode];
             if (!handler) {
-                if (!legal[regs.opcode]) op_illg(regs.opcode);
+                if (!legal[regs.opcode]) { op_illg(regs.opcode); continue; }
                 stop(Exit::Unsupported, 0, regs.pc, 2, "legal instruction excluded by current helper/profile inventory");
             }
             const auto trace_before = regs.t1;
+            const auto frames_before=host.frames.size();
+            struct Instruction {
+                Instruction() { host.in_instruction=true; }
+                ~Instruction() { host.in_instruction=false; }
+            } instruction;
             handler(regs.opcode);
             if (translation_enabled())
                 stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "MMU/transparent translation enabled by control write");
-            if (regs.stopped) return {Exit::Stopped, instructions, 0, regs.instruction_pc, regs.pc};
             if (regs.spcflags & SPCFLAG_DOTRACE) Exception(9);
-            if (trace_before) { regs.spcflags |= SPCFLAG_DOTRACE; Exception(9); }
+            else if (trace_before && host.frames.size()==frames_before) { regs.spcflags |= SPCFLAG_DOTRACE; Exception(9); }
+            if (regs.stopped) return {Exit::Stopped, instructions, 0, regs.instruction_pc, regs.pc};
         }
         return {Exit::Budget, instructions, 0, regs.instruction_pc, regs.pc};
     } catch (const Stop &event) {
+        if (event.result.exit==Exit::MemoryFault) host.access_fault_latched=true;
+        if (event.result.exit==Exit::DoubleFault) host.halted=true;
         auto result = event.result; result.instructions = instructions; return result;
     }
 }
