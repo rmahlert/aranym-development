@@ -12,7 +12,7 @@
 #include <cstdlib>
 namespace {
 bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
-bool legacy_fpu=false,fpu_exception_delivered=false;
+bool legacy_fpu=false,service_exception_delivered=false;
 bool diagnostics=false;uint64_t last_exception=0;unsigned service_messages=0,guest_messages=0,guest_traps=0;
 void checked(int,const char *);
 void diagnostic_exception() {
@@ -99,6 +99,7 @@ void service(m040_result &result) {
     m040_service call;checked(m040_get_service(&call),"read private instruction metadata");
     const bool trace_service=diagnostics&&call.kind<=M040_NATFEAT_CALL&&(service_messages++<128||call.pc>=0x01000000);
     if(trace_service)std::fprintf(stderr,"MODERN040_SERVICE begin kind=%u pc=%08x stack=%08x d0=%08x sr=%04x\n",call.kind,call.pc,call.stack,regs.regs[0],regs.sr);
+    service_exception_delivered=false;
     TRY(prb) {
         switch(call.kind) {
         case M040_NATFEAT_ID:m68k_natfeat_id();break;
@@ -108,7 +109,6 @@ void service(m040_result &result) {
         case M040_LEGACY_FPU: {
             if(!legacy_fpu||CPUType!=4)fail("legacy FPU requires explicit native 68040 profile");
             if(fpu_get_fpcr()&0xff00)fail("enabled legacy FPU arithmetic exception mode not qualified");
-            fpu_exception_delivered=false;
             // The original native table and generated entry argument use host
             // fetch encoding; the modern boundary exports numeric BE opcode.
             uae_u32 encoded=call.opcode;
@@ -120,9 +120,9 @@ void service(m040_result &result) {
         }
         default:fail("unknown private instruction kind");
         }
-        if(call.kind==M040_LEGACY_FPU&&fpu_exception_delivered) {
-            m040_state state;checked(m040_get_state(&state),"read FPU exception target");
-            if(state.pc!=m68k_getpc())fail("legacy FPU body changed delivered exception target");
+        if(service_exception_delivered) {
+            m040_state state;checked(m040_get_state(&state),"read external service exception target");
+            if(state.pc!=m68k_getpc())fail("external body changed delivered exception target");
             result={};result.abi_version=M040_ABI_VERSION;result.exit=M040_BUDGET;
             result.current_pc=state.pc;result.instruction_pc=state.instruction_pc;
         } else {
@@ -140,9 +140,10 @@ void service(m040_result &result) {
 void modern040_reset_requested(){initialized=false;}
 void modern040_external_exception(int vector) {
     if(!initialized)fail("external exception before initialization");
-    m040_service pending;const bool fpu=m040_get_service(&pending)==M040_OK&&pending.kind==M040_LEGACY_FPU;
+    m040_service pending;const bool service_pending=m040_get_service(&pending)==M040_OK;
+    const bool fpu=service_pending&&pending.kind==M040_LEGACY_FPU;
     from_old(fpu);m040_result result;checked(m040_exception(vector,&result),"external exception");to_old();
-    if(fpu)fpu_exception_delivered=true;
+    if(service_pending)service_exception_delivered=true;
     if(!acceptable(result))fail("external exception unsupported",&result);
 }
 void modern040_external_interrupt(int vector,unsigned level) {

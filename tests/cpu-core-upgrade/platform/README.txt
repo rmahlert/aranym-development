@@ -112,3 +112,8 @@ Transparent permissions and later actual NatFeat/boot paths remain next gates.
    detects missing throwaway on old baseline; wrong-format control rejected.
    See mfp-irq-validation.txt; run-bootstrap.py records explicit owned no-disk
    fixture inputs/results. General nested EmulOp/fault restart remain blocked.
+10. Original host EmulOp direct privilege exceptions now cancel completion just
+    like delivered FPU exceptions. Ordinary user query+privileged console test
+    passes everyCCR/register/frame/bank; wrong-PC checker rejected. The old
+    baseline's separate post-exception PC+2 bug is tracked shin-9w5d.
+    See emulop-validation.txt; nested LineA has no current caller and stays gated.
