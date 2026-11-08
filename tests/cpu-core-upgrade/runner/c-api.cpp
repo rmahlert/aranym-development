@@ -134,4 +134,12 @@ int m040_read_probe_exceptions(int enabled) {
     if(enabled!=0&&enabled!=1)return M040_BAD_ARGUMENT;
     modern040::host.read_probe_exceptions=enabled;return M040_OK;
 }
+int m040_get_exception_event(m040_exception_event *out) {
+    if(busy)return M040_BUSY;
+    if(!out)return M040_BAD_ARGUMENT;
+    *out={};out->abi_version=M040_ABI_VERSION;out->count=modern040::host.frames.size();
+    if(out->count){const auto &frame=modern040::host.frames.back();out->vector=frame.vector;out->format=frame.format;
+        out->stack=frame.stack;out->handler=frame.handler;out->stacked_pc=frame.stacked_pc;out->saved_sr=frame.stacked_sr;out->interrupt=frame.interrupt;}
+    return M040_OK;
+}
 }

@@ -73,6 +73,12 @@ RAM-window/shutdown changes; original production checkout is untouched.
    The30s bounded run times out124 after a VDI640x4801plane banner, without
    expected NF_SHUTDOWN. This is partial progress, not successful completion;
    guest flow/exception diagnostics are the next gate. See read-probe-validation.
+6. Diagnostics resolve the timeout: original hard-FPU CRT rejects the truthful
+   absent-FPU cookie and exits before main. Separately named same-source NOFP
+   built with -m68000 -msoft-float passes on BOTH old and modern cores with the
+   identical PRG/hash/config: real bootstrap/guest STDERROR/NF_SHUTDOWN, exit0.
+   This establishes controlled no-FPU ROM/guest bootstrap and shutdown, not a
+   MiNT desktop or fullFPU/MMU result. See nofp-fixture.txt for exact evidence.
 
 ROM SHA256 b723d04ae9912b8e5fdcb9bd2dffacb3d57968ab3e543b7ace5e687a04bef63b
 PRG SHA256 d2dc467e81e5cb6833b88f676a914341b5b902a270fa264dca31be709936e092

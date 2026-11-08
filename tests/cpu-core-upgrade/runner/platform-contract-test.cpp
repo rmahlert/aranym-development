@@ -29,6 +29,9 @@ void external_exception() {
     expect(m040_run(1,&result)==M040_OK&&result.exit==M040_HOST_SERVICE&&m040_get_service(&call)==M040_OK,"actual NatFeat source suspends before host permission decision");
     expect(m040_exception(8,&result)==M040_OK&&result.exit==M040_BUDGET&&m040_get_service(&call)==M040_BAD_ARGUMENT,"host privilege exception cancels pending source completion");
     expect(m040_get_state(&state)==M040_OK&&state.pc==0x200&&state.isp==0x8ff8&&read(AccessKind::Read,0x8ffa,4)==0x100,"external privilege frame saves faulting private PC before source increment");
+    m040_exception_event event;
+    expect(m040_get_exception_event(&event)==M040_OK&&event.count==1&&event.vector==8&&event.format==0&&event.stack==0x8ff8&&event.handler==0x200&&event.stacked_pc==0x100&&event.saved_sr==0x071f&&!event.interrupt,"diagnostic event reflects actual frame metadata without reading guest process memory");
+    expect(m040_get_exception_event(nullptr)==M040_BAD_ARGUMENT,"diagnostic getter rejects null output");
     expect(m040_run(1,&result)==M040_OK&&m040_get_state(&state)==M040_OK&&state.pc==0x100&&state.regs[15]==0x7000&&state.sr==0x071f,"actual RTE recovers user service-fault PC/SR/A7");
     expect(m040_exception(2,&result)==M040_BAD_ARGUMENT&&m040_exception(3,&result)==M040_BAD_ARGUMENT,"generic exception API rejects access/address faults without precise metadata");
 }

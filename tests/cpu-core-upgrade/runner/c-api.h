@@ -43,6 +43,10 @@ struct m040_result {
 struct m040_service {
     uint32_t abi_version, kind, opcode, pc, stack, supervisor;
 };
+struct m040_exception_event {
+    uint64_t count;
+    uint32_t abi_version, vector, format, stack, handler, stacked_pc, saved_sr, interrupt;
+};
 int m040_reset(const struct m040_options *);
 int m040_get_state(struct m040_state *);
 /* Requires canonical active-bank/A7 consistency. Retains nonarchitectural
@@ -64,6 +68,7 @@ int m040_complete_service(struct m040_result *);
 int m040_exception(uint32_t vector, struct m040_result *);
 /* Narrow trace-free TST.B(An) failed-read delivery; generic RTE7 stays blocked. */
 int m040_read_probe_exceptions(int enabled);
+int m040_get_exception_event(struct m040_exception_event *);
 #ifdef __cplusplus
 }
 #endif

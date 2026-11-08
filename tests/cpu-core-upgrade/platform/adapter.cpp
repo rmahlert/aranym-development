@@ -8,8 +8,18 @@
 #include "../runner/c-api.h"
 #include "adapter.h"
 #include <cstdio>
+#include <cstdlib>
 namespace {
 bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
+bool diagnostics=false;uint64_t last_exception=0;unsigned service_messages=0,guest_messages=0;
+void checked(int,const char *);
+void diagnostic_exception() {
+    if(!diagnostics)return;
+    m040_exception_event event;checked(m040_get_exception_event(&event),"read exception event");
+    if(event.count!=last_exception&&(event.vector<=14||event.vector==61||event.stacked_pc>=0x01000000))
+        std::fprintf(stderr,"MODERN040_EXCEPTION count=%llu vector=%u format=%x savedpc=%08x handler=%08x frame=%08x sr=%04x d0=%08x a7=%08x\n",(unsigned long long)event.count,event.vector,event.format,event.stacked_pc,event.handler,event.stack,event.saved_sr,regs.regs[0],regs.regs[15]);
+    last_exception=event.count;
+}
 void fail(const char *where,const m040_result *result=0) {
     std::fprintf(stderr,"MODERN040_UNSUPPORTED where=%s oldpc=%08x attempts=%llu",where,unsigned(m68k_getpc()),attempted);
     if(result)std::fprintf(stderr," exit=%u vector=%u instruction=%08x current=%08x address=%08x size=%u detail=%s",result->exit,result->vector,result->instruction_pc,result->current_pc,result->address,result->size,result->detail);
@@ -70,6 +80,7 @@ void initialize() {
 #error Experimental modern040 requires JIT-off/MMU-off/normal addressing
 #endif
     const m040_options options={M040_ABI_VERSION,1,1,0};
+    diagnostics=std::getenv("ARANYM_MODERN040_DIAGNOSTICS")!=0;
     checked(m040_reset(&options),"reset modern core");checked(m040_set_bus(memory,0),"attach original Atari physical bus");
     checked(m040_set_reset_handler([](void *){AtariReset();return 1;},0),"attach original Atari RESET hardware/NatFeat/input path");
     checked(m040_private_operations(1),"enable ARAnyM extension decoder");initialized=true;
@@ -79,6 +90,8 @@ void initialize() {
 bool acceptable(const m040_result &result){return result.exit==M040_BUDGET||result.exit==M040_STOPPED||result.exit==M040_HOST_RETURN;}
 void service(m040_result &result) {
     m040_service call;checked(m040_get_service(&call),"read private instruction metadata");
+    const bool trace_service=diagnostics&&call.kind<=M040_NATFEAT_CALL&&(service_messages++<128||call.pc>=0x01000000);
+    if(trace_service)std::fprintf(stderr,"MODERN040_SERVICE begin kind=%u pc=%08x stack=%08x d0=%08x sr=%04x\n",call.kind,call.pc,call.stack,regs.regs[0],regs.sr);
     TRY(prb) {
         switch(call.kind) {
         case M040_NATFEAT_ID:m68k_natfeat_id();break;
@@ -92,6 +105,7 @@ void service(m040_result &result) {
         from_old();checked(m040_exception(int(prb),&result),"NatFeat host exception boundary");
     }
     to_old();
+    if(trace_service)std::fprintf(stderr,"MODERN040_SERVICE end kind=%u pc=%08x d0=%08x sr=%04x\n",call.kind,unsigned(m68k_getpc()),regs.regs[0],regs.sr);
 }
 }
 void modern040_reset_requested(){initialized=false;}
@@ -110,10 +124,17 @@ void modern040_execute() {
     struct Depth{Depth(){++depth;}~Depth(){--depth;}}guard;
     initialize();from_old();
     for(;;) {
+        if(diagnostics&&guest_messages<64&&m68k_getpc()>=FastRAMBase&&m68k_getpc()<FastRAMBase+FastRAMSize) {
+            // Bounded own-emulator instruction history in mapped guest RAM,
+            // never MMIO and no external debugger/process-memory access.
+            std::fprintf(stderr,"MODERN040_GUEST pc=%08x op=%04x d0=%08x a7=%08x sr=%04x\n",unsigned(m68k_getpc()),unsigned(phys_get_word(m68k_getpc())),regs.regs[0],regs.regs[15],regs.sr);++guest_messages;
+        }
         m040_result result;checked(m040_run(1,&result),"bounded modern dispatch");attempted+=result.instructions;to_old();
         if(result.exit==M040_BUDGET&&result.vector==2)
             std::fprintf(stderr,"MODERN040_PROBE_DELIVERED instruction=%08x fault=%08x handler=%08x\n",result.instruction_pc,result.address,result.current_pc);
         if(result.exit==M040_HOST_SERVICE)service(result);
+        diagnostic_exception();
+        if(diagnostics&&attempted&&attempted%1000000==0)std::fprintf(stderr,"MODERN040_PROGRESS attempts=%llu pc=%08x sr=%04x a7=%08x\n",attempted,unsigned(m68k_getpc()),regs.sr,regs.regs[15]);
         if(!acceptable(result))fail("modern dispatch unsupported",&result);
         if(result.exit==M040_HOST_RETURN||quit_program>0)return;
         cpu_check_ticks();regs.fault_pc=m68k_getpc();
