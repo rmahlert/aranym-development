@@ -107,3 +107,8 @@ Transparent permissions and later actual NatFeat/boot paths remain next gates.
    MiNT image installs fVDI7a17, reaches XaAES/AES test shell and completes real
    GEMDOS shutdown with hostexit0. This is NOT a modern FPU/JIT/MMU claim.
    See legacy-fpu-validation.txt for actual state/endian/frame tests and limits.
+9. Ordinary live MFP TimerC/customvector69 fixture now passes master STOP wake,
+   ISP throwaway1+MSP frame0 and real ROM RTE bank restoration. Same fixture
+   detects missing throwaway on old baseline; wrong-format control rejected.
+   See mfp-irq-validation.txt; run-bootstrap.py records explicit owned no-disk
+   fixture inputs/results. General nested EmulOp/fault restart remain blocked.
