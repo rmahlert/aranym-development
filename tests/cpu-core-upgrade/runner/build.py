@@ -29,21 +29,22 @@ CALLS = set("""if while for switch sizeof
     put_bitfield divbyzero_special setdivuflags setdivsflags setchkundefinedflags
     setchk2undefinedflags m68k_mull m68k_divl op_unimpl
     sfc_nommu_get_byte sfc_nommu_get_word sfc_nommu_get_long
-    dfc_nommu_put_byte dfc_nommu_put_word dfc_nommu_put_long cpureset""".split())
+    dfc_nommu_put_byte dfc_nommu_put_word dfc_nommu_put_long cpureset
+    flush_cpu_caches_040 flush_icache""".split())
 HELPERS = {
     "newcpu.cpp": ["activate_trace", "MakeSR", "MakeFromSR_x", "MakeFromSR_T0",
                    "MakeFromSR", "MakeFromSR_STOP", "check_t0_trace", "internalexception", "exception_check_trace",
                    "Exception_cpu_oldpc", "Exception", "ExceptionL", "op_unimpl", "exception3f", "exception3_notinstruction",
                    "exception3_read_prefetch_only", "exception3_read_prefetch", "exception3_read_prefetch_68040bug",
                    "sfc_nommu_get_byte", "sfc_nommu_get_word", "sfc_nommu_get_long",
-                   "dfc_nommu_put_byte", "dfc_nommu_put_word", "dfc_nommu_put_long"],
+                   "dfc_nommu_put_byte", "dfc_nommu_put_word", "dfc_nommu_put_long", "flush_cpu_caches_040"],
     "newcpu_common.cpp": ["movec_illg", "m68k_move2c", "m68k_movec2", "get_disp_ea_020", "exception_pc",
                           "Exception_build_stack_frame_common", "get_bitfield", "put_bitfield",
                           "divbyzero_special", "setdivuflags", "setdivsflags", "setchkundefinedflags",
                           "chk2_sub_wrap", "setchk2undefinedflags", "divsl_overflow", "divul_overflow",
                           "divsl_divbyzero", "divul_divbyzero", "m68k_divl", "m68k_mull"],
     "od-unix/machdep/m68k.h": ["cctrue"],
-    "cpummu.cpp": ["mmu_tt_modified","mmu_do_match_ttr","mmu_match_ttr"],
+    "cpummu.cpp": ["mmu_tt_modified","mmu_do_match_ttr","mmu_match_ttr","mmu_flush_cache"],
 }
 
 
@@ -241,7 +242,7 @@ def main():
     decoded = subprocess.check_output([str(generated / "decode")], text=True)
     body = ['// Mechanically extracted, unmodified pinned WinUAE/UAE generated bodies and helpers.',
             '// Copyright Bernd Schmidt and WinUAE/ARAnyM contributors; retain upstream licenses.',
-            '#include "core.hpp"', '#include <cstdlib>', 'namespace modern040 {',
+            '#include "core.hpp"', '#include <cstdlib>', '#define MMU_ICACHE 0', 'namespace modern040 {',
             *helper_text, *functions.values(), *private_text,
             f'extern const unsigned supported_families = {len(selected)};',
             'struct Dispatch { uae_u16 opcode; Handler handler; bool lc040_probe; };',
@@ -293,6 +294,7 @@ def main():
                            ("service-tests", "service-test.cpp"),
                            ("platform-contract-tests", "platform-contract-test.cpp"),
                            ("ttr-tests", "ttr-test.cpp"),
+                           ("cache-tests", "cache-test.cpp"),
                            ("integer-runner", "main.cpp")]:
         command([cxx, *flags, HERE / driver, build / "libmodern040-integer.a", "-o", build / target])
     print(f"Runner: {len(selected)} generated families, {count} opcodes; {len(excluded)} families explicitly excluded", flush=True)
@@ -317,6 +319,10 @@ def main():
     result=subprocess.run([str(build / "ttr-tests"),"--negative-match"])
     if result.returncode!=1: raise RuntimeError(f"TTR checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-match by actual TTR checker",flush=True)
+    command([build / "cache-tests"])
+    result=subprocess.run([str(build / "cache-tests"),"--negative-selector"])
+    if result.returncode!=1: raise RuntimeError(f"Cache checker returned {result.returncode}, expected1")
+    print("REJECTED deliberate --negative-selector by actual cache checker",flush=True)
     result=subprocess.run([str(build / "bus-tests"),"--negative-fc"])
     if result.returncode!=1: raise RuntimeError(f"Bus checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-fc by actual bus checker",flush=True)

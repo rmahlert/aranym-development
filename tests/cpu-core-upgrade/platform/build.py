@@ -48,7 +48,11 @@ def main():
         run(['python3',RUNNER/'build.py','--upstream',args.upstream.resolve(),'--build-dir',core],cwd=ROOT)
     provenance=json.loads((core/'runner-provenance.json').read_text())
     if provenance['runner'].get('build',{}).get('sanitized') is not False:raise RuntimeError('frontend requires explicitly nonsanitized core archive')
-    for name,expected in provenance['runner']['source_sha256'].items():
+    code_suffixes={'.py','.cpp','.hpp','.c','.h'}
+    expected_code={name:expected for name,expected in provenance['runner']['source_sha256'].items() if Path(name).suffix in code_suffixes}
+    actual_code={p.name for p in RUNNER.iterdir() if p.is_file() and p.suffix in code_suffixes}
+    if actual_code!=set(expected_code):raise RuntimeError('core source-file set changed; regenerate without --reuse-core')
+    for name,expected in expected_code.items():
         if digest(RUNNER/name)!=expected:raise RuntimeError('stale core source '+name+'; regenerate without --reuse-core')
     run(['make','version_date.h'],cwd=build)
     run(['make','-j8','-C','src/uae_cpu'],cwd=build)

@@ -181,6 +181,12 @@ void mmu_set_super(bool) { stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "MMU privil
 void set_cpu_caches(bool) { ++host.cache_controls; }
 uae_u32 mmu_set_tc(uae_u32) { stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "MMU translation unavailable"); }
 void flush_icache(int) { ++host.cache_controls; }
+void flush_cpu_caches_040_2(int cache,int scope,uae_u32 address,bool push,bool invalidate) {
+    // This direct-fetch, synchronous-write interpreter has no resident lines
+    // or pending writebacks. Cache maintenance therefore has an empty set;
+    // record the real wrapper's parameters without inventing RAM/MMIO access.
+    host.cache_operations.push_back({cache,scope,address,push,invalidate});++host.cache_controls;
+}
 void write_log(const TCHAR *, ...) {}
 bool cpureset() {
     if(!host.reset_hardware)stop(Exit::Reset,0,regs.pc,2,"RESET requires explicit platform hardware reset callback");

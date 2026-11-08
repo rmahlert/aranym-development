@@ -86,6 +86,7 @@ struct Frame {
     uae_u16 stacked_sr;
     bool interrupt;
 };
+struct CacheOperation { int cache,scope;uae_u32 address;bool push,invalidate; };
 struct Host {
     std::array<uae_u8, 65536> ram{};
     std::vector<Access> accesses;
@@ -103,6 +104,7 @@ struct Host {
     std::optional<Service> service;
     unsigned exception_depth = 0;
     std::vector<Frame> frames;
+    std::vector<CacheOperation> cache_operations;
 };
 extern Host host;
 extern bool ismoves_nommu;
@@ -191,6 +193,9 @@ void set_cpu_caches(bool);
 uae_u32 mmu_set_tc(uae_u32);
 void mmu_tt_modified();
 void flush_icache(int);
+void flush_cpu_caches_040(uae_u16);
+void flush_cpu_caches_040_2(int,int,uae_u32,bool,bool);
+void mmu_flush_cache();
 void write_log(const TCHAR *, ...);
 int m68k_move2c(int, uae_u32 *);
 int m68k_movec2(int, uae_u32 *);

@@ -14,8 +14,8 @@ Outputs: libmodern040-integer.a, runner-tests, integer-runner and a provenance/
 coverage inventory under an ignored build directory. No production target,
 configure setting, installed emulator or guest image is changed.
 
-The fast040 table now binds 1,808 unchanged generated families /47,613 opcode
-encodings. Another59 families are explicitly excluded with missing-helper names
+The fast040 table now binds 1,828 unchanged generated families /47,805 opcode
+encodings. Another39 families are explicitly excluded with missing-helper names
 in runner-provenance.json. Compiled coverage does not mean every encoding has
 been validated. Real pinned helpers include MakeSR/MakeFromSR_x and its wrappers,
 MOVEC model/mask handling, brief/full020 effective address calculation, portable
@@ -107,6 +107,13 @@ external exception API cancels pending NatFeat completion and delivers a real
 frame before the source PC increment.12 additional focused assertions validate
 these contracts. See ../platform/README.txt for the experimental frontend build
 and actual controlled ROM-attempt results; no production default is changed.
+
+Real cache instruction bodies/source wrapper now bind against an explicit
+empty-cache interpreter adapter.141320 normal+ASan assertions and an actual
+selector-negative pass, including privilege/parameters/noMMIO and a guest
+self-modifying-code sequence. This is not physical cache/timing emulation;
+see cache-validation.txt. Real unprotected TTR matching is tested separately in
+ttr-validation.txt; protected regions and paged MMU remain fail-closed.
 
 Source/generated function bodies and selected upstream helpers are extracted
 mechanically without replacement instruction code. Provenance includes source

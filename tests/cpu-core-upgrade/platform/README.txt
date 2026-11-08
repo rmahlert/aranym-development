@@ -62,6 +62,10 @@ RAM-window/shutdown changes; original production checkout is untouched.
    exit3. Paged MMU and enabled protected regions stay blocked before fetch.
    See runner/ttr-validation.txt for1048593 matching/dispatch assertions and
    exact manual/source scope; this result is not a completed firmware boot.
+4. Empty-cache maintenance semantics pass that instruction.7407attempts then
+   stop on physical byte-read fault050fffff, TST.B(A0) at00e00cba, just beyond
+   configured64MiB FastRAM. No fault restart/repeated reads are silently added.
+   Read-probe frame delivery/discard recovery remains the next gate.
 
 ROM SHA256 b723d04ae9912b8e5fdcb9bd2dffacb3d57968ab3e543b7ace5e687a04bef63b
 PRG SHA256 d2dc467e81e5cb6833b88f676a914341b5b902a270fa264dca31be709936e092
