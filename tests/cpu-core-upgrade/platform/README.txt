@@ -122,3 +122,10 @@ Transparent permissions and later actual NatFeat/boot paths remain next gates.
     generated profile/NVRAM directories prevent default-profile overlap. See
     windows-validation.txt and windows-test-README.txt; root owns advance notice
     and closed-copy Windows desktop/application acceptance before benchmarking.
+12. First peer Windows modern04210/currentddce boot stopped at the documented
+    ordinary access-fault gate before desktop. Static bytes map to optional
+    FreeType family-name hashing; root owns independent nullable-name repair.
+    Exact same currentpair/kernel boot and shutdown on BOTH controlled Linux
+    arms, but peer's restored original Windows arm/font evidence is still
+    needed. Focused failed-MOVE/preceding-MOVEA/state-order checks pass; no
+    policy/restart expansion. See peer-null-read-2026-11-08.txt.
