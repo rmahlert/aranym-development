@@ -79,6 +79,13 @@ RAM-window/shutdown changes; original production checkout is untouched.
    identical PRG/hash/config: real bootstrap/guest STDERROR/NF_SHUTDOWN, exit0.
    This establishes controlled no-FPU ROM/guest bootstrap and shutdown, not a
    MiNT desktop or fullFPU/MMU result. See nofp-fixture.txt for exact evidence.
+7. An owned clone of the parent's already-synced disposable MiNT test image
+   (not an owner image/frozen source edit) reaches its SFP-004 absence probe.
+   The bounded pure word-read/discard-handler extension handles that exact
+   unmapped read. Actual fVDI7a17 installs and XaAES run_km returnsOK; execution
+   then stops on unsupported SFP command-port WRITEfffffa42 at0140da1e.
+   No general writeback/FPU emulation is inferred. Read-probe suite40993 PASS
+   normal+ASan. Original working FPU backend is the next experimental adapter.
 
 ROM SHA256 b723d04ae9912b8e5fdcb9bd2dffacb3d57968ab3e543b7ace5e687a04bef63b
 PRG SHA256 d2dc467e81e5cb6833b88f676a914341b5b902a270fa264dca31be709936e092

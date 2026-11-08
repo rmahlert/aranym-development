@@ -45,6 +45,33 @@ void discard_handler() {
     unsigned probes=0;for(auto a:host.accesses)if(a.kind==AccessKind::Read&&a.address==0x10000)++probes;
     expect(probes==1,"discard recovery never replays failed peripheral/RAM probe read");
 }
+void word_probe_and_sfp_handler() {
+    for(unsigned mode:{0x0700u,0x1700u,0x2700u,0x3700u})for(unsigned ccr=0;ccr<32;++ccr)for(unsigned dreg=0;dreg<8;++dreg) {
+        setup(mode|ccr);for(unsigned i=0;i<15;++i)regs.regs[i]=0x76543210+i;
+        const auto initial=architectural_state();poke(0x100,2,0x3038|(dreg<<9));poke(0x102,2,0xfa44);
+        const auto result=run(1);const auto sp=((mode&0x1000)?0x8000u:0x9000u)-60;
+        expect(result.exit==Exit::Budget&&result.vector==2&&result.size==2&&result.address==0xfffffa44&&regs.pc==0x200,"pure MOVE.Wabs-short probe delivers exact failed word request");
+        expect(peek(sp,2)==(mode|ccr)&&peek(sp+2,4)==0x104&&peek(sp+6,2)==0x7008,"word probe frame uses original SR and genuine four-byte instruction nextPC");
+        expect(peek(sp+12,2)==(0x0140u|((mode&0x2000)?5:1))&&peek(sp+20,4)==0xfffffa44&&peek(sp+14,2)==0&&peek(sp+16,2)==0&&peek(sp+18,2)==0,"word physical-read SSW/FA with no pending valid writebacks");
+        for(unsigned i=0;i<15;++i)expect(regs.regs[i]==initial.regs[i],"failed source MOVE.W reads before destination or any other D/A changes");
+    }
+    setup();regs.regs[15]=regs.isp=0x8ff4;regs.regs[8]=0x8ff4;regs.regs[9]=0x500;regs.regs[0]=0;
+    poke(0x8ff4,4,0x12345678);poke(0x8ff8,4,0x11223344);poke(0x8ffc,4,0x55667788);poke(0x9000,4,0x300);
+    poke(0x100,2,0x3038);poke(0x102,2,0xfa44);
+    // FreeMiNT detect.S sexit shape: restore vector and savedSP, SWAPD0,
+    // MOVEM.L(SP)+,D1/A0-A1 and RTS. It discards this bus frame, never RTEs.
+    const uae_u16 code[]={0x21c9,0x0008,0x2e48,0x4e71,0x4840,0x4cdf,0x0302,0x4e75};
+    for(unsigned i=0;i<std::size(code);++i)poke(0x200+2*i,2,code[i]);poke(0x300,2,0x4e72);poke(0x302,2,0x2700);
+    expect(run(1).vector==2,"word probe reaches genuine SFP absence handler");
+    const auto result=run(100);
+    expect(result.exit==Exit::Stopped&&result.instructions==7&&regs.regs[0]==0&&regs.regs[15]==0x9004,"actual SFP-shaped discard handler returns absent coprocessor and caller stack");
+    expect(regs.regs[1]==0x12345678&&regs.regs[8]==0x11223344&&regs.regs[9]==0x55667788&&peek(8,4)==0x500,"SFP handler restores original vector/MOVEM registers");
+    unsigned failed=0;for(auto a:host.accesses)if(a.kind==AccessKind::Read&&a.address==0xfffffa44)++failed;
+    expect(failed==1,"SFP absence recovery does not replay hardware word read");
+    for(unsigned dreg=0;dreg<8;++dreg){setup();regs.regs[dreg]=0x76543210;poke(0x100,2,0x3038|(dreg<<9));poke(0x102,2,0x0400);poke(0x400,2,0x8001);expect(run(1).exit==Exit::Budget&&regs.regs[dreg]==0x76548001&&regs.pc==0x104&&regs.n&&!regs.z&&regs.x&&!regs.v&&!regs.c,"successful source MOVE.W retains upper word and sets genuine flags");}
+    setup();poke(0x100,2,0x3038);poke(0x102,2,0x0400);host.denied=Access{AccessKind::Read,0x400,2,0,false};
+    expect(run(1).exit==Exit::MemoryFault&&host.frames.empty(),"other word/partial-device failures are not generalized from wholly unmapped SFP port");
+}
 void fail_closed_and_success() {
     for(uae_u16 opcode:{0x4a50,0x4a18,0x1010,0x1080}) {
         setup();regs.regs[8]=0x400;poke(0x100,2,opcode);host.denied=Access{opcode==0x1080?AccessKind::Write:AccessKind::Read,0x400,4,0,false};
@@ -64,4 +91,4 @@ void fail_closed_and_success() {
     expect(m040_run(1,&result)==M040_OK&&result.exit==M040_BUDGET&&result.vector==2&&result.address==0x10000&&result.current_pc==0x200,"C result carries real delivered-probe boundary metadata");
 }
 }
-int main(int argc,char **argv){try{if(argc>2||(argc==2&&std::string_view(argv[1])!="--negative-pc"))throw std::runtime_error("bad mode");wrong_pc=argc==2;install_handlers();frame_and_no_restart();discard_handler();fail_closed_and_success();std::cout<<"PASS: "<<checks<<" bounded real format7 read-probe/discard-handler assertions\n";return 0;}catch(const std::exception &e){std::cerr<<"FAIL: "<<e.what()<<'\n';return wrong_pc&&std::string_view(e.what())=="manual format7 saved SR/next-instruction PC/vector"?1:2;}}
+int main(int argc,char **argv){try{if(argc>2||(argc==2&&std::string_view(argv[1])!="--negative-pc"))throw std::runtime_error("bad mode");wrong_pc=argc==2;install_handlers();frame_and_no_restart();discard_handler();word_probe_and_sfp_handler();fail_closed_and_success();std::cout<<"PASS: "<<checks<<" bounded real format7 read-probe/discard-handler assertions\n";return 0;}catch(const std::exception &e){std::cerr<<"FAIL: "<<e.what()<<'\n';return wrong_pc&&std::string_view(e.what())=="manual format7 saved SR/next-instruction PC/vector"?1:2;}}

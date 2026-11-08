@@ -51,3 +51,32 @@ after VDI640x4801plane, without expected NF_SHUTDOWN marker; this is NOT a clean
 boot completion. Baseline has no intentional guest countdown, so possible guest
 exception/flow differences require bounded diagnostics next. No unsupported
 core exit/crash was logged in that attempt. Production/owner images untouched.
+
+MiNT SFP-004 read-probe extension
+-------------------------------
+Actual disposable MiNT startup next failed on opcode3038fa44 at01050e48:
+MOVE.W($fffffa44).W,D0. Read-only local FreeMiNT sys/arch/detect.S451 identifies
+this as detect_sfp(), with a sexit handler restoring vector/SP/MOVEM registers
+and RTS. It discards the frame. Original ARAnyM hardware.cpp maps MFP only
+throughfffa2f; HWget_w finds no module atfffa44 and raises BUS_ERROR before
+any device subread. Thus this observed word access is wholly uncompleted.
+
+The opt-in profile additionally admits only MOVE.Wabs-short->Dn at that exact
+logical unmapped portfffffa44, all8 destination registers, trace-free. Source
+op3038 body fetches its extension and reads the operand before changing Dn,
+flags or PC; source length is4. Frame7 now uses physical WORD readSSW/FA and
+nextPC+4. No new read, fabricated device value, failed write handling, generic
+word/partial-transfer assumption, RTE7 continuation or FPU cookie is introduced.
+
+Total read-probe assertions expand22548->40993 normal+ASan/UBSan PASS, with
+existing actual wrong-PC negative: allD/CCR/S-M cases and unchanged destination,
+word fields, real FreeMiNT-shaped restore-vector/A0->SP/SWAP/MOVEM/RTS handler,
+exactly one failed read, successful MOVE.W flags/upper-word preservation and
+other word-fault rejection. Other suites remain passing.
+
+Actual owned MiNT image now passes SFP absence, installs fVDI7a17 and reaches
+XaAES run_km(xaaes.km) OK. It then stops safely after~64.39million attempts on
+a WRITE tofffffa42, MOVE.W#3,$fa42 at0140da1e, rather than fake writeback or a
+device reply. This indicates a real remaining coprocessor/backend requirement.
+Next is an explicitly selected original working ARAnyM FPU bridge with real
+state/endian/exception tests; modern WinUAE FPU improvements are not claimed.

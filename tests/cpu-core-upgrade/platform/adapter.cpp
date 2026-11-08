@@ -11,18 +11,21 @@
 #include <cstdlib>
 namespace {
 bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
-bool diagnostics=false;uint64_t last_exception=0;unsigned service_messages=0,guest_messages=0;
+bool diagnostics=false;uint64_t last_exception=0;unsigned service_messages=0,guest_messages=0,guest_traps=0;
 void checked(int,const char *);
 void diagnostic_exception() {
     if(!diagnostics)return;
     m040_exception_event event;checked(m040_get_exception_event(&event),"read exception event");
-    if(event.count!=last_exception&&(event.vector<=14||event.vector==61||event.stacked_pc>=0x01000000))
+    const bool admitted=event.vector<=14||event.vector==61||(event.count!=last_exception&&event.stacked_pc>=0x01000000&&guest_traps++<128);
+    if(event.count!=last_exception&&admitted)
         std::fprintf(stderr,"MODERN040_EXCEPTION count=%llu vector=%u format=%x savedpc=%08x handler=%08x frame=%08x sr=%04x d0=%08x a7=%08x\n",(unsigned long long)event.count,event.vector,event.format,event.stacked_pc,event.handler,event.stack,event.saved_sr,regs.regs[0],regs.regs[15]);
     last_exception=event.count;
 }
 void fail(const char *where,const m040_result *result=0) {
     std::fprintf(stderr,"MODERN040_UNSUPPORTED where=%s oldpc=%08x attempts=%llu",where,unsigned(m68k_getpc()),attempted);
     if(result)std::fprintf(stderr," exit=%u vector=%u instruction=%08x current=%08x address=%08x size=%u detail=%s",result->exit,result->vector,result->instruction_pc,result->current_pc,result->address,result->size,result->detail);
+    if(result&&result->instruction_pc>=FastRAMBase&&uint64_t(result->instruction_pc)+8<=uint64_t(FastRAMBase)+FastRAMSize)
+        std::fprintf(stderr," words=%04x,%04x,%04x,%04x",unsigned(phys_get_word(result->instruction_pc)),unsigned(phys_get_word(result->instruction_pc+2)),unsigned(phys_get_word(result->instruction_pc+4)),unsigned(phys_get_word(result->instruction_pc+6)));
     std::fprintf(stderr," sr=%04x d0=%08x tc=%08x itt0=%08x itt1=%08x dtt0=%08x dtt1=%08x",regs.sr,regs.regs[0],regs.tc,regs.itt0,regs.itt1,regs.dtt0,regs.dtt1);
     std::fputc('\n',stderr);std::fflush(stderr);QuitEmulator(3);
 }
@@ -84,7 +87,7 @@ void initialize() {
     checked(m040_reset(&options),"reset modern core");checked(m040_set_bus(memory,0),"attach original Atari physical bus");
     checked(m040_set_reset_handler([](void *){AtariReset();return 1;},0),"attach original Atari RESET hardware/NatFeat/input path");
     checked(m040_private_operations(1),"enable ARAnyM extension decoder");initialized=true;
-    checked(m040_read_probe_exceptions(1),"enable bounded trace-free TST.B(An) probe fault delivery");
+    checked(m040_read_probe_exceptions(1),"enable bounded trace-free pure-read probe fault delivery");
     std::fprintf(stderr,"MODERN040_EXPERIMENTAL source=d82bc254 profile=integer-lc040-probes noMMU noJIT fault-restart=unsupported\n");
 }
 bool acceptable(const m040_result &result){return result.exit==M040_BUDGET||result.exit==M040_STOPPED||result.exit==M040_HOST_RETURN;}

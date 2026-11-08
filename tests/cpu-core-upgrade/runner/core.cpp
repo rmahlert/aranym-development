@@ -316,23 +316,28 @@ Result run(std::uint64_t budget) {
             if(stopped.result.exit==Exit::Unsupported)host.capability_latched=true;
             auto result=stopped.result;result.instructions=instructions;return result;
         };
-        // Narrow firmware probe profile: the genuine pinned TST.B(An) body
-        // performs just this read before any flags/registers/PC change. There
+        // Narrow firmware probe profile: these genuine pinned read-only bodies
+        // perform the operand read before any flags/registers/PC change. There
         // are no pending writes in this synchronous empty-cache interpreter.
         // Full continuation/RTE7 remains blocked, including traced accesses.
         if(event.result.exit==Exit::MemoryFault&&host.read_probe_exceptions&&host.deliver_exceptions&&host.bus_fault) {
             const auto fault=*host.bus_fault;const auto &req=fault.request;
-            if(fault.in_instruction&&(fault.opcode&0xfff8)==0x4a10&&req.kind==AccessKind::Read&&req.size==1&&
-               !req.alternate_function_code&&!req.transfer_type&&req.address==regs.regs[8+(fault.opcode&7)]&&
+            const bool tst_byte=(fault.opcode&0xfff8)==0x4a10&&req.size==1&&req.address==regs.regs[8+(fault.opcode&7)];
+            // The observed SFP-004 port is wholly unmapped in the Atari
+            // backend, so its word access fails before any device subread.
+            // Other word-fault/partial-transfer contracts are not inferred.
+            const bool move_word_abs=(fault.opcode&0xf1ff)==0x3038&&req.size==2&&req.address==0xfffffa44;
+            if(fault.in_instruction&&(tst_byte||move_word_abs)&&req.kind==AccessKind::Read&&
+               !req.alternate_function_code&&!req.transfer_type&&
                regs.pc==regs.instruction_pc&&!regs.t0&&!regs.t1&&!(regs.spcflags&(SPCFLAG_TRACE|SPCFLAG_DOTRACE))) {
-                regs.mmu_fault_addr=req.address;regs.mmu_effective_addr=0;regs.mmu_ssw=uae_u16(0x0120|req.function_code);
+                regs.mmu_fault_addr=req.address;regs.mmu_effective_addr=0;regs.mmu_ssw=uae_u16(0x0100|(tst_byte?0x20:0x40)|req.function_code);
                 regs.wb2_status=regs.wb3_status=0;regs.wb2_address=regs.wb3_data=0;
                 for(auto &word:mmu040_move16)word=0;
-                host.read_probe_next_pc=regs.instruction_pc+2;
+                host.read_probe_next_pc=regs.instruction_pc+(tst_byte?2:4);
                 struct Delivery {Delivery(){host.delivering_read_probe=true;}~Delivery(){host.delivering_read_probe=false;}} delivery;
                 try {
                     Exception(2);
-                    return {Exit::Budget,instructions,2,event.result.instruction_pc,regs.pc,req.address,1,"delivered bounded TST.B(An) read-probe format7; RTE7 continuation unsupported"};
+                    return {Exit::Budget,instructions,2,event.result.instruction_pc,regs.pc,req.address,req.size,"delivered bounded read-only probe format7; RTE7 continuation unsupported"};
                 } catch(const Stop &nested){return terminal(nested);}
             }
         }
