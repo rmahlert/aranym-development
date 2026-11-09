@@ -326,8 +326,22 @@ bool vm_acquire_fixed(void * addr, size_t size, int options)
 #elif defined(HAVE_MMAP_VM)
 	const int extra_map_flags = translate_map_flags(options);
 
-	if (mmap((void *)addr, size, VM_PAGE_DEFAULT, extra_map_flags | map_flags | MAP_FIXED, zero_fd, 0) == MAP_FAILED)
-		return false;
+#if defined(OS_linux) && defined(EXPERIMENTAL_UPSTREAM_X86_JIT)
+    // This experimental no-PIE profile shares low addresses with randomized
+    // native allocations. Never replace an occupied host mapping with RAM.
+    int checked_flags=(extra_map_flags|map_flags)&~MAP_FIXED;
+#ifdef MAP_FIXED_NOREPLACE
+    checked_flags|=MAP_FIXED_NOREPLACE;
+#endif
+    void *mapped=mmap(addr,size,VM_PAGE_DEFAULT,checked_flags,zero_fd,0);
+    if(mapped==MAP_FAILED)return false;
+    // Older kernels may ignore an unknown NOREPLACE flag and treat addr as a
+    // hint. A different address is not a successful fixed allocation.
+    if(mapped!=addr){munmap(mapped,size);return false;}
+#else
+    if (mmap((void *)addr, size, VM_PAGE_DEFAULT, extra_map_flags | map_flags | MAP_FIXED, zero_fd, 0) == MAP_FAILED)
+        return false;
+#endif
 #else
 #ifdef HAVE_WIN32_VM
 	// Windows cannot allocate Low Memory

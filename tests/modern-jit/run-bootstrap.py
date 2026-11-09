@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -20,6 +21,8 @@ def main():
     parser.add_argument('--expect-marker',required=True)
     parser.add_argument('--legacy-fpu',action='store_true')
     parser.add_argument('--jit',action='store_true')
+    parser.add_argument('--require-modern',action='store_true')
+    parser.add_argument('--require-translated-guest',action='store_true')
     parser.add_argument('--timeout',type=int,default=30)
     args=parser.parse_args()
     if sys.platform!='linux':raise RuntimeError('this experimental recipe is qualified only for native Linux')
@@ -27,6 +30,7 @@ def main():
         path=getattr(args,name).resolve(strict=True)
         if not path.is_file():raise RuntimeError(name+' must be a file')
         setattr(args,name,path)
+    if args.require_translated_guest and not args.jit:raise RuntimeError('translated guest witness requires JIT enabled')
     if args.timeout<1 or args.timeout>300:raise RuntimeError('fixture timeout must be1..300s')
     work=args.work_dir.resolve();marker=work/'owned-bootstrap-fixture.json'
     if work.exists() and any(work.iterdir()) and not marker.exists():raise RuntimeError('choose a new owned work directory')
@@ -34,6 +38,7 @@ def main():
     marker.write_text(json.dumps({'purpose':'owned no-disk Atari bootstrap fixture'})+'\n')
     config=work/'config';config.write_text(f'''[GLOBAL]
 FastRAM = 64
+FixedMemoryOffset = 60000000
 EmuTOS = {args.rom}
 Bootstrap = {args.guest}
 [JIT]
@@ -60,8 +65,12 @@ RedirConsole = Yes
     started=time.monotonic();log=work/'run.log'
     with log.open('w') as out:
         result=subprocess.run(['timeout','-k','5',str(args.timeout),str(args.binary),'-c',str(config)],cwd=work,env=env,stdout=out,stderr=subprocess.STDOUT)
-    elapsed=time.monotonic()-started;found=args.expect_marker in log.read_text(errors='replace')
-    record={'inputs':inputs,'jit':args.jit,'legacy_fpu':args.legacy_fpu,'exit':result.returncode,'expected_exit':args.expect_exit,'marker':args.expect_marker,'marker_found':found,'seconds':elapsed,'config_sha256':sha(config),'log_sha256':sha(log),'passed':result.returncode==args.expect_exit and found}
+    elapsed=time.monotonic()-started;logtext=log.read_text(errors='replace');found=args.expect_marker in logtext
+    modern='MODERN040_EXPERIMENTAL source=d82bc254' in logtext
+    witness=re.search(r'UPSTREAM-JIT compiled-insns=(\d+) cached-dispatches=(\d+) executed-translated=(\d+) executed-guest=(\d+)',logtext)
+    observed={} if not witness else dict(zip(('emitted_instructions','cached_dispatches','executed_translated','executed_guest'),map(int,witness.groups())))
+    contract=(not args.require_modern or modern) and (not args.require_translated_guest or observed.get('executed_guest',0)>0)
+    record={'inputs':inputs,'modern_core_observed':modern,'jit_observed':observed,'harness_controls':{k:env.get(k) for k in ('ARANYM_UPSTREAM_JIT_GROUP','ARANYM_UPSTREAM_JIT_FALLBACK_ONLY')},'jit':args.jit,'legacy_fpu':args.legacy_fpu,'exit':result.returncode,'expected_exit':args.expect_exit,'marker':args.expect_marker,'marker_found':found,'seconds':elapsed,'config_sha256':sha(config),'log_sha256':sha(log),'passed':result.returncode==args.expect_exit and found and contract}
     (work/'result.json').write_text(json.dumps(record,indent=2)+'\n');print(json.dumps(record,indent=2))
     return 0 if record['passed'] else 1
 if __name__=='__main__':raise SystemExit(main())

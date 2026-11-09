@@ -46,7 +46,7 @@
 #endif
 #include "fpu/fpu.h"
 #include "natfeats.h"
-#ifdef EXPERIMENTAL_MODERN040
+#if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
 #include "../../tests/cpu-core-upgrade/platform/adapter.h"
 #endif
 #include "disasm-glue.h"
@@ -555,7 +555,7 @@ static int building_bus_fault_stack_frame=0;
 
 void Exception(int nr, uaecptr oldpc)
 {
-#ifdef EXPERIMENTAL_MODERN040
+#if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
     modern040_external_exception(nr);
     return;
 #endif
@@ -659,7 +659,7 @@ void Exception(int nr, uaecptr oldpc)
 
 static void Interrupt(int nr)
 {
-#ifdef EXPERIMENTAL_MODERN040
+#if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
     modern040_external_interrupt(nr+24,unsigned(nr));
     return;
 #endif
@@ -673,7 +673,7 @@ static void Interrupt(int nr)
 
 static void SCCInterrupt(int nr)
 {
-#ifdef EXPERIMENTAL_MODERN040
+#if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
     modern040_external_interrupt(nr,5);
     return;
 #endif
@@ -685,7 +685,7 @@ static void SCCInterrupt(int nr)
 
 static void MFPInterrupt(int nr)
 {
-#ifdef EXPERIMENTAL_MODERN040
+#if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
     modern040_external_interrupt(nr,6);
     return;
 #endif
@@ -1027,7 +1027,7 @@ static int m68k_execute_depth = 0;
 
 void m68k_reset (void)
 {
-#ifdef EXPERIMENTAL_MODERN040
+#if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
     modern040_reset_requested();
 #endif
     regs.s = 1;
@@ -1453,7 +1453,7 @@ int m68k_do_specialties(void)
 
 void m68k_do_execute (void)
 {
-#ifdef EXPERIMENTAL_MODERN040
+#if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
     modern040_execute();
     return;
 #endif

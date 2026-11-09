@@ -29,12 +29,12 @@
     "src/uae_cpu/compiler/compemu_support.cpp": {
       "upstream": "jit/x86/compemu_support_x86.cpp",
       "sha256": "ff0033dcab22253f808ef44404bdb9a306a03f12c25a69eb2524bb88fca17d61",
-      "native_adapted_sha256": "0082adea784ac862aaa368cb18d8b10517079ff90c201199368255749b9878e2"
+      "native_adapted_sha256": "44552d91dcd2fdf42f2279784c8a2ba80c11b48b345a1c9f19fb472e7f6da785"
     },
     "src/uae_cpu/compiler/compemu.h": {
       "upstream": "jit/x86/compemu_x86.h",
       "sha256": "7f911458e1f5f17634764a56502a4063c54e32e46997b51f03bb09eff293a694",
-      "native_adapted_sha256": "52c86ecb88e7936bd2749574c8d4bb41e294cda780539065505317ff7340e96f"
+      "native_adapted_sha256": "09eebfcd8d9353a8881ec3bcb76463c7b807f08a5b8caf85457e51df650a9e68"
     },
     "tests/modern-jit/upstream-compemu.cpp": {
       "upstream": "jit/x86/compemu_x86.cpp",
@@ -52,7 +52,7 @@
       "native_adapted_sha256": "8b4e2229b7237fa6c7d00d361c82d0d671e09fe0cfd072078306949bee236848"
     }
   },
-  "scope": "Full pinned x86 compiler/cache/emitter linked to real ARAnyM; Linux native no-MMU scoped register/control profile; native interpreter fallback.",
+  "scope": "Full pinned x86 compiler/cache/emitter plus genuine modern040 C-ABI fallback in native no-MMU Linux profile; admitted register/control translations and explicit checked bus.",
   "existing_proven_baseline": {
     "binary": "/tmp/shinogi-winuae-perf-build/winuae",
     "source": "/tmp/shinogi-winuae-perf-20261108",

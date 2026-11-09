@@ -92,6 +92,9 @@
 #include "fpu/flags.h"
 #include "parameters.h"
 static void build_comp(void);
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+extern void REGPARAM2 aranym_upstream_modern_step(uae_u32 opcode);
+#endif
 #endif
 #ifndef UAE
 #include "verify.h"
@@ -739,6 +742,8 @@ const bool follow_const_jumps = false;
 // Source-managed integration diagnostics; no process inspection or guest memory reads.
 static unsigned long long aranym_jit_compiled_insns=0;
 static unsigned long long aranym_jit_cached_dispatches=0;
+static uae_u32 aranym_jit_executed_translated_insns=0;
+static uae_u32 aranym_jit_executed_guest_insns=0;
 static bool aranym_jit_diagnostics(){return getenv("ARANYM_UPSTREAM_JIT_DIAGNOSTICS")!=nullptr;}
 #endif
 static uae_u32 cache_size = 0; // Size of total cache allocated for compiled blocks
@@ -3627,8 +3632,8 @@ void compiler_exit(void)
 {
 #ifndef UAE
     if(aranym_jit_diagnostics())
-        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu\n",
-            aranym_jit_compiled_insns,aranym_jit_cached_dispatches);
+        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u\n",
+            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns);
 #endif
 #ifdef PROFILE_COMPILE_TIME
 	emul_end_time = clock();
@@ -6016,6 +6021,19 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 					if (isnop)
 					{
 						flush(1);
+#ifndef UAE
+                        // flush_reg deliberately defers a constant PC_P store
+                        // to the block epilogue. This native NOP boundary changes
+                        // was_comp to0, so the epilogue reads regs.pc_p instead.
+                        // Publish that constant before discarding compiler state.
+                        if(isconst(PC_P)) {
+#if X86_TARGET_64BIT
+                            raw_mov_q_mi((uintptr)&regs.pc_p,get_const(PC_P));
+#else
+                            compemu_raw_mov_l_mi((uintptr)&regs.pc_p,get_const(PC_P));
+#endif
+                        }
+#endif
 						nop();
 						was_comp=0;
 					}
@@ -6061,7 +6079,19 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 				}
 
 #ifndef UAE
-                if(!failure) ++aranym_jit_compiled_insns;
+                if(!failure) {
+                    ++aranym_jit_compiled_insns;
+                    if(aranym_jit_diagnostics()) {
+                        // A source-managed execution witness. Preserve all host
+                        // flags and stack balance; no guest-memory access/call.
+                        raw_pushfl();
+                        compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_translated_insns,1);
+                        const uae_u32 guest_pc=get_virtual_compile_pc((uintptr)pc_hist[i].location);
+                        if(guest_pc>=FastRAMBase && uint64(guest_pc)<uint64(FastRAMBase)+FastRAMSize)
+                            compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_guest_insns,1);
+                        raw_popfl();
+                    }
+                }
 #endif
                 if (failure) {
 					if (was_comp) {
@@ -6086,7 +6116,11 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 						compemu_raw_mov_l_mi(JITPTR &regs.fault_pc, m68k_pc);
 					}
 					raw_dec_sp(STACK_SHADOW_SPACE);
-					compemu_raw_call(JITPTR cputbl[opcode]);
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+                    compemu_raw_call(JITPTR aranym_upstream_modern_step);
+#else
+                    compemu_raw_call(JITPTR cputbl[opcode]);
+#endif
 					raw_inc_sp(STACK_SHADOW_SPACE);
 #ifdef PROFILE_UNTRANSLATED_INSNS
 					// raw_cputbl_count[] is indexed with plain opcode (in m68k order)
@@ -6453,7 +6487,11 @@ void exec_nostats(void)
 #ifdef FLIGHT_RECORDER
 		m68k_record_step(m68k_getpc(), cft_map(opcode));
 #endif
-		(*cpufunctbl[opcode])(opcode);
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+        aranym_upstream_modern_step(opcode);
+#else
+        (*cpufunctbl[opcode])(opcode);
+#endif
 		cpu_check_ticks();
 		if (end_block(opcode) || SPCFLAGS_TEST(SPCFLAG_ALL)) {
 			return; /* We will deal with the spcflags in the caller */
@@ -6486,7 +6524,11 @@ void execute_normal(void)
 #ifdef FLIGHT_RECORDER
 			m68k_record_step(m68k_getpc(), cft_map(opcode));
 #endif
-			(*cpufunctbl[opcode])(opcode);
+	#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+        aranym_upstream_modern_step(opcode);
+#else
+        (*cpufunctbl[opcode])(opcode);
+#endif
 			cpu_check_ticks();
 			if (end_block(opcode) || SPCFLAGS_TEST(SPCFLAG_ALL) || blocklen>=MAXRUN) {
 				compile_block(pc_hist, blocklen);
@@ -6512,6 +6554,14 @@ void m68k_do_compile_execute(void)
             if(++aranym_jit_cached_dispatches<=32 || aranym_jit_cached_dispatches%1000000==0)
                 fprintf(stderr,"UPSTREAM-JIT cached dispatch pc=%08x d0=%08x a0=%08x a1=%08x a7=%08x\n",m68k_getpc(),regs.regs[0],regs.regs[8],regs.regs[9],regs.regs[15]);
         }
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+        // Tracing is implemented by the real modern interpreter. Never enter
+        // an already-cached untraced block while either trace bit is active.
+        if(regs.t1||regs.t0) {
+            aranym_upstream_modern_step(GET_OPCODE);
+            cpu_check_ticks();
+        } else
+#endif
         ((compiled_handler)(pushall_call_handler))();
 		/* Whenever we return from that, we should check spcflags */
 		if (SPCFLAGS_TEST(SPCFLAG_ALL)) {
