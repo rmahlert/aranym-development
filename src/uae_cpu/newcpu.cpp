@@ -561,6 +561,11 @@ void Exception(int nr, uaecptr oldpc)
 #endif
     uae_u32 currpc = m68k_getpc ();
     MakeSR();
+#ifdef EXPERIMENTAL_UPSTREAM_X86_JIT
+    static unsigned upstream_exception_messages=0;
+    if(getenv("ARANYM_UPSTREAM_JIT_DIAGNOSTICS") && nr<=14 && upstream_exception_messages++<8)
+        fprintf(stderr,"UPSTREAM-JIT exception=%d pc=%08x oldpc=%08x a7=%08x sr=%04x d0=%08x a0=%08x a1=%08x\n",nr,currpc,oldpc,regs.regs[15],regs.sr,regs.regs[0],regs.regs[8],regs.regs[9]);
+#endif
 
     if (fixup.flag)
     {
@@ -699,7 +704,7 @@ int m68k_move2c (int regno, uae_u32 *regp)
 #ifdef USE_JIT
 		 set_cache_state(regs.cacr & 0x8000);
 		 if (*regp & 0x08) {	/* Just to be on the safe side */
-			flush_icache();
+			flush_icache(0);
 		 }
 #endif
 		 break;

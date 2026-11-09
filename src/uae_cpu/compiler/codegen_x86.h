@@ -423,15 +423,15 @@ static inline int x86_RIP_addressing_possible(uintptr addr, uintptr offset)
 #if X86_TARGET_64BIT
 	/*
 	 * address of the next instruction.
-	 * The opcode has already been emmitted,
-	 * so this is the size of an 32bit displacement +
+	 * The opcode has already been emitted, but the ModR/M byte has not,
+	 * so this is the size of the ModR/M byte + a 32-bit displacement +
 	 * the size of any immediate value that is part of the instruction (offset),
 	 */
-	uintptr dst = (uintptr)get_target() + 4 + offset;
-	intptr disp = dst - addr;
-	int ok = disp >= -0x80000000LL && disp <= 0x7fffffffLL;
-	/* fprintf(stderr, "x86_RIP_addressing_possible: %llx - %llx %16llx = %d\n", (unsigned long long)dst, (unsigned long long)addr, (long long)disp, ok); */
-	return ok;
+	uintptr next = (uintptr)get_target() + 1 + 4 + offset;
+	if (addr >= next) {
+		return addr - next <= 0x7fffffffULL;
+	}
+	return next - addr <= 0x80000000ULL;
 #else
 	UNUSED(addr);
 	UNUSED(offset);
@@ -443,7 +443,7 @@ static inline int x86_RIP_addressing_possible(uintptr addr, uintptr offset)
 static inline int x86_DISP32_addressing_possible(uintptr addr)
 {
 #if X86_TARGET_64BIT
-	return addr <= 0xFFFFFFFFULL;
+	return addr <= 0x7FFFFFFFULL;
 #else
 	UNUSED(addr);
 	return 1;
@@ -454,7 +454,9 @@ static inline int x86_DISP32_addressing_possible(uintptr addr)
 #define _r_X(   R, D,B,I,S,O)	(_r0P(I) ? (_r0P(B)    ? (!X86_TARGET_64BIT ? _r_D(R,D) : \
 					                 (_x86_RIP_addressing_possible(D, O) ? \
 				                          _r_D(R, (D) - ((uintptr)x86_get_target() + 4 + (O))) : \
-				                          _r_DSIB(R,D))) : \
+				                          (x86_DISP32_addressing_possible(D) ? \
+				                           _r_DSIB(R,D) : \
+				                           x86_emit_failure("x86-64 absolute address is not RIP-relative and does not fit disp32")))) : \
 				           (_rIP(B)    ? _r_D   (R,D                )   : \
 				           (_rsp12P(B) ? _r_DBIS(R,D,_rSP(),_rSP(),1)   : \
 						         _r_DB  (R,D,     B       ))))  : \
@@ -521,7 +523,7 @@ static inline int x86_DISP32_addressing_possible(uintptr addr)
 
 #define _VOID()			((void)0)
 #define _BIT(X)			(!!(X))
-#define _d64(W,R,X,B)		(_B(0x40|(W)<<3|(R)<<2|(X)<<1|(B)))
+#define _d64(W,R,X,B)		(_B(0x40|(W)<<3|(R)<<2|(X)<<1|(B?1:0)))
 
 #define __REXwrxb(L,W,R,X,B)	((W|R|X|B) || (L) ? _d64(W,R,X,B) : _VOID())
 #define __REXwrx_(L,W,R,X,MR)	(__REXwrxb(L,W,R,X,_BIT(_rIP(MR)?0:_rXP(MR))))
@@ -1283,14 +1285,14 @@ enum {
 
 /*									_format		Opcd		,Mod ,r	    ,m		,mem=dsp+sib	,imm... */
 
-// FIXME: no prefix is availble to encode a 32-bit operand size in 64-bit mode
+// FIXME: no prefix is available to encode a 32-bit operand size in 64-bit mode
 #define CALLm(M)							_O_D32		(0xe8					,(int)(M)		)
 #define _CALLLsr(R)			(_REXLrr(0, R),			_O_Mrm		(0xff		,_b11,_b010,_r4(R)				))
 #define _CALLQsr(R)			(_REXQrr(0, R),			_O_Mrm		(0xff		,_b11,_b010,_r8(R)				))
 #define CALLsr(R)			( X86_TARGET_64BIT ? _CALLQsr(R) : _CALLLsr(R))
 #define CALLsm(D,B,I,S)			(_REXLrm(0, B, I),		_O_r_X		(0xff		     ,_b010		,(int)(D),B,I,S		))
 
-// FIXME: no prefix is availble to encode a 32-bit operand size in 64-bit mode
+// FIXME: no prefix is available to encode a 32-bit operand size in 64-bit mode
 #define JMPSm(M)							_O_D8		(0xeb					,(int)(M)		)
 #define JMPm(M)								_O_D32		(0xe9					,(int)(M)		)
 #define _JMPLsr(R)			(_REXLrr(0, R),			_O_Mrm		(0xff		,_b11,_b100,_r4(R)				))
@@ -1627,6 +1629,7 @@ enum {
 /*									_format		Opcd		,Mod ,r	    ,m		,mem=dsp+sib	,imm... */
 
 #define LEALmr(MD, MB, MI, MS, RD)	(_REXLmr(MB, MI, RD),		_O_r_X		(0x8d		     ,_r4(RD)		,MD,MB,MI,MS		))
+#define LEAQmr(MD, MB, MI, MS, RD)	(_REXQmr(MB, MI, RD),		_O_r_X		(0x8d		     ,_r8(RD)		,MD,MB,MI,MS		))
 
 #define BSWAPLr(R)			(_REXLrr(0, R),			_OOr		(0x0fc8,_r4(R)							))
 #define BSWAPQr(R)			(_REXQrr(0, R),			_OOr		(0x0fc8,_r8(R)							))

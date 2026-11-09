@@ -29,15 +29,21 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef COMPEMU_H
-#define COMPEMU_H
+#ifndef COMPEMU_X86_H
+#define COMPEMU_X86_H
 
 #include "sysconfig.h"
 #include "newcpu.h"
+#if defined(CPU_x86_64)
+#ifndef X86_TARGET_64BIT
+#define X86_TARGET_64BIT 1
+#endif
+#endif
 
 #ifdef UAE
 #ifdef CPU_64_BIT
 typedef uae_u64 uintptr;
+typedef uae_s64 intptr;
 #else
 typedef uae_u32 uintptr;
 #endif
@@ -45,7 +51,22 @@ typedef uae_u32 uintptr;
 #define USE_JIT
 #endif
 
+#define JITPTR (uintptr)
+#ifndef UAE
+inline constexpr int special_mem=1;
+inline constexpr int jit_n_addr_unsafe=1;
+#endif
+
 #ifdef USE_JIT
+#ifndef UAE
+#ifndef EXPERIMENTAL_UPSTREAM_X86_JIT
+#error This upstream JIT branch requires the explicit experimental build profile
+#endif
+#endif
+
+/* Allocate memory near the JIT cache / .data segment for RIP-relative access.
+ * options=0 uses anchor-based allocation; options=1 forces low 2GB (MAP_32BIT). */
+extern void *jit_vm_acquire(uae_u32 size, int options = 0);
 
 #ifdef JIT_DEBUG
 /* dump some information (m68k block, x86 block addresses) about the compiler state */
@@ -73,7 +94,7 @@ struct cpu_history {
 };
 
 union cacheline {
-	cpuop_func* handler;
+	cpuop_func *handler;
 	blockinfo_t * bi;
 };
 
@@ -83,7 +104,7 @@ union cacheline {
 #error implementation in progress
 #endif
 
-/* (gb) When on, this option can save save up to 30% compilation time
+/* (gb) When on, this option can save up to 30% compilation time
  *  when many lazy flushes occur (e.g. apps in MacOS 8.x).
  */
 #define USE_SEPARATE_BIA 1
@@ -94,7 +115,7 @@ union cacheline {
 /* Use code inlining, aka follow-up of constant jumps */
 #define USE_INLINING 1
 
-/* Inlining requires the chained checksuming information */
+/* Inlining requires the chained checksum information */
 #if USE_INLINING
 #undef  USE_CHECKSUM_INFO
 #define USE_CHECKSUM_INFO 1
@@ -130,19 +151,11 @@ union cacheline {
 			  for jump targets */
 
 #define INDIVIDUAL_INST 0
-#ifdef WINUAE_ARANYM
 #define FLAG_X    0x0010
 #define FLAG_N    0x0008
 #define FLAG_Z    0x0004
 #define FLAG_V    0x0002
 #define FLAG_C    0x0001
-#else
-#define FLAG_C    0x0010
-#define FLAG_V    0x0008
-#define FLAG_Z    0x0004
-#define FLAG_N    0x0002
-#define FLAG_X    0x0001
-#endif
 #define FLAG_CZNV (FLAG_C | FLAG_Z | FLAG_N | FLAG_V)
 #define FLAG_ALL  (FLAG_C | FLAG_Z | FLAG_N | FLAG_V | FLAG_X)
 #define FLAG_ZNV  (FLAG_Z | FLAG_N | FLAG_V)
@@ -163,11 +176,9 @@ union cacheline {
 
 /* Functions exposed to newcpu, or to what was moved from newcpu.c to
  * compemu_support.c */
-#ifdef WINUAE_ARANYM
 extern void compiler_init(void);
 extern void compiler_exit(void);
 extern bool compiler_use_jit(void);
-#endif
 extern void flush(int save_regs);
 void flush_reg(int reg);
 extern void set_target(uae_u8* t);
@@ -179,10 +190,13 @@ extern void set_cache_state(int enabled);
 extern int get_cache_state(void);
 extern uae_u32 get_jitted_size(void);
 #ifdef JIT
-extern void (*flush_icache)(void);
+extern void (*flush_icache)(int);
 #endif
 extern void alloc_cache(void);
 extern int check_for_cache_miss(void);
+#ifdef UAE
+extern void disable_jit_on_runtime_alloc_failure(const char *what);
+#endif
 
 /* JIT FPU compilation */
 struct jit_disable_opcodes {
@@ -260,7 +274,7 @@ extern void* pushall_call_handler;
 
 typedef struct {
   uae_u32* mem;
-  uae_u32 val;
+  uintptr val;  /* Must be pointer-width: PC_P holds a host pointer (64-bit on x86_64) */
   uae_u8 is_swapped;
   uae_u8 status;
   uae_s8 realreg; /* gb-- realreg can hold -1 */
@@ -355,6 +369,7 @@ typedef struct {
 extern int touchcnt;
 
 #define IMM  uae_s32
+#define IMPTR uintptr
 #define RR1  uae_u32
 #define RR2  uae_u32
 #define RR4  uae_u32
@@ -370,9 +385,9 @@ extern int touchcnt;
 #define RW1 uae_u32
 #define RW2 uae_u32
 #define RW4 uae_u32
-#define MEMR uae_u32
-#define MEMW uae_u32
-#define MEMRW    uae_u32
+#define MEMR uintptr
+#define MEMW uintptr
+#define MEMRW    uintptr
 #define MEMPTR   uintptr
 #define MEMPTRR  MEMPTR
 #define MEMPTRW  MEMPTR
@@ -389,15 +404,6 @@ extern int touchcnt;
 
 /* What we expose to the outside */
 #define DECLARE_MIDFUNC(func) extern void func
-
-#if defined(CPU_arm)
-
-#include "compemu_midfunc_arm.h"
-
-#if defined(USE_JIT2)
-#include "compemu_midfunc_arm2.h"
-#endif
-#endif
 
 #if defined(CPU_i386) || defined(CPU_x86_64)
 #include "compemu_midfunc_x86.h"
@@ -426,14 +432,13 @@ extern void set_zero(int r, int tmp);
 extern int kill_rodent(int r);
 #define SYNC_PC_OFFSET 100
 extern void sync_m68k_pc(void);
-extern uae_u32 get_const(int r);
+extern uintptr get_const(int r);
 extern int  is_const(int r);
-extern void register_branch(uae_u32 not_taken, uae_u32 taken, uae_u8 cond);
+extern void register_branch(uintptr not_taken, uintptr taken, uae_u8 cond);
 void compemu_make_sr(int sr, int tmp);
 void compemu_enter_super(int sr);
 void compemu_exc_make_frame(int format, int sr, int currpc, int nr, int tmp);
 void compemu_bkpt(void);
-void gen_sync_real_pc(uae_u32 realpc);
 extern bool disasm_this_inst;
 
 #define comp_get_ibyte(o) do_get_mem_byte((uae_u8 *)(comp_pc_p + (o) + 1))
@@ -516,17 +521,11 @@ void do_nothing(void);
 
 #else
 
-static inline void flush_icache(void) { }
+static inline void flush_icache(int) { }
 
 #endif /* !USE_JIT */
 
 #ifdef UAE
-
-typedef struct {
-    uae_u8 type;
-    uae_u8 reg;
-    uae_u32 next;
-} regacc;
 
 #define JIT_EXCEPTION_HANDLER
 // #define JIT_ALWAYS_DISTRUST
@@ -540,23 +539,16 @@ extern void compile_block(cpu_history* pc_hist, int blocklen, int totcyles);
 #define MAXCYCLES (1000 * CYCLE_UNIT)
 #define scaled_cycles(x) (currprefs.m68k_speed<0?(((x)/SCALE)?(((x)/SCALE<MAXCYCLES?((x)/SCALE):MAXCYCLES)):1):(x))
 
-/* Flags for Bernie during development/debugging. Should go away eventually */
-#define DISTRUST_CONSISTENT_MEM 0
-
-typedef struct {
-    uae_u8 use_flags;
-    uae_u8 set_flags;
-    uae_u8 is_jump;
-    uae_u8 is_addx;
-    uae_u8 is_const_jump;
-} op_properties;
-
+struct op_properties {
+	uae_u8 use_flags;
+	uae_u8 set_flags;
+	uae_u8 is_addx;
+	uae_u8 cflow;
+};
 extern op_properties prop[65536];
-
-STATIC_INLINE int end_block(uae_u16 opcode)
+static inline int end_block(uae_u32 opcode)
 {
-    return prop[opcode].is_jump ||
-	(prop[opcode].is_const_jump && !currprefs.comp_constjump);
+	return (prop[opcode].cflow & fl_end_block);
 }
 
 #ifdef _WIN32
@@ -590,18 +582,10 @@ void jit_abort(const char *format,...) __attribute__((format(printf, 1, 2))) __a
 
 #endif /* UAE */
 
-#ifdef CPU_64_BIT
-static inline uae_u32 check_uae_p32(uintptr address, const char *file, int line)
-{
-	if (address > (uintptr_t) 0xffffffff) {
-		jit_abort("JIT: 64-bit pointer (0x%llx) at %s:%d (fatal)",
-			(unsigned long long)address, file, line);
-	}
-	return (uae_u32) address;
-}
-#define uae_p32(x) (check_uae_p32((uintptr)(x), __FILE__, __LINE__))
-#else
-#define uae_p32(x) ((uae_u32)(x))
-#endif
+/* x86_64 JIT is now 64-bit pointer-clean. uae_p32() is no longer needed
+   for pointer truncation. It now passes through the full uintptr value.
+   The debug check remains to catch any leftover code that still assumes
+   32-bit pointers where it shouldn't. */
+#define uae_p32(x) ((uintptr)(x))
 
-#endif /* COMPEMU_H */
+#endif /* COMPEMU_X86_H */

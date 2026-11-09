@@ -1,0 +1,63 @@
+{
+  "pin": "d82bc2549f27943d11dc59482d5388daf1c0f337",
+  "files": {
+    "src/uae_cpu/compiler/codegen_x86.cpp": {
+      "upstream": "jit/x86/codegen_x86.cpp",
+      "sha256": "1eedbcce986aec141c87cf1a4ab03d402634794326648afc838958679b2fe733",
+      "native_adapted_sha256": "c38c0bed1ba3dc819e1d4e459eda18645d7cbf5d08dcdc498f9612d19954f92c"
+    },
+    "src/uae_cpu/compiler/codegen_x86.h": {
+      "upstream": "jit/x86/codegen_x86.h",
+      "sha256": "7b41444c4a60f2df4c07684775078c1513f9691960e024be1912e9e20604af4c",
+      "native_adapted_sha256": "7b41444c4a60f2df4c07684775078c1513f9691960e024be1912e9e20604af4c"
+    },
+    "src/uae_cpu/compiler/flags_x86.h": {
+      "upstream": "jit/x86/flags_x86.h",
+      "sha256": "1841446b9b0605b8fc3b6685cfbc9c0e6d00cad0c4eb051d1195637394c80c74",
+      "native_adapted_sha256": "1841446b9b0605b8fc3b6685cfbc9c0e6d00cad0c4eb051d1195637394c80c74"
+    },
+    "src/uae_cpu/compiler/compemu_midfunc_x86.cpp": {
+      "upstream": "jit/x86/compemu_midfunc_x86.cpp",
+      "sha256": "7c3d51c90b39e5173dc325f58b6d4e961f85c679f0009f5ddec6a0d83dd06281",
+      "native_adapted_sha256": "7c3d51c90b39e5173dc325f58b6d4e961f85c679f0009f5ddec6a0d83dd06281"
+    },
+    "src/uae_cpu/compiler/compemu_midfunc_x86.h": {
+      "upstream": "jit/x86/compemu_midfunc_x86.h",
+      "sha256": "d8e2dc3b64b3cacfe2b750b24ac9875bdc8099c450a5c51dafe7131befc9e40a",
+      "native_adapted_sha256": "d8e2dc3b64b3cacfe2b750b24ac9875bdc8099c450a5c51dafe7131befc9e40a"
+    },
+    "src/uae_cpu/compiler/compemu_support.cpp": {
+      "upstream": "jit/x86/compemu_support_x86.cpp",
+      "sha256": "ff0033dcab22253f808ef44404bdb9a306a03f12c25a69eb2524bb88fca17d61",
+      "native_adapted_sha256": "0082adea784ac862aaa368cb18d8b10517079ff90c201199368255749b9878e2"
+    },
+    "src/uae_cpu/compiler/compemu.h": {
+      "upstream": "jit/x86/compemu_x86.h",
+      "sha256": "7f911458e1f5f17634764a56502a4063c54e32e46997b51f03bb09eff293a694",
+      "native_adapted_sha256": "52c86ecb88e7936bd2749574c8d4bb41e294cda780539065505317ff7340e96f"
+    },
+    "tests/modern-jit/upstream-compemu.cpp": {
+      "upstream": "jit/x86/compemu_x86.cpp",
+      "original_sha256": "4d4a9f8ba51eb1cb6d40dc1cf26784c601652362a6b96d39d567eb281ce2d0e3",
+      "native_adapted_sha256": "d865a4ff366887a8e20ff13448b557480d18d54374143bf81da5e9a25f4a24ce"
+    },
+    "tests/modern-jit/upstream-compstbl.cpp": {
+      "upstream": "jit/x86/compstbl_x86.cpp",
+      "original_sha256": "a01f52441cb5431ba8392de830bf0bf77075beffae8173851531eaff49c16b89",
+      "native_adapted_sha256": "308e10c1b7b5d10c0e0bfdfaad378cb6b3b30dc2e208da61a01f7eedf3a6927d"
+    },
+    "tests/modern-jit/upstream-comptbl.h": {
+      "upstream": "jit/x86/comptbl_x86.h",
+      "original_sha256": "8b4e2229b7237fa6c7d00d361c82d0d671e09fe0cfd072078306949bee236848",
+      "native_adapted_sha256": "8b4e2229b7237fa6c7d00d361c82d0d671e09fe0cfd072078306949bee236848"
+    }
+  },
+  "scope": "Full pinned x86 compiler/cache/emitter linked to real ARAnyM; Linux native no-MMU scoped register/control profile; native interpreter fallback.",
+  "existing_proven_baseline": {
+    "binary": "/tmp/shinogi-winuae-perf-build/winuae",
+    "source": "/tmp/shinogi-winuae-perf-20261108",
+    "source_pin": "d82bc2549f27943d11dc59482d5388daf1c0f337",
+    "public_harness_commit": "3685818",
+    "binary_sha256": "3a9c92051614ccabf24b17cfacfa4076c346fc39e8921a3e69ddadbe0a42f6e6"
+  }
+}

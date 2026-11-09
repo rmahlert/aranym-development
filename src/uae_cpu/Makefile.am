@@ -71,8 +71,17 @@ cpudefs.cpp: build68k$(EXEEXT) $(srcdir)/table68k
 cpuemu.cpp: gencpu$(EXEEXT)
 	$(AM_V_GEN)./gencpu$(EXEEXT)
 cpustbl.cpp cpufunctbl.cpp cputbl.h: cpuemu.cpp
+if GENCOMP_ARCH_X86
+# Experimental full upstream compiler import. Keep regeneration deterministic:
+# never silently replace the imported compiler with the legacy local generator.
+compemu.cpp: $(srcdir)/../../tests/modern-jit/upstream-compemu.cpp $(srcdir)/../../tests/modern-jit/upstream-compstbl.cpp $(srcdir)/../../tests/modern-jit/upstream-comptbl.h
+	$(AM_V_GEN)cp -f $(srcdir)/../../tests/modern-jit/upstream-compemu.cpp $@
+	cp -f $(srcdir)/../../tests/modern-jit/upstream-compstbl.cpp compstbl.cpp
+	cp -f $(srcdir)/../../tests/modern-jit/upstream-comptbl.h comptbl.h
+else
 compemu.cpp: gencomp$(EXEEXT)
 	$(AM_V_GEN)./gencomp$(EXEEXT)
+endif
 compstbl.cpp comptbl.h: compemu.cpp
 
 CLEANFILES = $(BUILT_SOURCES)
