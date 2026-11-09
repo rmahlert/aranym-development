@@ -11,7 +11,7 @@ def sha(path):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('build-dir','prepared-image','rom','host-dir','nvram','work-dir'):p.add_argument('--'+name,required=True,type=Path)
-    p.add_argument('--jit',action='store_true');p.add_argument('--timeout',type=int,default=60)
+    p.add_argument('--jit',action='store_true');p.add_argument('--checked-move',action='store_true');p.add_argument('--timeout',type=int,default=60)
     a=p.parse_args();build=a.build_dir.resolve(strict=True)
     identity=json.loads((build/'upstream-jit-build.json').read_text())
     if not identity.get('modern_core'):raise RuntimeError('requires explicit combined modern-core build')
@@ -59,7 +59,10 @@ RedirConsole = Yes
 UseHostMouseCursor = No
 ''')
     env=os.environ.copy();env.update(SDL_VIDEODRIVER='dummy',SDL_AUDIODRIVER='dummy',ARANYM_MODERN040_LEGACY_FPU='1',ARANYM_UPSTREAM_JIT_DIAGNOSTICS='1')
-    for name in ('ARANYM_UPSTREAM_JIT_FALLBACK_ONLY','ARANYM_UPSTREAM_JIT_GROUP','ARANYM_MODERN040_DIAGNOSTICS'):env.pop(name,None)
+    for name in ('ARANYM_UPSTREAM_JIT_FALLBACK_ONLY','ARANYM_UPSTREAM_JIT_GROUP','ARANYM_UPSTREAM_JIT_CHECKED_MOVE','ARANYM_UPSTREAM_JIT_SIDE_EFFECT_FIXTURE','ARANYM_MODERN040_DIAGNOSTICS'):env.pop(name,None)
+    if a.checked_move:
+        if not a.jit:raise RuntimeError('checked memory pilot requires JIT enabled')
+        env['ARANYM_UPSTREAM_JIT_CHECKED_MOVE']='1'
     log=work/'run.log';started=time.monotonic()
     with log.open('w') as output:
         result=subprocess.run(['timeout','-k','5',str(a.timeout),str(binary),'-c',str(config)],cwd=work,env=env,stdout=output,stderr=subprocess.STDOUT)
@@ -72,12 +75,14 @@ UseHostMouseCursor = No
     checks={marker:marker in text for marker in required}
     witness=re.search(r'UPSTREAM-JIT compiled-insns=(\d+) cached-dispatches=(\d+) executed-translated=(\d+) executed-guest=(\d+)',text)
     observed={} if not witness else dict(zip(('emitted_instructions','cached_dispatches','executed_translated','executed_guest'),map(int,witness.groups())))
-    record={'jit':a.jit,'legacy_fpu':True,'exit':result.returncode,'seconds':seconds,'checks':checks,
+    memory_witness=re.search(r'executed-memory=(\d+)',text)
+    if memory_witness:observed['executed_memory']=int(memory_witness.group(1))
+    record={'jit':a.jit,'checked_move':a.checked_move,'legacy_fpu':True,'exit':result.returncode,'seconds':seconds,'checks':checks,
             'jit_observed':observed,'binary_sha256':sha(binary),'build_identity_sha256':sha(build/'upstream-jit-build.json'),
             'source_image_sha256':PREPARED,'starting_image_sha256':PREPARED,'config_sha256':sha(config),
             'rom_sha256':sha(rom),'nvram_pre_sha256':sha(work/'starting-nvram.bin'),'nvram_post_sha256':sha(profile/'nvram'),
             'host_input_sha256':{str(x.relative_to(work/'host')):sha(x) for x in sorted((work/'host').rglob('*')) if x.is_file()},
-            'log_sha256':sha(log),'passed':result.returncode==0 and all(checks.values()) and (not a.jit or observed.get('executed_guest',0)>0)}
+            'log_sha256':sha(log),'passed':result.returncode==0 and all(checks.values()) and (not a.jit or observed.get('executed_guest',0)>0) and (not a.checked_move or observed.get('executed_memory',0)>0)}
     (work/'result.json').write_text(json.dumps(record,indent=2)+'\n');print(json.dumps(record,indent=2))
     return 0 if record['passed'] else 1
 if __name__=='__main__':raise SystemExit(main())

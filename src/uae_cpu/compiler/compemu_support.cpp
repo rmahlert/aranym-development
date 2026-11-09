@@ -94,6 +94,12 @@
 static void build_comp(void);
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 extern void REGPARAM2 aranym_upstream_modern_step(uae_u32 opcode);
+extern uae_u32 REGPARAM2 aranym_upstream_checked_read_b(uae_u32 address);
+extern uae_u32 REGPARAM2 aranym_upstream_checked_read_w(uae_u32 address);
+extern uae_u32 REGPARAM2 aranym_upstream_checked_read_l(uae_u32 address);
+extern void REGPARAM2 aranym_upstream_checked_write_b(uae_u32 address,uae_u32 value);
+extern void REGPARAM2 aranym_upstream_checked_write_w(uae_u32 address,uae_u32 value);
+extern void REGPARAM2 aranym_upstream_checked_write_l(uae_u32 address,uae_u32 value);
 #endif
 #endif
 #ifndef UAE
@@ -744,6 +750,20 @@ static unsigned long long aranym_jit_compiled_insns=0;
 static unsigned long long aranym_jit_cached_dispatches=0;
 static uae_u32 aranym_jit_executed_translated_insns=0;
 static uae_u32 aranym_jit_executed_guest_insns=0;
+static uae_u32 aranym_jit_executed_memory_insns=0;
+static bool aranym_checked_move_enabled() {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE")!=nullptr;
+    return enabled;
+#else
+    return false;
+#endif
+}
+static bool aranym_checked_move_opcode(uae_u32 canonical) {
+    const instr &in=table68k[canonical];
+    return aranym_checked_move_enabled()&&in.mnemo==i_MOVE&&
+        ((in.smode==Aind&&in.dmode==Dreg)||(in.smode==Dreg&&in.dmode==Aind));
+}
 static bool aranym_jit_diagnostics(){return getenv("ARANYM_UPSTREAM_JIT_DIAGNOSTICS")!=nullptr;}
 #endif
 static uae_u32 cache_size = 0; // Size of total cache allocated for compiled blocks
@@ -3251,7 +3271,7 @@ static inline int isinrom(uintptr addr)
 #endif
 }
 
-#if defined(UAE) || defined(FLIGHT_RECORDER)
+#if defined(UAE) || defined(FLIGHT_RECORDER) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
 static void flush_all(void)
 {
 	int i;
@@ -3632,8 +3652,8 @@ void compiler_exit(void)
 {
 #ifndef UAE
     if(aranym_jit_diagnostics())
-        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u\n",
-            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns);
+        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u\n",
+            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns);
 #endif
 #ifdef PROFILE_COMPILE_TIME
 	emul_end_time = clock();
@@ -3988,6 +4008,30 @@ static uintptr get_handler(uintptr addr)
  * if that assumption is wrong! No branches, no second chances, just
  * straight go-for-it attitude */
 
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+// Default-off pilot uses upstream's real call_r_11/call_r_02 emitter primitives.
+// Explicit no-PIE helper pointers fit this profile's32-bit scratch registers;
+// no UAE bank lookup or R15 natmem direct-memory operation is used.
+static void aranym_emit_checked_read(int address,int dest,int size,int tmp) {
+    sync_compiled_exception_state();
+    const uintptr helper=size==1?(uintptr)aranym_upstream_checked_read_b:
+        size==2?(uintptr)aranym_upstream_checked_read_w:(uintptr)aranym_upstream_checked_read_l;
+    verify(helper<=0xffffffffu);
+    mov_l_ri(tmp,helper);
+    call_r_11(dest,tmp,address,size,4);
+    forget_about(tmp);
+}
+static void aranym_emit_checked_write(int address,int source,int size,int tmp) {
+    sync_compiled_exception_state();
+    const uintptr helper=size==1?(uintptr)aranym_upstream_checked_write_b:
+        size==2?(uintptr)aranym_upstream_checked_write_w:(uintptr)aranym_upstream_checked_write_l;
+    verify(helper<=0xffffffffu);
+    mov_l_ri(tmp,helper);
+    call_r_02(tmp,address,source,4,size);
+    forget_about(tmp);
+}
+#endif
+
 static void writemem_real(int address, int source, int size, int tmp, int clobber)
 {
 	int f=tmp;
@@ -4097,6 +4141,9 @@ static inline void writemem(int address, int source, int offset, int size, int t
 
 void writebyte(int address, int source, int tmp)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    if(aranym_checked_move_enabled()){aranym_emit_checked_write(address,source,1,tmp);return;}
+#endif
 #ifdef UAE
 	if ((special_mem & S_WRITE) || distrust_byte() || jit_use_memory_helpers()) {
 		sync_compiled_exception_state();
@@ -4109,6 +4156,9 @@ void writebyte(int address, int source, int tmp)
 static inline void writeword_general(int address, int source, int tmp,
 	int clobber)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    if(aranym_checked_move_enabled()){aranym_emit_checked_write(address,source,2,tmp);return;}
+#endif
 #ifdef UAE
 	if ((special_mem & S_WRITE) || distrust_word() || jit_use_memory_helpers()) {
 		sync_compiled_exception_state();
@@ -4131,6 +4181,9 @@ void writeword(int address, int source, int tmp)
 static inline void writelong_general(int address, int source, int tmp,
 	int clobber)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    if(aranym_checked_move_enabled()){aranym_emit_checked_write(address,source,4,tmp);return;}
+#endif
 #ifdef UAE
 	if ((special_mem & S_WRITE) || distrust_long() || jit_use_memory_helpers()) {
 		sync_compiled_exception_state();
@@ -4267,6 +4320,9 @@ static inline void readmem(int address, int dest, int offset, int size, int tmp)
 
 void readbyte(int address, int dest, int tmp)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    if(aranym_checked_move_enabled()){aranym_emit_checked_read(address,dest,1,tmp);return;}
+#endif
 #ifdef UAE
 	if ((special_mem & S_READ) || distrust_byte() || jit_use_memory_helpers()) {
 		sync_compiled_exception_state();
@@ -4278,6 +4334,9 @@ void readbyte(int address, int dest, int tmp)
 
 void readword(int address, int dest, int tmp)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    if(aranym_checked_move_enabled()){aranym_emit_checked_read(address,dest,2,tmp);return;}
+#endif
 #ifdef UAE
 	if ((special_mem & S_READ) || distrust_word() || jit_use_memory_helpers()) {
 		sync_compiled_exception_state();
@@ -4289,6 +4348,9 @@ void readword(int address, int dest, int tmp)
 
 void readlong(int address, int dest, int tmp)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    if(aranym_checked_move_enabled()){aranym_emit_checked_read(address,dest,4,tmp);return;}
+#endif
 #ifdef UAE
 	if ((special_mem & S_READ) || distrust_long() || jit_use_memory_helpers()) {
 		sync_compiled_exception_state();
@@ -5422,7 +5484,7 @@ void build_comp(void)
             else if(!strcmp(group,"nop")) selected=in.mnemo==i_NOP;
             register_family=register_family&&selected;
         }
-        if(!register_family||memory||getenv("ARANYM_UPSTREAM_JIT_FALLBACK_ONLY")) {
+        if(!register_family||(memory&&!aranym_checked_move_opcode(opcode))||getenv("ARANYM_UPSTREAM_JIT_FALLBACK_ONLY")) {
             compfunctbl[cft_map(opcode)]=nullptr;
             nfcompfunctbl[cft_map(opcode)]=nullptr;
         }
@@ -5977,7 +6039,10 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 
 				failure = 1; // gb-- defaults to failure state
 				prepare_compiled_exception_state((uintptr)pc_hist[i].location, opcode);
-				if (comptbl[opcode] && optlev>1 && !unsafe_control_flow && !unsafe_flags) {
+				const uae_u32 instruction_guest_pc=get_virtual_compile_pc((uintptr)pc_hist[i].location);
+                const bool checked_move=aranym_checked_move_opcode(cft_map(opcode));
+                const bool checked_move_code_ok=!checked_move || (instruction_guest_pc>=FastRAMBase && uint64(instruction_guest_pc)<uint64(FastRAMBase)+FastRAMSize);
+                if (comptbl[opcode] && optlev>1 && !unsafe_control_flow && !unsafe_flags && checked_move_code_ok) {
 					failure=0;
 					if (!was_comp) {
 						comp_pc_p=(uae_u8*)pc_hist[i].location;
@@ -6089,6 +6154,8 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                         const uae_u32 guest_pc=get_virtual_compile_pc((uintptr)pc_hist[i].location);
                         if(guest_pc>=FastRAMBase && uint64(guest_pc)<uint64(FastRAMBase)+FastRAMSize)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_guest_insns,1);
+                        if(aranym_checked_move_opcode(cft_map(opcode)))
+                            compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_memory_insns,1);
                         raw_popfl();
                     }
                 }

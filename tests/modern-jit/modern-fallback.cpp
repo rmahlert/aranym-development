@@ -65,8 +65,42 @@ void to_old() {
     SPCFLAGS_CLEAR(SPCFLAG_TRACE|SPCFLAG_DOTRACE);
     if(state.stopped)SPCFLAGS_SET(SPCFLAG_STOP);else SPCFLAGS_CLEAR(SPCFLAG_STOP);
 }
+// Synthetic read-sensitive bus fixture, enabled only by an explicit harness
+// environment. Both genuine interpreter and emitted helper arms see this same
+// bus operation; no real Atari device or owner image is substituted.
+struct SideEffectBus { uint32_t reads=0,writes=0,last=0,faults=0; } side_bus;
+int side_effect_fixture(const m040_bus_request *request,uint32_t *value) {
+    static const bool enabled=std::getenv("ARANYM_UPSTREAM_JIT_SIDE_EFFECT_FIXTURE")!=nullptr;
+    if(!enabled||request->address<0x00fef000||request->address>0x00fef014)return -1;
+    static bool reported=false;
+    if(!reported) {
+        std::atexit([]{std::fprintf(stderr,"SIDE-EFFECT-BUS reads=%u writes=%u last=%08x faults=%u\n",side_bus.reads,side_bus.writes,side_bus.last,side_bus.faults);});
+        reported=true;
+    }
+    if(request->kind==M040_FETCH||(request->size!=1&&request->size!=2&&request->size!=4))return 0;
+    const uint32_t offset=request->address-0x00fef000;
+    if(offset==20){++side_bus.faults;return 0;}
+    if(request->kind==M040_WRITE) {
+        if(offset==4){side_bus={};return 1;}
+        if(offset!=0)return 0;
+        ++side_bus.writes;side_bus.last=request->size==1?(*value&255):request->size==2?(*value&65535):*value;
+        return 1;
+    }
+    switch(offset) {
+    case 0:*value=0x12340000u|++side_bus.reads;break;
+    case 4:*value=side_bus.reads;break;
+    case 8:*value=side_bus.writes;break;
+    case 12:*value=side_bus.last;break;
+    case 16:*value=side_bus.faults;break;
+    default:return 0;
+    }
+    if(request->size==1)*value&=255;else if(request->size==2)*value&=65535;
+    return 1;
+}
 int memory(void *,const m040_bus_request *request,uint32_t *value) {
     if(request->transfer_type!=0)return 0; // no invented alternate CPU space.
+    const int fixture=side_effect_fixture(request,value);
+    if(fixture>=0)return fixture;
     const auto saved_super=regs.s;regs.s=bool(request->function_code&4);
 #ifdef ARAM_PAGE_CHECK
     // Original page shortcuts cache privilege/permission decisions. Each
@@ -209,3 +243,26 @@ void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
     if((numeric_opcode&0xff00)==0xf400)flush_icache(0);
     if(result.exit==M040_HOST_RETURN)SPCFLAGS_SET(SPCFLAG_JIT_EXEC_RETURN);
 }
+
+// Default-off scalar MOVE pilot: actual imported compiler bodies calculate EA
+// and flags; these helpers perform one existing checked bus operation. A failed
+// transfer stops explicitly; generic architectural fault/restart is not admitted.
+namespace {
+uint32_t checked_native_transfer(uint32_t address,unsigned size,bool write,uint32_t value) {
+    const m040_bus_request request={M040_ABI_VERSION,uint32_t(write?M040_WRITE:M040_READ),
+        address,size,regs.s?5u:1u,0,0,0};
+    if(!memory(nullptr,&request,&value)) {
+        m040_result result={};result.abi_version=M040_ABI_VERSION;
+        result.exit=M040_MEMORY_FAULT;result.instruction_pc=regs.fault_pc;
+        result.current_pc=m68k_getpc();result.address=address;result.size=size;
+        fail("checked MOVE pilot transfer not completed; no replay/restart",&result);
+    }
+    return value;
+}
+}
+uae_u32 REGPARAM2 aranym_upstream_checked_read_b(uae_u32 address){return checked_native_transfer(address,1,false,0);}
+uae_u32 REGPARAM2 aranym_upstream_checked_read_w(uae_u32 address){return checked_native_transfer(address,2,false,0);}
+uae_u32 REGPARAM2 aranym_upstream_checked_read_l(uae_u32 address){return checked_native_transfer(address,4,false,0);}
+void REGPARAM2 aranym_upstream_checked_write_b(uae_u32 address,uae_u32 value){checked_native_transfer(address,1,true,value);}
+void REGPARAM2 aranym_upstream_checked_write_w(uae_u32 address,uae_u32 value){checked_native_transfer(address,2,true,value);}
+void REGPARAM2 aranym_upstream_checked_write_l(uae_u32 address,uae_u32 value){checked_native_transfer(address,4,true,value);}

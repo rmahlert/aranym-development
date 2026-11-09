@@ -2452,7 +2452,7 @@ MIDFUNC(2,xor_b,(RW1 d, RR1 s))
 	unlock2(s);
 }
 
-#ifdef UAE
+#if defined(UAE) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
 MIDFUNC(5,call_r_11,(W4 out1, RR4 r, RR4 in1, IMM osize, IMM isize))
 {
 	clobber_flags();
@@ -2500,7 +2500,7 @@ MIDFUNC(5,call_r_11,(W4 out1, RR4 r, RR4 in1, IMM osize, IMM isize))
 }
 #endif
 
-#if defined(UAE)
+#if defined(UAE) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
 MIDFUNC(5,call_r_02,(RR4 r, RR4 in1, RR4 in2, IMM isize1, IMM isize2))
 {
 	clobber_flags();

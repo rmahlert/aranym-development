@@ -23,6 +23,8 @@ def main():
     parser.add_argument('--jit',action='store_true')
     parser.add_argument('--require-modern',action='store_true')
     parser.add_argument('--require-translated-guest',action='store_true')
+    parser.add_argument('--require-checked-memory',action='store_true')
+    parser.add_argument('--expect-bus-faults',type=int)
     parser.add_argument('--timeout',type=int,default=30)
     args=parser.parse_args()
     if sys.platform!='linux':raise RuntimeError('this experimental recipe is qualified only for native Linux')
@@ -30,6 +32,7 @@ def main():
         path=getattr(args,name).resolve(strict=True)
         if not path.is_file():raise RuntimeError(name+' must be a file')
         setattr(args,name,path)
+    if args.require_checked_memory and not args.jit:raise RuntimeError('checked memory witness requires JIT enabled')
     if args.require_translated_guest and not args.jit:raise RuntimeError('translated guest witness requires JIT enabled')
     if args.timeout<1 or args.timeout>300:raise RuntimeError('fixture timeout must be1..300s')
     work=args.work_dir.resolve();marker=work/'owned-bootstrap-fixture.json'
@@ -69,8 +72,12 @@ RedirConsole = Yes
     modern='MODERN040_EXPERIMENTAL source=d82bc254' in logtext
     witness=re.search(r'UPSTREAM-JIT compiled-insns=(\d+) cached-dispatches=(\d+) executed-translated=(\d+) executed-guest=(\d+)',logtext)
     observed={} if not witness else dict(zip(('emitted_instructions','cached_dispatches','executed_translated','executed_guest'),map(int,witness.groups())))
-    contract=(not args.require_modern or modern) and (not args.require_translated_guest or observed.get('executed_guest',0)>0)
-    record={'inputs':inputs,'modern_core_observed':modern,'jit_observed':observed,'harness_controls':{k:env.get(k) for k in ('ARANYM_UPSTREAM_JIT_GROUP','ARANYM_UPSTREAM_JIT_FALLBACK_ONLY')},'jit':args.jit,'legacy_fpu':args.legacy_fpu,'exit':result.returncode,'expected_exit':args.expect_exit,'marker':args.expect_marker,'marker_found':found,'seconds':elapsed,'config_sha256':sha(config),'log_sha256':sha(log),'passed':result.returncode==args.expect_exit and found and contract}
+    memory_witness=re.search(r'executed-memory=(\d+)',logtext)
+    if memory_witness:observed['executed_memory']=int(memory_witness.group(1))
+    bus_match=re.search(r'SIDE-EFFECT-BUS reads=(\d+) writes=(\d+) last=([0-9a-f]+) faults=(\d+)',logtext)
+    bus={} if not bus_match else {'reads':int(bus_match.group(1)),'writes':int(bus_match.group(2)),'last':int(bus_match.group(3),16),'faults':int(bus_match.group(4))}
+    contract=(not args.require_modern or modern) and (not args.require_translated_guest or observed.get('executed_guest',0)>0) and (not args.require_checked_memory or observed.get('executed_memory',0)>0) and (args.expect_bus_faults is None or bus.get('faults')==args.expect_bus_faults)
+    record={'inputs':inputs,'modern_core_observed':modern,'jit_observed':observed,'bus_observed':bus,'harness_controls':{k:env.get(k) for k in ('ARANYM_UPSTREAM_JIT_GROUP','ARANYM_UPSTREAM_JIT_FALLBACK_ONLY','ARANYM_UPSTREAM_JIT_CHECKED_MOVE','ARANYM_UPSTREAM_JIT_SIDE_EFFECT_FIXTURE')},'jit':args.jit,'legacy_fpu':args.legacy_fpu,'exit':result.returncode,'expected_exit':args.expect_exit,'marker':args.expect_marker,'marker_found':found,'seconds':elapsed,'config_sha256':sha(config),'log_sha256':sha(log),'passed':result.returncode==args.expect_exit and found and contract}
     (work/'result.json').write_text(json.dumps(record,indent=2)+'\n');print(json.dumps(record,indent=2))
     return 0 if record['passed'] else 1
 if __name__=='__main__':raise SystemExit(main())

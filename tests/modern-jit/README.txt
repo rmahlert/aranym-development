@@ -133,3 +133,7 @@ The original failed startup arm and a successful pre-guard retry remain explicit
 in combined-stage-validation.json. They are not discarded or treated as proof
 of a solved root cause. Subsequent allocator/property checks and paired runs
 qualify the scoped checked-window profile only.
+
+The separate memory-pilot branch adds an explicitly enabled scalar MOVE helper
+experiment; see MEMORY-PILOT.txt and memory-stage-validation.json. Default
+register/control qualification and the frozen fe250a4a artifact remain separate.
