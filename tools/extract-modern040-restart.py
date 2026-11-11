@@ -53,9 +53,13 @@ def main():
     out=['// Verbatim pinned WinUAE instruction bodies; GPL-2.0-or-later.',
          '// Copyright Bernd Schmidt and WinUAE contributors.',
          '#include "restart.hpp"','namespace modern040 {',*helpers,*bodies,
-         'void install_restart_handlers() { restart_handlers.fill(nullptr);']
-    out += ['restart_handlers[0x'+op+']='+name+';' for op,name in mapping]
-    out += ['}','}']
+         'struct RestartEntry { uae_u16 opcode;Handler handler; };',
+         'static const RestartEntry restart_dispatch[] = {']
+    out += ['{0x'+op+','+name+'},' for op,name in mapping]
+    out += ['};','void install_restart_handlers() {',
+            'restart_handlers.fill(nullptr);',
+            'for(const auto &entry:restart_dispatch) restart_handlers[entry.opcode]=entry.handler;',
+            '}','}']
     target=ROOT/'src/modern040/restart.cpp';target.write_text('\n'.join(out)+'\n')
     record={'upstream_pin':PIN,'inputs':inputs,'body_sha256':hashes,
             'extracted_families':len(functions),'mapped_opcodes':len(mapping),'excluded_families':excluded,

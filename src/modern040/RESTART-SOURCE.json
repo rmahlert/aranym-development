@@ -2084,6 +2084,6 @@
       "put_move16_mmu"
     ]
   },
-  "restart_sha256": "644c7aadd9b7e825fc2543b09f564cbfdf3fdb91f27b339c35f188f543384500",
+  "restart_sha256": "16531ac2411669b01f601105ca3971e4a5c421868402957202d11a99be0c72ad",
   "scope": "physical bus; genuine 040 restart/update/writeback ordering; no paged MMU, locked RMW, MOVE16 or FPU continuation"
 }
