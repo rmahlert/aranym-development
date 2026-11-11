@@ -751,6 +751,17 @@ static unsigned long long aranym_jit_cached_dispatches=0;
 static uae_u32 aranym_jit_executed_translated_insns=0;
 static uae_u32 aranym_jit_executed_guest_insns=0;
 static uae_u32 aranym_jit_executed_memory_insns=0;
+uae_u32 aranym_jit_alu_probe_begin=0,aranym_jit_alu_probe_end=0;
+static uae_u32 aranym_jit_alu_executed[7][3]={};
+static const char *aranym_jit_alu_names[]={"addx","subx","add","sub","cmp","neg","negx"};
+static int aranym_jit_alu_family(uae_u32 opcode) {
+    switch(table68k[opcode].mnemo) {
+    case i_ADDX:return 0;case i_SUBX:return 1;case i_ADD:return 2;
+    case i_SUB:return 3;case i_CMP:return 4;case i_NEG:return 5;case i_NEGX:return 6;
+    default:return -1;
+    }
+}
+
 static bool aranym_checked_move_enabled() {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
     static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE")!=nullptr;
@@ -3654,6 +3665,11 @@ void compiler_exit(void)
     if(aranym_jit_diagnostics())
         fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u\n",
             aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns);
+    if(aranym_jit_diagnostics() && aranym_jit_alu_probe_begin<aranym_jit_alu_probe_end)
+        for(unsigned f=0;f<7;++f)
+            fprintf(stderr,"UPSTREAM-ALU family=%s b=%u w=%u l=%u\n",aranym_jit_alu_names[f],
+                aranym_jit_alu_executed[f][0],aranym_jit_alu_executed[f][1],aranym_jit_alu_executed[f][2]);
+
 #endif
 #ifdef PROFILE_COMPILE_TIME
 	emul_end_time = clock();
@@ -6156,6 +6172,13 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_guest_insns,1);
                         if(aranym_checked_move_opcode(cft_map(opcode)))
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_memory_insns,1);
+                        const uae_u32 canonical=cft_map(opcode);
+                        const int family=aranym_jit_alu_family(canonical);
+                        const int size=table68k[canonical].size;
+                        // Only ordinary guest probe functions explicitly registered
+                        // before warmup count. Oracle C arithmetic lies outside.
+                        if(family>=0 && size>=0 && size<3 && guest_pc>=aranym_jit_alu_probe_begin && guest_pc<aranym_jit_alu_probe_end)
+                            compemu_raw_add_l_mi((uintptr)&aranym_jit_alu_executed[family][size],1);
                         raw_popfl();
                     }
                 }
