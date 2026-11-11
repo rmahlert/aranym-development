@@ -311,3 +311,13 @@ EXTRA_DIST = \
 	appimage/desktopintegration \
 	appimage/excludelist \
 	appimage/functions.sh
+
+# Corresponding source required by the opt-in modern040 build/library tool.
+EXTRA_DIST += tools/build-modern040-library.py \
+ src/modern040/integer.cpp src/modern040/include/uae/types.h \
+ src/modern040/COPYING.WinUAE src/modern040/SOURCE.json src/modern040/README.txt \
+ tests/cpu-core-upgrade/runner/core.cpp tests/cpu-core-upgrade/runner/core.hpp \
+ tests/cpu-core-upgrade/runner/c-api.cpp tests/cpu-core-upgrade/runner/c-api.h \
+ tests/cpu-core-upgrade/platform/adapter.h \
+ tests/modern-jit/modern-fallback.cpp tests/modern-jit/upstream-compemu.cpp \
+ tests/modern-jit/upstream-compstbl.cpp tests/modern-jit/upstream-comptbl.h
