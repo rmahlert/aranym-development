@@ -19,6 +19,10 @@
 #   FVDI_UPDATE_ZIP  checked fVDI update archive and corresponding sources
 #   INSTALLER_ONLY   set to 1 to build only the setup executable
 #   EASY_DATA_VERSION versioned user data directory for optional Atari drives
+#   PRESERVE_USER_DATA set to 1 for an in-place upgrade without replacing user data
+#   RELEASE_LABEL human-readable suffix from the executable build label
+#   CORRESPONDING_SOURCE_ARCHIVE exact source archive to include in installer
+#   RUNTIME_LICENSE_DIR dependency license notices to include
 #   ATARI_TAP_SETUP_ZIP optional shared TAP setup kit, with matching .sha256
 
 set -eu
@@ -136,10 +140,30 @@ if test -d "$MINGW_ROOT/share/licenses/libjpeg-turbo"; then
     cp -a "$MINGW_ROOT/share/licenses/libjpeg-turbo" "$stage/LICENSES/"
 fi
 
+if test -n "${CORRESPONDING_SOURCE_ARCHIVE:-}"; then
+    test -f "$CORRESPONDING_SOURCE_ARCHIVE" || exit 1
+    mkdir -p "$stage/source"
+    cp -a "$CORRESPONDING_SOURCE_ARCHIVE" "$stage/source/aranym-source.tar.gz"
+fi
+if test -n "${RUNTIME_LICENSE_DIR:-}"; then
+    test -d "$RUNTIME_LICENSE_DIR" || exit 1
+    mkdir -p "$stage/LICENSES"
+    cp -a "$RUNTIME_LICENSE_DIR/." "$stage/LICENSES/"
+fi
+
 tap_define=
 if test -n "${ATARI_TAP_SETUP_ZIP:-}"; then
     python3 "$root/tools/stage-tap-setup.py" "$ATARI_TAP_SETUP_ZIP" "$stage/aranym/network"
     tap_define=-DTAP_SETUP
+fi
+
+preserve_define=
+if test "${PRESERVE_USER_DATA:-0}" = 1; then
+    if test -n "${EASYARAMINT_DIR:-}" || test -n "${FVDI_UPDATE_ZIP:-}"; then
+        echo "$0: data-preserving installer must not bundle drives or fVDI updates" >&2
+        exit 1
+    fi
+    preserve_define=-DPRESERVE_USER_DATA
 fi
 
 easy_define=
@@ -182,6 +206,8 @@ done
 	-DVER_MAJOR="$major" -DVER_MINOR="$minor" -DVER_MICRO="$micro" \
 	$easy_define \
     $tap_define \
+    $preserve_define \
+    -DRELEASE_LABEL="${RELEASE_LABEL:- (Unofficial)}" \
     -DEASY_DATA_VERSION="${EASY_DATA_VERSION:-EasyMiNT}" \
 	-DOUTFILE="$work/$name-setup.exe" \
 	aranym.nsi )

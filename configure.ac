@@ -235,13 +235,26 @@ AC_ARG_ENABLE(modern040-core,
 AC_ARG_WITH(modern040-library,
  [AS_HELP_STRING([--with-modern040-library=FILE],[target modern040 C-ABI static library for the experimental core])],
  [MODERN040_LIBRARY=$withval], [MODERN040_LIBRARY=])
+AC_ARG_ENABLE(modern040-upgrade,
+ [AS_HELP_STRING([--enable-modern040-upgrade],[use existing standard Windows profile for an installer upgrade (default=no)])],
+ [MODERN040_UPGRADE=$enableval], [MODERN040_UPGRADE=no])
 AC_ARG_WITH(modern040-profile,
  [AS_HELP_STRING([--with-modern040-profile=DIR],[relative experimental profile below the user home])],
- [MODERN040_PROFILE=$withval], [MODERN040_PROFILE=aranym-modern040-experimental])
+ [MODERN040_PROFILE=$withval; MODERN040_PROFILE_EXPLICIT=yes], [MODERN040_PROFILE=aranym-modern040-experimental; MODERN040_PROFILE_EXPLICIT=no])
 AS_CASE([$WANT_MODERN040], [yes|no], [], [AC_MSG_ERROR([modern040-core must be yes or no])])
+AS_CASE([$MODERN040_UPGRADE], [yes|no], [], [AC_MSG_ERROR([modern040-upgrade must be yes or no])])
+if test "x$MODERN040_UPGRADE" = xyes; then
+ if test "x$WANT_MODERN040" != xyes || test "x$MODERN040_PROFILE_EXPLICIT" = xyes; then
+  AC_MSG_ERROR([modern040-upgrade requires modern040-core and no custom profile])
+ fi
+ AS_CASE([$host_os], [mingw*], [], [AC_MSG_ERROR([modern040-upgrade is for the Windows installer only])])
+ MODERN040_PROFILE=aranym
+fi
 if test "x$WANT_MODERN040" = xyes; then
  AS_CASE([$MODERN040_PROFILE], [/*|*\\*|../*|*/../*|*/..|..], [AC_MSG_ERROR([modern040 profile must be a relative path without parent traversal])])
- AS_CASE([$MODERN040_PROFILE], [aranym-modern040-*|*/aranym-modern040-*], [], [AC_MSG_ERROR([use an aranym-modern040- experimental profile])])
+ if test "x$MODERN040_UPGRADE" != xyes; then
+  AS_CASE([$MODERN040_PROFILE], [aranym-modern040-*|*/aranym-modern040-*], [], [AC_MSG_ERROR([use an aranym-modern040- experimental profile])])
+ fi
  AS_CASE([$MODERN040_PROFILE], [*[[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./-]]*], [AC_MSG_ERROR([unsupported modern040 profile character])])
 fi
 

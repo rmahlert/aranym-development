@@ -15,12 +15,16 @@
 
 !define NAME "ARAnyM"
 !define NAMESUFFIX " (Unofficial)"
+!ifndef RELEASE_LABEL
+  !define RELEASE_LABEL " (Unofficial)"
+!endif
 !ifndef EASY_DATA_VERSION
   !define EASY_DATA_VERSION "EasyMiNT"
 !endif
 Var LastConfigBackup
 Var BeforeUninstallProfile
 Var BeforeUninstallApplication
+Var ActiveConfig
 Var HadUserConfig
 Var EasyDataDir
 Var EasyConfigExisted
@@ -30,7 +34,7 @@ Var EasyConfigExisted
 
 ; The name of the installer
 Name "${NAME}"
-Caption "${NAME} ${VERSION}${NAMESUFFIX} Setup"
+Caption "${NAME} ${VERSION}${RELEASE_LABEL} Setup"
 
 !ifndef OUTFILE
   !define OUTFILE "..\aranym-${VERSION}${SDL}-setup.exe"
@@ -75,8 +79,8 @@ RequestExecutionLevel admin
 VIProductVersion ${VER_MAJOR}.${VER_MINOR}.${VER_MICRO}.${VER_BUILD}
 VIAddVersionKey "ProductName" "${NAME}"
 VIAddVersionKey "Comments" "Atari Running on Any Machine"
-VIAddVersionKey "ProductVersion" "${VER_MAJOR}.${VER_MINOR}.${VER_MICRO}.${VER_BUILD}"
-VIAddVersionKey "FileVersion" "${VERSION}"
+VIAddVersionKey "ProductVersion" "${VERSION}${RELEASE_LABEL}"
+VIAddVersionKey "FileVersion" "${VERSION}${RELEASE_LABEL}"
 VIAddVersionKey "FileDescription" "${NAME} Setup"
 VIAddVersionKey "LegalCopyright" "Copyright (C) 2000-2015 ${NAME} developer team"
 
@@ -98,8 +102,8 @@ VIAddVersionKey "LegalCopyright" "Copyright (C) 2000-2015 ${NAME} developer team
 ;--------------------------------
 ;Pages
 
-!define MUI_WELCOMEPAGE_TITLE "Welcome to the ${NAME} ${VERSION}${NAMESUFFIX} Setup Wizard"
-!define MUI_WELCOMEPAGE_TEXT "This wizard will guide you through the installation of ${NAME} (Atari Running on Any Machine) ${VERSION}${NAMESUFFIX}, a software virtual machine (similar to VirtualBox or Bochs) designed and developed for running 32-bit Atari ST/TT/Falcon operating systems (TOS, FreeMiNT, MagiC and Linux-m68k) and TOS/GEM applications on any kind of hardware.$\r$\n$\r$\n$_CLICK"
+!define MUI_WELCOMEPAGE_TITLE "Welcome to the ${NAME} ${VERSION}${RELEASE_LABEL} Setup Wizard"
+!define MUI_WELCOMEPAGE_TEXT "This wizard will guide you through the installation of ${NAME} (Atari Running on Any Machine) ${VERSION}${RELEASE_LABEL}, a software virtual machine (similar to VirtualBox or Bochs) designed and developed for running 32-bit Atari ST/TT/Falcon operating systems (TOS, FreeMiNT, MagiC and Linux-m68k) and TOS/GEM applications on any kind of hardware.$\r$\n$\r$\n$_CLICK"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "COPYING.txt"
@@ -144,6 +148,7 @@ Function ".onInit"
   ${If} ${Silent}
     SetAutoClose true
   ${EndIf}
+  StrCpy $ActiveConfig "$PROFILE\aranym\config"
   StrCpy $HadUserConfig 0
   StrCpy $NetworkType "slirp"
   StrCpy $NetworkAtariIP "10.0.2.15"
@@ -154,8 +159,21 @@ Function ".onInit"
   ${If} ${FileExists} "$PROFILE\aranym\config"
     StrCpy $HadUserConfig 1
     StrCpy $NetworkSave 0
+  ${ElseIf} ${FileExists} "$INSTDIR\aranym\config"
+    StrCpy $HadUserConfig 1
+    StrCpy $NetworkSave 0
+    StrCpy $ActiveConfig "$INSTDIR\aranym\config"
   ${EndIf}
   ${MementoSectionRestore}
+FunctionEnd
+
+Function .onVerifyInstDir
+  ${If} $HadUserConfig == 0
+  ${AndIf} ${FileExists} "$INSTDIR\aranym\config"
+    StrCpy $HadUserConfig 1
+    StrCpy $NetworkSave 0
+    StrCpy $ActiveConfig "$INSTDIR\aranym\config"
+  ${EndIf}
 FunctionEnd
 
 Function ".onInstSuccess"
@@ -241,19 +259,19 @@ Function SaveNetworkConfig
     Return
   ${EndIf}
   CreateDirectory "$PROFILE\aranym"
-  WriteINIStr "$PROFILE\aranym\config" "ETH0" "Type" "$NetworkType"
+  WriteINIStr "$ActiveConfig" "ETH0" "Type" "$NetworkType"
   ${If} $NetworkType == "slirp"
-    WriteINIStr "$PROFILE\aranym\config" "ETH0" "HostIP" "$NetworkGateway"
-    WriteINIStr "$PROFILE\aranym\config" "ETH0" "AtariIP" "$NetworkAtariIP"
-    WriteINIStr "$PROFILE\aranym\config" "ETH0" "Netmask" "$NetworkNetmask"
-    WriteINIStr "$PROFILE\aranym\config" "ETH0" "MAC" "$NetworkMac"
+    WriteINIStr "$ActiveConfig" "ETH0" "HostIP" "$NetworkGateway"
+    WriteINIStr "$ActiveConfig" "ETH0" "AtariIP" "$NetworkAtariIP"
+    WriteINIStr "$ActiveConfig" "ETH0" "Netmask" "$NetworkNetmask"
+    WriteINIStr "$ActiveConfig" "ETH0" "MAC" "$NetworkMac"
   ${EndIf}
 FunctionEnd
 
 Function LaunchInstalled
   ; Both fresh installs and upgrades use the same normal user config.
   ; Selecting a bundled system must not silently switch the active profile.
-  Exec '$\"$INSTDIR\aranym.exe$\" -c $\"$PROFILE\aranym\config$\"'
+  Exec '$\"$INSTDIR\aranym.exe$\" -c $\"$ActiveConfig$\"'
 FunctionEnd
 
 !ifdef VER_MAJOR
@@ -261,6 +279,10 @@ FunctionEnd
 Var ReinstallPageCheck
 
 Function PageReinstall
+!ifdef PRESERVE_USER_DATA
+  ; Upgrade in place; never offer an older potentially destructive uninstaller.
+  Abort
+!endif
 
   ReadRegStr $R0 "${REG_ROOT}" "${REG_APP_PATH}" "InstallLocation"
   ReadRegStr $R1 "${REG_ROOT}" "${REG_UNINST_KEY}" "UninstallString"
@@ -338,6 +360,9 @@ Function PageReinstallUpdateSelection
 FunctionEnd
 
 Function PageLeaveReinstall
+!ifdef PRESERVE_USER_DATA
+  Return
+!endif
 
   ${NSD_GetState} $R2 $R1
 
@@ -449,6 +474,8 @@ Function BackupConfig
 FunctionEnd
 
 Section -backupconfigs
+  Push "$ActiveConfig"
+  Call BackupConfig
   Push "$PROFILE\aranym\config"
   Call BackupConfig
   Push "$INSTDIR\aranym\config"
@@ -471,6 +498,15 @@ ${MementoSectionEnd}
 ; replacing the image that configuration actually uses.
 ;
 Section -emutosimage
+!ifdef PRESERVE_USER_DATA
+  ${If} $HadUserConfig == 1
+    DetailPrint "Keeping the configured EmuTOS image"
+    Return
+  ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\aranym\emutos-aranym.img"
+    Return
+  ${EndIf}
+!endif
   SetOutPath "$PLUGINSDIR"
   File /oname=emutos-aranym.img "aranym\emutos-aranym.img"
 
@@ -539,6 +575,11 @@ Section -emutosimage
 SectionEnd
 
 Section -defaultconfig
+!ifdef PRESERVE_USER_DATA
+  ${If} $HadUserConfig == 1
+    Return
+  ${EndIf}
+!endif
   SetOverwrite off
   SetOutPath "$INSTDIR\aranym"
   File "aranym\config"
@@ -566,11 +607,17 @@ Section -networkdriver
   ; that gets mapped as a HOSTFS drive below, so the Atari side can reach
   ; them without the disk image being touched.
   SetOutPath "$INSTDIR\setup"
+!ifdef PRESERVE_USER_DATA
+  ${If} $HadUserConfig == 1
+    SetOverwrite off
+  ${EndIf}
+!endif
   File "aranym\network\nfeth.xif"
   File "aranym\network\nfeth-config"
   File "aranym\network\netsetup.prg"
   File "aranym\network\eth0-config.sh"
   File "aranym\network\README-setup.txt"
+  SetOverwrite on
 SectionEnd
 
 ;
@@ -599,7 +646,7 @@ Section -hostfsmapping
   reuse_loop:
     StrCpy $R7 $R9 1 $R8
     StrCmp $R7 "" reuse_done
-    ReadINIStr $R6 "$PROFILE\aranym\config" "HOSTFS" "$R7"
+    ReadINIStr $R6 "$ActiveConfig" "HOSTFS" "$R7"
     StrCmp $R6 "$INSTDIR\setup" 0 reuse_next
       StrCpy $NetworkSetupDrive $R7
       Goto reuse_done
@@ -613,10 +660,10 @@ Section -hostfsmapping
   free_loop:
     StrCpy $R7 $R9 1 $R8
     StrCmp $R7 "" no_free_letter
-    ReadINIStr $R6 "$PROFILE\aranym\config" "HOSTFS" "$R7"
+    ReadINIStr $R6 "$ActiveConfig" "HOSTFS" "$R7"
     StrCmp $R6 "" 0 free_next
       StrCpy $NetworkSetupDrive $R7
-      WriteINIStr "$PROFILE\aranym\config" "HOSTFS" "$R7" "$INSTDIR\setup"
+      WriteINIStr "$ActiveConfig" "HOSTFS" "$R7" "$INSTDIR\setup"
       Goto mapping_done
     free_next:
     IntOp $R8 $R8 + 1
@@ -673,12 +720,16 @@ ${MementoSection} "Start Menu Shortcuts" SecMenuShortcuts
   SectionIn 1 2
   StrCpy $0 "$SMPROGRAMS\${NAME}"
   ${CreateDirectory} "$0"
-  ${CreateShortcut} "$0\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" '-c $\"$PROFILE\aranym\config$\"' "" "" "${NAME}"
+  ${CreateShortcut} "$0\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" '-c $\"$ActiveConfig$\"' "" "" "${NAME}"
 !ifdef TAP_SETUP
   ${CreateShortcut} "$0\Network adapter setup.lnk" "$INSTDIR\aranym\network\Atari-TAP-Setup.cmd" "" "" "" "Standalone signed TAP setup; no OpenVPN application"
 !endif
+!if /FileExists "aranym-mmu.exe"
   ${CreateShortcut} "$0\${NAME}${NAMESUFFIX} - MMU.lnk" "$INSTDIR\aranym-mmu.exe" "" "" "" "${NAME} MMU"
+!endif
+!if /FileExists "aranym-jit.exe"
   ${CreateShortcut} "$0\${NAME}${NAMESUFFIX} - JIT.lnk" "$INSTDIR\aranym-jit.exe" "" "" "" "${NAME} JIT"
+!endif
 ${MementoSectionEnd}
 !endif
 
@@ -686,7 +737,7 @@ ${MementoSectionEnd}
 ${MementoSection} "Desktop Shortcuts" SecDesktopShortcuts
   DetailPrint "Installing Desktop Shortcuts..."
   SectionIn 1 2
-  ${CreateShortcut} "$DESKTOP\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" '-c $\"$PROFILE\aranym\config$\"' "" "" "${NAME}"
+  ${CreateShortcut} "$DESKTOP\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" '-c $\"$ActiveConfig$\"' "" "" "${NAME}"
 ${MementoSectionEnd}
 !endif
 
@@ -694,10 +745,10 @@ ${MementoSectionDone}
 
 Section -post
   ${If} ${FileExists} "$DESKTOP\ARAnyM - Updated EasyMiNT.lnk"
-    ${CreateShortcut} "$DESKTOP\ARAnyM - Updated EasyMiNT.lnk" "$INSTDIR\aranym.exe" '-c $\"$PROFILE\aranym\config$\"' "" "" "ARAnyM with existing user configuration"
+    ${CreateShortcut} "$DESKTOP\ARAnyM - Updated EasyMiNT.lnk" "$INSTDIR\aranym.exe" '-c $\"$ActiveConfig$\"' "" "" "ARAnyM with existing user configuration"
   ${EndIf}
   ${If} ${FileExists} "$SMPROGRAMS\${NAME}\ARAnyM - Updated EasyMiNT.lnk"
-    ${CreateShortcut} "$SMPROGRAMS\${NAME}\ARAnyM - Updated EasyMiNT.lnk" "$INSTDIR\aranym.exe" '-c $\"$PROFILE\aranym\config$\"' "" "" "ARAnyM with existing user configuration"
+    ${CreateShortcut} "$SMPROGRAMS\${NAME}\ARAnyM - Updated EasyMiNT.lnk" "$INSTDIR\aranym.exe" '-c $\"$ActiveConfig$\"' "" "" "ARAnyM with existing user configuration"
   ${EndIf}
   ;Write the installation path into the registry
   ${WriteRegExpandStr} "${REG_ROOT}" "${REG_APP_PATH}" "InstallLocation" "$INSTDIR"
@@ -713,7 +764,7 @@ Section -post
   ${WriteRegExpandStr} "${REG_ROOT}" "${REG_UNINST_KEY}" "InstallLocation" "$INSTDIR"
   ${WriteRegStr} "${REG_ROOT}" "${REG_UNINST_KEY}" "DisplayName" "${NAME}${NAMESUFFIX}"
   ${WriteRegStr} "${REG_ROOT}" "${REG_UNINST_KEY}" "DisplayIcon" "$INSTDIR\aranym.exe,0"
-  ${WriteRegStr} "${REG_ROOT}" "${REG_UNINST_KEY}" "DisplayVersion" "${VERSION}"
+  ${WriteRegStr} "${REG_ROOT}" "${REG_UNINST_KEY}" "DisplayVersion" "${VERSION}${RELEASE_LABEL}"
   ${WriteRegStr} "${REG_ROOT}" "${REG_UNINST_KEY}" "Publisher" "ARAnyM developer team"
 
   ${WriteRegStr} "${REG_ROOT}" "${REG_UNINST_KEY}" "URLInfoAbout" "http://aranym.sourceforge.net/"

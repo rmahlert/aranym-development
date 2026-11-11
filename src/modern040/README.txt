@@ -37,3 +37,8 @@ Native Windows/HighWire acceptance, general fault recovery, broader memory
 translation, modern MMU/FPU engines, ARM/macOS and fair benchmarks retain
 their own gates. Do not replace an installed/default emulator based only on
 the experimental option building successfully.
+
+Windows installer builds may explicitly use --enable-modern040-upgrade to
+reuse the standard aranym profile. This requires modern040-core and rejects
+custom profiles/non-Windows hosts. The normal experimental default remains
+isolated. An upgrade must preserve existing configs, NVRAM and drive data.
