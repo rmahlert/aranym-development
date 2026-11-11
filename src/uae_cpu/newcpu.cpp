@@ -1313,9 +1313,14 @@ static void do_trace (void)
     }
 }
 
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+#define MODERN040_IRQ_BLOCKED modern040_restart_pending()
+#else
+#define MODERN040_IRQ_BLOCKED false
+#endif
 #define SERVE_VBL_MFP(resetStop)							\
 {															\
-	if (SPCFLAGS_TEST( SPCFLAG_INT3|SPCFLAG_VBL|SPCFLAG_INT5|SPCFLAG_SCC|SPCFLAG_MFP )) {		\
+	if (!MODERN040_IRQ_BLOCKED && SPCFLAGS_TEST( SPCFLAG_INT3|SPCFLAG_VBL|SPCFLAG_INT5|SPCFLAG_SCC|SPCFLAG_MFP )) {		\
 		if (SPCFLAGS_TEST( SPCFLAG_INT3 )) {					\
 			if (3 > regs.intmask) {							\
 				Interrupt(3);								\

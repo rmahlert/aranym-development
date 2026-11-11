@@ -94,6 +94,9 @@
 static void build_comp(void);
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 extern void REGPARAM2 aranym_upstream_modern_step(uae_u32 opcode);
+extern uae_u32 REGPARAM2 aranym_upstream_ram_move_guard(uae_u32 opcode,uae_u32 extensions);
+extern void aranym_upstream_memory_deopt();
+extern bool modern040_restart_pending();
 extern uae_u32 REGPARAM2 aranym_upstream_checked_read_b(uae_u32 address);
 extern uae_u32 REGPARAM2 aranym_upstream_checked_read_w(uae_u32 address);
 extern uae_u32 REGPARAM2 aranym_upstream_checked_read_l(uae_u32 address);
@@ -768,7 +771,15 @@ static uae_u32 aranym_jit_ea_executed[8]={};
 uae_u32 aranym_upstream_ea_count(unsigned index) { return index<8?aranym_jit_ea_executed[index]:0; }
 static bool aranym_checked_move_enabled() {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE")!=nullptr;
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE")!=nullptr || getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE")!=nullptr;
+    return enabled;
+#else
+    return false;
+#endif
+}
+static bool aranym_guarded_move_enabled() {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE")!=nullptr && !getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE");
     return enabled;
 #else
     return false;
@@ -776,6 +787,13 @@ static bool aranym_checked_move_enabled() {
 }
 static bool aranym_checked_move_opcode(uae_u32 canonical) {
     const instr &in=table68k[canonical];
+    if(aranym_guarded_move_enabled()) {
+        const bool src=in.smode==Aind||in.smode==Aipi||in.smode==Apdi||in.smode==Ad16;
+        const bool dst=in.dmode==Aind||in.dmode==Aipi||in.dmode==Apdi||in.dmode==Ad16;
+        return (in.mnemo==i_MOVE&&((src&&(dst||in.dmode==Dreg))||
+            (dst&&(in.smode==Dreg||in.smode==Areg)))) ||
+            (in.mnemo==i_MOVEA&&src&&in.dmode==Areg);
+    }
     // No update/index/indirection here: these forms perform exactly one transfer.
     const bool source=in.smode==Aind || in.smode==Ad16;
     const bool destination=in.dmode==Aind || in.dmode==Ad16;
@@ -896,6 +914,9 @@ void* pushall_call_handler=NULL;
 static void* popall_do_nothing=NULL;
 static void* popall_exec_nostats=NULL;
 static void* popall_execute_normal=NULL;
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+static void* popall_memory_deopt=NULL;
+#endif
 static void* popall_cache_miss=NULL;
 static void* popall_recompile_block=NULL;
 static void* popall_check_checksum=NULL;
@@ -5016,6 +5037,13 @@ static inline void create_popalls(void)
 	raw_inc_sp(stack_space);
 	raw_pop_preserved_regs();
 	compemu_raw_jmp(uae_p32(execute_normal));
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    align_target(align_jumps);
+    popall_memory_deopt=get_target();
+    raw_inc_sp(stack_space);
+    raw_pop_preserved_regs();
+    compemu_raw_jmp(uae_p32(aranym_upstream_memory_deopt));
+#endif
 
 	align_target(align_jumps);
 	popall_cache_miss=get_target();
@@ -5503,6 +5531,10 @@ void build_comp(void)
         }
         const bool memory=(in.suse&&in.smode>=Aind&&in.smode<=PC8r)
             ||(in.duse&&in.dmode>=Aind&&in.dmode<=PC8r);
+        // The pre-instruction guard may leave the native block for an access
+        // exception. Preserve the incoming CCR even when MOVE overwrites it.
+        if(aranym_guarded_move_enabled()&&aranym_checked_move_opcode(opcode))
+            prop[cft_map(opcode)].use_flags|=FLAG_ALL;
         const char *group=getenv("ARANYM_UPSTREAM_JIT_GROUP");
         if(group) {
             bool selected=false;
@@ -6096,6 +6128,35 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 #endif
 
                     const uae_u8 *owned_emit_begin=get_target();
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+                    if(checked_move&&aranym_guarded_move_enabled()) {
+                        // Publish ALL state before any part of the memory
+                        // instruction. A failed RAM guard uses an ordinary JIT
+                        // epilogue, then executes the genuine interpreter body
+                        // once; no host unwind through generated code.
+                        flush(1);
+                        const uintptr native_pc=(uintptr)pc_hist[i].location;
+                        raw_mov_q_mi((uintptr)&regs.pc_p,native_pc);
+                        raw_mov_q_mi((uintptr)&regs.pc_oldp,native_pc);
+                        compemu_raw_mov_l_mi((uintptr)&regs.pc,instruction_guest_pc);
+                        compemu_raw_mov_l_mi((uintptr)&regs.fault_pc,instruction_guest_pc);
+                        const instr &move=table68k[cft_map(opcode)];
+                        const bool displacement=move.smode==Ad16||move.dmode==Ad16;
+                        compemu_raw_mov_l_ri(REG_PAR1,cft_map(opcode));
+                        const uae_u32 extension1=displacement?do_get_mem_word(pc_hist[i].location+1):0;
+                        const uae_u32 extension2=(move.smode==Ad16&&move.dmode==Ad16)?do_get_mem_word(pc_hist[i].location+2):0;
+                        compemu_raw_mov_l_ri(REG_PAR2,extension1|(extension2<<16));
+                        raw_dec_sp(STACK_SHADOW_SPACE);
+                        compemu_raw_call((uintptr)aranym_upstream_ram_move_guard);
+                        raw_inc_sp(STACK_SHADOW_SPACE);
+                        compemu_raw_test_l_rr(REG_RESULT,REG_RESULT);
+                        compemu_raw_jcc_l_oponly(NATIVE_CC_NE);
+                        uae_u32 *safe_branch=(uae_u32*)get_target();skip_long();
+                        compemu_raw_jmp((uintptr)popall_memory_deopt);
+                        *safe_branch=get_target()-(uae_u8*)(safe_branch+1);
+                        comp_pc_p=(uae_u8*)pc_hist[i].location;init_comp();
+                    }
+#endif
                     comptbl[opcode](opcode);
 #ifndef UAE
                     if(getenv("ARANYM_UPSTREAM_JIT_EMIT_DIAGNOSTIC") && aranym_jit_alu_family(cft_map(opcode))==0 && instruction_guest_pc>=FastRAMBase) {
@@ -6675,7 +6736,7 @@ void m68k_do_compile_execute(void)
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
         // Tracing is implemented by the real modern interpreter. Never enter
         // an already-cached untraced block while either trace bit is active.
-        if(regs.t1||regs.t0) {
+        if(regs.t1||regs.t0||modern040_restart_pending()) {
             aranym_upstream_modern_step(GET_OPCODE);
             cpu_check_ticks();
         } else

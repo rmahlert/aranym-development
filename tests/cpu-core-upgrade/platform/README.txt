@@ -1,5 +1,9 @@
 Experimental native ARAnyM modern040 test target
 ==============================================
+This document describes the original standalone no-JIT adapter. The current
+configure-integrated x64 frontend, precise physical faults and guarded RAM JIT
+are documented in src/modern040/README.txt. Their capabilities are distinct.
+
 This opt-in test build links the isolated namespaced interpreter to the REAL
 Atari frontend. Normal builds do not define EXPERIMENTAL_MODERN040 and retain
 existing CPU behavior. No production configure setting, installation or public

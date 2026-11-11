@@ -1,10 +1,12 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "c-api.h"
 #include "core.hpp"
+#include "restart.hpp"
 #include <cstring>
 namespace {
 bool busy=false;
 m040_bus_callback callback=nullptr;void *callback_opaque=nullptr;
+m040_precise_bus_callback precise_callback=nullptr;
 m040_reset_callback reset_callback=nullptr;void *reset_opaque=nullptr;
 bool reset_hardware(void *) {
     const auto status=reset_callback(reset_opaque);
@@ -26,13 +28,20 @@ void result(const modern040::Result &source,m040_result &out) {
     out.address=source.address;out.size=source.size;
     std::strncpy(out.detail,source.detail.c_str(),sizeof(out.detail)-1);
 }
+modern040::BusCompletion precise_bus(void *,const modern040::BusRequest &source,uae_u32 &value) {
+    const m040_bus_request request{M040_ABI_VERSION,uint32_t(source.kind),source.address,source.size,
+        source.function_code,uint32_t(source.alternate_function_code.has_value()),source.alternate_function_code.value_or(0),source.transfer_type};
+    const int status=precise_callback(callback_opaque,&request,&value);
+    if(status<0||status>2)throw std::runtime_error("precise bus callback returned an invalid completion");
+    return modern040::BusCompletion(status);
+}
 int failed() noexcept {modern040::ismoves_nommu=false;modern040::host.capability_latched=true;return M040_HOST_ERROR;}
 }
 extern "C" {
 int m040_reset(const m040_options *options) {
     if(busy)return M040_BUSY;
     if(!options||options->abi_version!=M040_ABI_VERSION||options->deliver_exceptions>1||options->lc040_probes>1||options->log_accesses>1)return M040_BAD_ARGUMENT;
-    try{Boundary guard;modern040::reset();modern040::install_handlers();callback=nullptr;callback_opaque=nullptr;
+    try{Boundary guard;modern040::reset();modern040::install_handlers();callback=nullptr;precise_callback=nullptr;callback_opaque=nullptr;
         reset_callback=nullptr;reset_opaque=nullptr;
         modern040::host.deliver_exceptions=options->deliver_exceptions;modern040::host.lc040_probes=options->lc040_probes;
         modern040::host.log_accesses=options->log_accesses;return M040_OK;}catch(...){return failed();}
@@ -70,6 +79,7 @@ int m040_set_state(const m040_state *in) {
 int m040_set_bus(m040_bus_callback function,void *opaque) {
     if(busy)return M040_BUSY;
     callback=function;callback_opaque=opaque;
+    precise_callback=nullptr;modern040::host.precise_bus=nullptr;
     modern040::host.bus=function?bus:nullptr;modern040::host.bus_opaque=nullptr;return M040_OK;
 }
 int m040_set_reset_handler(m040_reset_callback function,void *opaque) {
@@ -77,9 +87,26 @@ int m040_set_reset_handler(m040_reset_callback function,void *opaque) {
     reset_callback=function;reset_opaque=opaque;
     modern040::host.reset_hardware=function?reset_hardware:nullptr;modern040::host.reset_opaque=nullptr;return M040_OK;
 }
+int m040_set_precise_bus(m040_precise_bus_callback function,void *opaque) {
+    if(busy)return M040_BUSY;
+    precise_callback=function;callback=nullptr;callback_opaque=opaque;
+    modern040::host.bus=nullptr;modern040::host.precise_bus=function?precise_bus:nullptr;
+    modern040::host.bus_opaque=nullptr;return M040_OK;
+}
+int m040_fault_recovery(int enabled) {
+    if(busy||modern040::host.service)return M040_BUSY;
+    if(enabled!=0&&enabled!=1)return M040_BAD_ARGUMENT;
+    if(enabled)modern040::install_restart_handlers();
+    modern040::host.fault_recovery=enabled;return M040_OK;
+}
+int m040_restart_pending(int *pending) {
+    if(busy)return M040_BUSY;
+    if(!pending)return M040_BAD_ARGUMENT;
+    *pending=bool(modern040::regs.spcflags&modern040::SPCFLAG_MMURESTART);return M040_OK;
+}
 int m040_poke(uint32_t address,uint32_t size,uint32_t value) {
     if(busy)return M040_BUSY;
-    if((size!=1&&size!=2&&size!=4)||modern040::host.bus)return M040_BAD_ARGUMENT;
+    if((size!=1&&size!=2&&size!=4)||modern040::host.bus||modern040::host.precise_bus)return M040_BAD_ARGUMENT;
     if(address>=modern040::host.ram.size()||size>modern040::host.ram.size()-address)return M040_BAD_ARGUMENT;
     try{Boundary guard;modern040::poke(address,size,value);return M040_OK;}catch(...){return failed();}
 }

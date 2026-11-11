@@ -47,6 +47,9 @@ extern uae_u32 vram_addr;
 void HWInit(void);
 void HWExit(void);
 void HWReset(void);
+// Dispatch-table query only: no device access. An absent starting module
+// faults before HWget/HWput can issue any constituent transfer.
+bool HWaccess_unmapped(uaecptr addr);
 
 ARADATA *getARADATA(void);
 MFP *getMFP(void);

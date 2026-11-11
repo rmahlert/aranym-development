@@ -7,4 +7,7 @@ void modern040_execute();
 void modern040_reset_requested();
 void modern040_external_exception(int vector);
 void modern040_external_interrupt(int vector,unsigned level);
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+bool modern040_restart_pending();
+#endif
 #endif

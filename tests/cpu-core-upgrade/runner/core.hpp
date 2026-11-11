@@ -57,6 +57,9 @@ struct BusRequest {
 // One architectural access per callback. Read returns data in value; write
 // supplies value. false means this access did not complete. No implicit retry.
 using BusAccess = bool (*)(void *opaque,const BusRequest &,uae_u32 &value);
+// False from the legacy callback does not certify a side-effect-free fault.
+enum class BusCompletion { UnknownFault=0, Completed=1, FaultBeforeTransfer=2 };
+using PreciseBusAccess = BusCompletion (*)(void *,const BusRequest &,uae_u32 &);
 using ResetHardware = bool (*)(void *opaque);
 struct Access {
     AccessKind kind;
@@ -87,7 +90,7 @@ struct Frame {
     bool interrupt;
 };
 struct CacheOperation { int cache,scope;uae_u32 address;bool push,invalidate; };
-struct BusFault { BusRequest request;uae_u16 opcode;bool in_instruction; };
+struct BusFault { BusRequest request;uae_u16 opcode;bool in_instruction;BusCompletion completion;uae_u32 data=0; };
 struct Host {
     std::array<uae_u8, 65536> ram{};
     std::vector<Access> accesses;
@@ -98,6 +101,7 @@ struct Host {
     bool in_instruction = false, access_fault_latched = false, halted = false;
     bool lc040_probes = false, capability_latched = false;
     BusAccess bus = nullptr;
+    PreciseBusAccess precise_bus = nullptr;
     void *bus_opaque = nullptr;
     ResetHardware reset_hardware=nullptr;
     void *reset_opaque=nullptr;
@@ -105,6 +109,9 @@ struct Host {
     bool legacy_fpu_operations=false;
     bool read_probe_exceptions=false, delivering_read_probe=false;
     uae_u32 read_probe_next_pc=0;
+    bool fault_recovery=false, using_restart=false, delivering_fault=false;
+    uae_u32 start_pc=0,recovery_pc=0;
+    unsigned initial_ccr=0;
     std::optional<BusFault> bus_fault;
     std::optional<Service> service;
     unsigned exception_depth = 0;

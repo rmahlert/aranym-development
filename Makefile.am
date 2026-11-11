@@ -314,7 +314,11 @@ EXTRA_DIST = \
 
 # Corresponding source required by the opt-in modern040 build/library tool.
 EXTRA_DIST += tools/build-modern040-library.py \
- src/modern040/integer.cpp src/modern040/include/uae/types.h \
+ src/modern040/integer.cpp src/modern040/restart.cpp src/modern040/RESTART-SOURCE.json \
+ tools/extract-modern040-restart.py tests/cpu-core-upgrade/runner/restart.hpp \
+ tests/cpu-core-upgrade/runner/restart-test.cpp src/modern040/include/uae/types.h \
+ tests/modern-jit/guest/access-probe.c tests/modern-jit/guest/access-probe.S \
+ tests/modern-jit/guest/ram-benchmark.c tests/modern-jit/guest/ram-benchmark.S \
  src/modern040/COPYING.WinUAE src/modern040/SOURCE.json src/modern040/README.txt \
  tests/cpu-core-upgrade/runner/core.cpp tests/cpu-core-upgrade/runner/core.hpp \
  tests/cpu-core-upgrade/runner/c-api.cpp tests/cpu-core-upgrade/runner/c-api.h \

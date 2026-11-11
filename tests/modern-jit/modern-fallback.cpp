@@ -14,6 +14,7 @@
 #include "main.h"
 #include "cpu_emulation.h"
 #include "newcpu.h"
+#include "hardware.h"
 #include "fpu/fpu.h"
 #include "../cpu-core-upgrade/runner/c-api.h"
 #include "../cpu-core-upgrade/platform/adapter.h"
@@ -142,6 +143,7 @@ int ea_fixture(const m040_bus_request *request,uint32_t *value) {
     else if(offset==12)*value=last;
     else if(offset==16)*value=faults;
     else if(offset==0x28)*value=std::getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE")!=nullptr;
+    else if(offset==0x2c)*value=std::getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE")!=nullptr;
     else if(offset>=0x40 && offset<0x60)*value=aranym_upstream_ea_count((offset-0x40)/4);
     else return 0;
     return 1;
@@ -154,6 +156,13 @@ int memory(void *,const m040_bus_request *request,uint32_t *value) {
     if(request->transfer_type!=0)return 0; // no invented alternate CPU space.
     const int fixture=side_effect_fixture(request,value);
     if(fixture>=0)return fixture;
+    const uae_u32 physical=request->address<0xff000000?request->address:request->address&0x00ffffff;
+    const bool super=bool(request->function_code&4);
+    if((physical&0xfff00000)==0x00f00000) {
+        if(HWaccess_unmapped(physical))return M040_BUS_FAULT_BEFORE_TRANSFER;
+    } else if(!test_ram_boundary(physical,request->size,super,request->kind==M040_WRITE)) {
+        return M040_BUS_FAULT_BEFORE_TRANSFER;
+    }
     const auto saved_super=regs.s;regs.s=bool(request->function_code&4);
 #ifdef ARAM_PAGE_CHECK
     // Original page shortcuts cache privilege/permission decisions. Each
@@ -188,12 +197,13 @@ void initialize() {
 #endif
     const m040_options options={M040_ABI_VERSION,1,uint32_t(!legacy_fpu),0};
     diagnostics=std::getenv("ARANYM_MODERN040_DIAGNOSTICS")!=0;
-    checked(m040_reset(&options),"reset modern core");checked(m040_set_bus(memory,0),"attach original Atari physical bus");
+    checked(m040_reset(&options),"reset modern core");checked(m040_set_precise_bus(memory,0),"attach precise Atari physical bus");
+    checked(m040_fault_recovery(1),"enable restart-aware physical-bus integer bodies");
     checked(m040_set_reset_handler([](void *){AtariReset();return 1;},0),"attach original Atari RESET hardware/NatFeat/input path");
     checked(m040_legacy_fpu_operations(legacy_fpu),"select explicit original FPU backend");
     checked(m040_private_operations(1),"enable ARAnyM extension decoder");initialized=true;
     checked(m040_read_probe_exceptions(1),"enable bounded trace-free pure-read probe fault delivery");
-    std::fprintf(stderr,"MODERN040_EXPERIMENTAL source=d82bc254 profile=%s noMMU native-JIT-boundary fault-restart=unsupported\n",legacy_fpu?"modern-integer-original-ieee-fpu":"integer-lc040-probes");
+    std::fprintf(stderr,"MODERN040_EXPERIMENTAL source=d82bc254 profile=%s noMMU native-JIT-boundary fault-restart=precise-physical-bus\n",legacy_fpu?"modern-integer-original-ieee-fpu":"integer-lc040-probes");
 }
 bool acceptable(const m040_result &result){return result.exit==M040_BUDGET||result.exit==M040_STOPPED||result.exit==M040_HOST_RETURN;}
 void service(m040_result &result) {
@@ -239,6 +249,10 @@ void service(m040_result &result) {
 }
 }
 void modern040_reset_requested(){initialized=false;}
+bool modern040_restart_pending() {
+    if(!initialized)return false;
+    int pending=0;checked(m040_restart_pending(&pending),"read restart boundary");return pending;
+}
 void modern040_external_exception(int vector) {
     if(!initialized)fail("external exception before initialization");
     m040_service pending;const bool service_pending=m040_get_service(&pending)==M040_OK;
@@ -300,15 +314,72 @@ void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
     if((numeric_opcode&0xff00)==0xf400)flush_icache(0);
     if(result.exit==M040_HOST_RETURN)SPCFLAGS_SET(SPCFLAG_JIT_EXEC_RETURN);
 }
+// Pure range/permission guard: no guest memory access, device callback, state
+// update or guessed value. Unsafe targets leave the block BEFORE the op runs.
+uae_u32 REGPARAM2 aranym_upstream_ram_move_guard(uae_u32 opcode,uae_u32 extensions) {
+    const uae_u32 extension1=extensions&65535,extension2=extensions>>16;
+    const unsigned top=opcode>>12;
+    if(top<1||top>3)return 0;
+    const unsigned size=top==1?1:top==2?4:2;
+    const unsigned source=(opcode>>3)&7,destination=(opcode>>6)&7;
+    const unsigned src_reg=opcode&7,dst_reg=(opcode>>9)&7;
+    const bool reading=source>=2&&source<=5,writing=destination>=2&&destination<=5;
+    if((!reading&&source>1)||(!writing&&destination>1)||(!reading&&!writing))return 0;
+    const auto permitted=[&](uae_u32 address,bool write) {
+        address=address<0xff000000?address:address&0x00ffffff;
+        return (address&0xfff00000)!=0x00f00000&&test_ram_boundary(address,size,regs.s,write);
+    };
+    uae_u32 destination_base=regs.regs[8+dst_reg];
+    if(reading) {
+        uae_u32 address=regs.regs[8+src_reg];
+        const unsigned increment=size==1&&src_reg==7?2:size;
+        if(source==4)address-=increment;
+        if(source==5)address+=uae_s16(extension1);
+        if(!permitted(address,false))return 0;
+        // Source auto-update precedes destination EA calculation, including
+        // MOVE (An)+,(An) and MOVE -(An),-(An) register aliasing.
+        if(src_reg==dst_reg&&(source==3||source==4))
+            destination_base=source==3?destination_base+increment:destination_base-increment;
+    }
+    if(writing) {
+        const unsigned increment=size==1&&dst_reg==7?2:size;
+        if(destination==4)destination_base-=increment;
+        if(destination==5)destination_base+=uae_s16(source==5?extension2:extension1);
+        if(!permitted(destination_base,true))return 0;
+    }
+    return 1;
+}
+void aranym_upstream_memory_deopt() {
+    aranym_upstream_modern_step(GET_OPCODE);
+    cpu_check_ticks();
+}
 
 // Default-off scalar MOVE pilot: actual imported compiler bodies calculate EA
 // and flags; these helpers perform one existing checked bus operation. A failed
 // transfer stops explicitly; generic architectural fault/restart is not admitted.
 namespace {
 uint32_t checked_native_transfer(uint32_t address,unsigned size,bool write,uint32_t value) {
+    static const bool guarded=std::getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE")&&!std::getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE");
+    if(guarded) {
+        const uae_u32 physical=address<0xff000000?address:address&0x00ffffff;
+        if((physical&0xfff00000)==0x00f00000||!test_ram_boundary(physical,size,regs.s,write))
+            fail("guarded RAM helper received an address not admitted by its instruction guard");
+        // Same existing endian-aware RAM accessors, without a per-transfer
+        // setjmp/device dispatch around an already validated RAM operation.
+        if(write) {
+            if(size==1)phys_put_byte(address,value);
+            else if(size==2)phys_put_word(address,value);
+            else phys_put_long(address,value);
+        } else {
+            if(size==1)value=phys_get_byte(address);
+            else if(size==2)value=phys_get_word(address);
+            else value=phys_get_long(address);
+        }
+        return value;
+    }
     const m040_bus_request request={M040_ABI_VERSION,uint32_t(write?M040_WRITE:M040_READ),
         address,size,regs.s?5u:1u,0,0,0};
-    if(!memory(nullptr,&request,&value)) {
+    if(memory(nullptr,&request,&value)!=M040_BUS_COMPLETED) {
         m040_result result={};result.abi_version=M040_ABI_VERSION;
         result.exit=M040_MEMORY_FAULT;result.instruction_pc=regs.fault_pc;
         result.current_pc=m68k_getpc();result.address=address;result.size=size;

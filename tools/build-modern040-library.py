@@ -19,18 +19,20 @@ def main():
     source=ROOT/'src/modern040';runner=ROOT/'tests/cpu-core-upgrade/runner'
     pins=json.loads((source/'SOURCE.json').read_text())
     assert sha(source/'integer.cpp')==pins['integer_sha256']
+    restart=json.loads((source/'RESTART-SOURCE.json').read_text())
+    assert sha(source/'restart.cpp')==restart['restart_sha256']
     assert sha(source/'include/uae/types.h')==pins['types_sha256']
     for n,h in pins['runner_inputs'].items():assert sha(ROOT/n)==h,n
     out.mkdir(parents=True,exist_ok=True)
     marker.write_text('{"purpose":"source-built experimental modern040 library"}\n')
     flags=['-std=c++20','-O2','-g','-fwrapv','-DFPUEMU','-I'+str(runner),'-I'+str(source/'include')]
     commands=[];objects=[]
-    for s in [source/'integer.cpp',runner/'core.cpp',runner/'c-api.cpp']:
+    for s in [source/'integer.cpp',source/'restart.cpp',runner/'core.cpp',runner/'c-api.cpp']:
         obj=out/(s.stem+'.o');cmd=[*shlex.split(a.cxx),*flags,'-c',str(s),'-o',str(obj)]
         commands.append(cmd);subprocess.run(cmd,check=True);objects.append(obj)
     lib=out/'libmodern040.a';cmd=[*shlex.split(a.ar),'rcs',str(lib),*map(str,objects)]
     commands.append(cmd);subprocess.run(cmd,check=True)
-    record={'source_pin':pins['upstream_pin'],'compiler':subprocess.check_output([*shlex.split(a.cxx),'--version'],text=True).splitlines()[0],'commands':commands,'library_sha256':sha(lib),'sources':{str(s.relative_to(ROOT)):sha(s) for s in [source/'integer.cpp',source/'include/uae/types.h',runner/'core.cpp',runner/'core.hpp',runner/'c-api.cpp',runner/'c-api.h']},'objects':{o.name:sha(o) for o in objects},'scope':pins['scope']}
+    record={'source_pin':pins['upstream_pin'],'compiler':subprocess.check_output([*shlex.split(a.cxx),'--version'],text=True).splitlines()[0],'commands':commands,'library_sha256':sha(lib),'sources':{str(s.relative_to(ROOT)):sha(s) for s in [source/'integer.cpp',source/'restart.cpp',source/'RESTART-SOURCE.json',source/'include/uae/types.h',runner/'core.cpp',runner/'core.hpp',runner/'restart.hpp',runner/'c-api.cpp',runner/'c-api.h']},'objects':{o.name:sha(o) for o in objects},'scope':pins['scope']}
     (out/'provenance.json').write_text(json.dumps(record,indent=2)+'\n')
     print(lib,flush=True)
 if __name__=='__main__':main()

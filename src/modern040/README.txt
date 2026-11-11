@@ -3,8 +3,9 @@ Experimental modern040 core and upstream x64 JIT
 This directory supplies the pinned generated integer source and its required
 type header. SOURCE.json binds them to the independently qualified core/API
 sources under tests/cpu-core-upgrade/runner. Bodies/helpers come from WinUAE
-d82bc254; explicit integration guards still exclude full guest MMU and general
-access-error restart. Original ARAnyM IEEE FPU service remains the backend.
+d82bc254. The native frontend selects the corresponding restart-aware 040
+integer bodies over an explicit physical bus. Paged MMU translation is separate.
+Original ARAnyM IEEE FPU service remains the backend.
 This is not an assertion that every modern WinUAE CPU/MMU/FPU feature is ported.
 
 Build the target library from source, without an Amiga chipset dependency:
@@ -33,7 +34,27 @@ and MOVEA W/L reads including base/destination aliasing. It performs checked
 transfers once and stops on failure; it does not implement architectural
 fault recovery. Updating, indexed, indirect and multi-transfer EAs fall back.
 
-Native Windows/HighWire acceptance, general fault recovery, broader memory
+Physical-bus access-error recovery now distinguishes a failed transfer before
+any target access from a partial or unknown device failure. Qualified bodies
+deliver format7 with the correct restart/completion PC, FC/size, WB3 data and
+MOVEM continuation EA. The guest handler owns pending writeback; RTE does not
+silently repeat stores. Read retries occur only when the guest returns to the
+faulted instruction. Post-RTE IRQ recognition waits for that instruction.
+Unknown/partial transfers, locked RMW/MOVE16 faults and FPU/trace continuation
+still fail explicitly; do not assume a legacy bool callback certifies atomicity.
+The original bounded read-probe path retains its separate firmware behavior.
+
+ARANYM_UPSTREAM_JIT_RAM_MOVE=1 selects a separate guarded RAM MOVE path. It
+supports B/W/L loads, stores and memory copies using (An), (An)+, -(An) and
+(d16,An), and MOVEA W/L loads. A pure pre-instruction guard checks both operands
+and auto-update aliases before any transfer. Unsafe/device addresses leave the
+native block with complete incoming state and execute the real interpreter
+body once. Validated RAM uses existing endian-aware accessors without a
+per-transfer exception wrapper. This uses normal JIT epilogues, not a host
+unwind through generated code. Incoming CCR remains live at fault boundaries.
+The older CHECKED_MOVE pilot remains distinct and default-off.
+
+Native Windows/HighWire acceptance, broader memory
 translation, modern MMU/FPU engines, ARM/macOS and fair benchmarks retain
 their own gates. Do not replace an installed/default emulator based only on
 the experimental option building successfully.

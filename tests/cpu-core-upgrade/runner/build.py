@@ -281,7 +281,7 @@ def main():
     provenance['runner']['build']={'sanitized':args.sanitize,'compiler':subprocess.check_output([cxx,'--version'],text=True).splitlines()[0],'flags':flags}
     (build / "runner-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     objects = []
-    for source in (build / "integer.cpp", HERE / "core.cpp", HERE / "c-api.cpp"):
+    for source in (build / "integer.cpp", HARNESS.parents[1]/"src/modern040/restart.cpp", HERE / "core.cpp", HERE / "c-api.cpp"):
         obj = build / (source.stem + ".o")
         command([cxx, *flags, "-c", source, "-o", obj])
         objects.append(obj)
@@ -299,6 +299,7 @@ def main():
                            ("ttr-tests", "ttr-test.cpp"),
                            ("cache-tests", "cache-test.cpp"),
                            ("read-probe-tests", "read-probe-test.cpp"),
+                           ("restart-tests", "restart-test.cpp"),
                            ("integer-runner", "main.cpp")]:
         command([cxx, *flags, HERE / driver, build / "libmodern040-integer.a", "-o", build / target])
     print(f"Runner: {len(selected)} generated families, {count} opcodes; {len(excluded)} families explicitly excluded", flush=True)
@@ -335,6 +336,7 @@ def main():
     if result.returncode!=1: raise RuntimeError(f"Cache checker returned {result.returncode}, expected1")
     print("REJECTED deliberate --negative-selector by actual cache checker",flush=True)
     command([build / "read-probe-tests"])
+    command([build / "restart-tests"])
     result=subprocess.run([str(build / "read-probe-tests"),"--negative-pc"])
     if result.returncode!=1: raise RuntimeError(f"Read-probe checker returned {result.returncode}, expected1")
     print("REJECTED deliberate read-probe --negative-pc by actual frame checker",flush=True)

@@ -34,6 +34,10 @@ struct m040_bus_request {
  * No callback may call state/config/run APIs; those reject reentry with BUSY.
  */
 typedef int (*m040_bus_callback)(void *, const struct m040_bus_request *, uint32_t *);
+enum m040_bus_completion { M040_BUS_UNKNOWN_FAULT=0, M040_BUS_COMPLETED=1, M040_BUS_FAULT_BEFORE_TRANSFER=2 };
+/* BEFORE_TRANSFER certifies no part of THIS transfer reached the target.
+ * Earlier accesses in the instruction may have completed. Never retry here. */
+typedef int (*m040_precise_bus_callback)(void *, const struct m040_bus_request *, uint32_t *);
 typedef int (*m040_reset_callback)(void *);
 struct m040_result {
     uint32_t abi_version, exit, vector, instruction_pc, current_pc, address, size;
@@ -54,6 +58,11 @@ int m040_get_state(struct m040_state *);
  */
 int m040_set_state(const struct m040_state *);
 int m040_set_bus(m040_bus_callback, void *opaque);
+int m040_set_precise_bus(m040_precise_bus_callback, void *opaque);
+/* Genuine 040 restart-aware physical-bus bodies; no paged MMU, FPU/trace
+ * continuation, MOVE16 or unknown partial-transfer recovery. */
+int m040_fault_recovery(int enabled);
+int m040_restart_pending(int *pending);
 /* Callback returns1 after platform hardware reset completed,0 on failure. */
 int m040_set_reset_handler(m040_reset_callback, void *opaque);
 int m040_poke(uint32_t address, uint32_t size, uint32_t value);

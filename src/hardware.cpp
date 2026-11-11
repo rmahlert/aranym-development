@@ -127,6 +127,10 @@ BASE_IO *getModule(memptr addr)
 	D(bug("HW register %08x not emulated", addr));
 	return NULL;
 }
+bool HWaccess_unmapped(uaecptr addr)
+{
+	return getModule(addr) == NULL;
+}
 
 ARADATA* getARADATA(){ return aradata; /* (ARADATA*)arhw[ARADATA];*/ }
 MFP* getMFP()		{ return mfp; }
