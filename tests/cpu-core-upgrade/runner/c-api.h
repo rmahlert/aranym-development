@@ -63,6 +63,9 @@ int m040_set_precise_bus(m040_precise_bus_callback, void *opaque);
  * continuation, MOVE16 or unknown partial-transfer recovery. */
 int m040_fault_recovery(int enabled);
 int m040_restart_pending(int *pending);
+/* Limit diagnostic history without changing total counts or the last event.
+ * Production frontends can use zero; tests default to full history. */
+int m040_exception_history_limit(uint32_t entries);
 /* Callback returns1 after platform hardware reset completed,0 on failure. */
 int m040_set_reset_handler(m040_reset_callback, void *opaque);
 int m040_poke(uint32_t address, uint32_t size, uint32_t value);

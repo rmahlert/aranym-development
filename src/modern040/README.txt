@@ -43,6 +43,9 @@ faulted instruction. Post-RTE IRQ recognition waits for that instruction.
 Unknown/partial transfers, locked RMW/MOVE16 faults and FPU/trace continuation
 still fail explicitly; do not assume a legacy bool callback certifies atomicity.
 The original bounded read-probe path retains its separate firmware behavior.
+Production execution retains only the latest exception event and a total count;
+it does not accumulate every VDI/GEMDOS trap in an unbounded history vector.
+Isolated tests can explicitly retain full or bounded histories.
 
 JIT-enabled native builds now use the guarded RAM MOVE path by default. Set
 ARANYM_UPSTREAM_JIT_RAM_MOVE_OFF=1 only for an explicit comparison control. It

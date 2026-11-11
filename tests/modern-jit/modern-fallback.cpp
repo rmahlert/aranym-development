@@ -199,6 +199,7 @@ void initialize() {
     diagnostics=std::getenv("ARANYM_MODERN040_DIAGNOSTICS")!=0;
     checked(m040_reset(&options),"reset modern core");checked(m040_set_precise_bus(memory,0),"attach precise Atari physical bus");
     checked(m040_fault_recovery(1),"enable restart-aware physical-bus integer bodies");
+    checked(m040_exception_history_limit(0),"retain bounded exception diagnostics without accumulating every guest trap");
     checked(m040_set_reset_handler([](void *){AtariReset();return 1;},0),"attach original Atari RESET hardware/NatFeat/input path");
     checked(m040_legacy_fpu_operations(legacy_fpu),"select explicit original FPU backend");
     checked(m040_private_operations(1),"enable ARAnyM extension decoder");initialized=true;

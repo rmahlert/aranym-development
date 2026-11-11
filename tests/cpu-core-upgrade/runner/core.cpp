@@ -106,7 +106,12 @@ void enter_exception(int nr, bool interrupt, unsigned level) {
         }
         const auto handler=read(AccessKind::Read,regs.vbr+4u*uae_u32(nr),4);
         const auto frame_sr=uae_u16(format==1?(saved_sr|0x2000):nr==3&&(last_op_for_exception_3&0x10000)?last_sr_for_exception3:saved_sr);
-        host.frames.push_back({nr,format,regs.regs[15],handler,stacked_pc,frame_sr,interrupt});
+        host.last_frame=Frame{nr,format,regs.regs[15],handler,stacked_pc,frame_sr,interrupt};
+        ++host.exception_count;
+        if(host.frame_history_limit) {
+            if(host.frames.size()>=host.frame_history_limit)host.frames.erase(host.frames.begin());
+            host.frames.push_back(*host.last_frame);
+        }
         if (handler&1) {
             if (nr==2||nr==3) stop(Exit::DoubleFault,nr,handler,2,"odd bus/address-error vector");
             complete_exception_trace(nr);
@@ -209,7 +214,8 @@ void flush_cpu_caches_040_2(int cache,int scope,uae_u32 address,bool push,bool i
     // This direct-fetch, synchronous-write interpreter has no resident lines
     // or pending writebacks. Cache maintenance therefore has an empty set;
     // record the real wrapper's parameters without inventing RAM/MMIO access.
-    host.cache_operations.push_back({cache,scope,address,push,invalidate});++host.cache_controls;
+    if(host.log_accesses)host.cache_operations.push_back({cache,scope,address,push,invalidate});
+    ++host.cache_controls;
 }
 void write_log(const TCHAR *, ...) {}
 bool cpureset() {
@@ -320,7 +326,7 @@ Result run(std::uint64_t budget) {
                 stop(Exit::Unsupported, 0, regs.pc, 2, "legal instruction excluded by current helper/profile inventory");
             }
             const auto trace_before = regs.t1;
-            const auto frames_before=host.frames.size();
+            const auto frames_before=host.exception_count;
             struct Instruction {
                 Instruction() { host.in_instruction=true; }
                 ~Instruction() { host.in_instruction=false; }
@@ -330,7 +336,7 @@ Result run(std::uint64_t budget) {
             if (translation_enabled())
                 stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "paged MMU or protected transparent-region profile enabled by control write");
             if (regs.spcflags & SPCFLAG_DOTRACE) Exception(9);
-            else if (trace_before && host.frames.size()==frames_before) { regs.spcflags |= SPCFLAG_DOTRACE; Exception(9); }
+            else if (trace_before && host.exception_count==frames_before) { regs.spcflags |= SPCFLAG_DOTRACE; Exception(9); }
             if (regs.stopped) return {Exit::Stopped, instructions, 0, regs.instruction_pc, regs.pc};
         }
         return {Exit::Budget, instructions, 0, regs.instruction_pc, regs.pc};

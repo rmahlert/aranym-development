@@ -104,6 +104,14 @@ int m040_restart_pending(int *pending) {
     if(!pending)return M040_BAD_ARGUMENT;
     *pending=bool(modern040::regs.spcflags&modern040::SPCFLAG_MMURESTART);return M040_OK;
 }
+int m040_exception_history_limit(uint32_t entries) {
+    if(busy)return M040_BUSY;
+    modern040::host.frame_history_limit=entries;
+    auto &frames=modern040::host.frames;
+    if(!entries)std::vector<modern040::Frame>().swap(frames);
+    else if(entries<frames.size())frames.erase(frames.begin(),frames.end()-entries);
+    return M040_OK;
+}
 int m040_poke(uint32_t address,uint32_t size,uint32_t value) {
     if(busy)return M040_BUSY;
     if((size!=1&&size!=2&&size!=4)||modern040::host.bus||modern040::host.precise_bus)return M040_BAD_ARGUMENT;
@@ -164,8 +172,8 @@ int m040_read_probe_exceptions(int enabled) {
 int m040_get_exception_event(m040_exception_event *out) {
     if(busy)return M040_BUSY;
     if(!out)return M040_BAD_ARGUMENT;
-    *out={};out->abi_version=M040_ABI_VERSION;out->count=modern040::host.frames.size();
-    if(out->count){const auto &frame=modern040::host.frames.back();out->vector=frame.vector;out->format=frame.format;
+    *out={};out->abi_version=M040_ABI_VERSION;out->count=modern040::host.exception_count;
+    if(modern040::host.last_frame){const auto &frame=*modern040::host.last_frame;out->vector=frame.vector;out->format=frame.format;
         out->stack=frame.stack;out->handler=frame.handler;out->stacked_pc=frame.stacked_pc;out->saved_sr=frame.stacked_sr;out->interrupt=frame.interrupt;}
     return M040_OK;
 }

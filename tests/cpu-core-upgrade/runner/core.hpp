@@ -116,6 +116,9 @@ struct Host {
     std::optional<Service> service;
     unsigned exception_depth = 0;
     std::vector<Frame> frames;
+    std::uint64_t exception_count=0;
+    std::optional<Frame> last_frame;
+    std::size_t frame_history_limit=std::size_t(-1);
     std::vector<CacheOperation> cache_operations;
 };
 extern Host host;

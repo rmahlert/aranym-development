@@ -134,5 +134,22 @@ void c_boundary_and_irq(){
     expect(m040_set_precise_bus([](void *,const m040_bus_request *,uint32_t *){return 7;},nullptr)==0&&m040_run(1,&result)==M040_HOST_ERROR,"invalid bus completion cannot invent successful data");
     expect(m040_run(1,&result)==0&&result.exit==M040_UNSUPPORTED,"host callback contract failure latches unsafe continuation");
 }
+void bounded_exception_history(){
+    const m040_options options{M040_ABI_VERSION,1,0,0};m040_state s{};m040_result r{};m040_exception_event event{};
+    expect(m040_reset(&options)==0&&m040_fault_recovery(1)==0&&m040_exception_history_limit(0)==0&&m040_get_state(&s)==0,"production profile selects zero retained exception history");
+    s.sr=0x2000;s.regs[15]=s.isp=0x9000;s.usp=0x7000;
+    expect(m040_set_state(&s)==0&&m040_poke(0x100,2,0x4e41)==0&&m040_poke(0x102,2,0x60fc)==0&&m040_poke(33*4,4,0x200)==0&&m040_poke(0x200,2,0x4e73)==0,"prepare actual TRAP/RTE/branch loop");
+    expect(m040_run(30000,&r)==0&&r.exit==M040_BUDGET&&m040_get_exception_event(&event)==0&&event.count==10000&&event.vector==33&&event.stacked_pc==0x102,"ten thousand real traps retain exact total count and last event");
+    expect(host.frames.empty()&&host.frames.capacity()==0&&m040_get_state(&s)==0&&s.pc==0x100&&s.regs[15]==0x9000,"production trap history allocates no growing frame vector and preserves guest stack/PC");
+    expect(m040_exception_history_limit(8)==0&&m040_run(3000,&r)==0&&m040_get_exception_event(&event)==0&&event.count==11000&&host.frames.size()==8,"bounded history keeps only requested entries while count continues");
+    expect(m040_exception_history_limit(0)==0&&host.frames.capacity()==0&&m040_get_exception_event(&event)==0&&event.count==11000&&event.vector==33,"dropping history frees storage without losing last diagnostic event");
+    expect(m040_reset(&options)==0&&m040_fault_recovery(1)==0&&m040_exception_history_limit(0)==0&&m040_get_state(&s)==0,"reset bounded trace/exception test");
+    s.sr=0xa000;s.regs[15]=s.isp=0x9000;
+    expect(m040_set_state(&s)==0&&m040_poke(0x100,2,0x4afc)==0&&m040_poke(16,4,0x300)==0&&m040_poke(36,4,0x400)==0,"prepare traced illegal instruction with distinct handlers");
+    expect(m040_run(1,&r)==0&&r.current_pc==0x300&&m040_get_exception_event(&event)==0&&event.count==1&&event.vector==4&&host.frames.empty(),"trace detection uses event counter, not retained history size; no spurious second exception");
+    expect(m040_reset(&options)==0&&m040_fault_recovery(1)==0&&m040_get_state(&s)==0,"reset production cache diagnostic stress");
+    s.sr=0x2000;s.regs[15]=s.isp=0x9000;
+    expect(m040_set_state(&s)==0&&m040_poke(0x100,2,0xf4f8)==0&&m040_poke(0x102,2,0x60fc)==0&&m040_run(20000,&r)==0&&r.exit==M040_BUDGET&&host.cache_controls>=10000&&host.cache_operations.empty(),"real cache maintenance retains controls but allocates no disabled diagnostic history");
 }
-int main(int argc,char **argv){try{if(argc>2)throw std::runtime_error("bad mode");if(argc==2){wrong_pc=std::string_view(argv[1])=="--negative-frame-pc";wrong_writeback=std::string_view(argv[1])=="--negative-writeback";if(!wrong_pc&&!wrong_writeback)throw std::runtime_error("bad mode");}install_handlers();read_restart();writeback();updates_and_movem();exact_peer_write_and_unknown();composite_and_nested();c_boundary_and_irq();std::cout<<"PASS: "<<checks<<" precise fault/frame/writeback/guest-RTE assertions\n";}catch(const std::exception &e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}}
+}
+int main(int argc,char **argv){try{if(argc>2)throw std::runtime_error("bad mode");if(argc==2){wrong_pc=std::string_view(argv[1])=="--negative-frame-pc";wrong_writeback=std::string_view(argv[1])=="--negative-writeback";if(!wrong_pc&&!wrong_writeback)throw std::runtime_error("bad mode");}install_handlers();read_restart();writeback();updates_and_movem();exact_peer_write_and_unknown();composite_and_nested();c_boundary_and_irq();bounded_exception_history();std::cout<<"PASS: "<<checks<<" precise fault/frame/writeback/guest-RTE assertions\n";}catch(const std::exception &e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}}
