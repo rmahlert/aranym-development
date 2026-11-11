@@ -42,7 +42,8 @@ silently repeat stores. Read retries occur only when the guest returns to the
 faulted instruction. Post-RTE IRQ recognition waits for that instruction.
 Unknown/partial transfers, locked RMW/MOVE16 faults and FPU/trace continuation
 still fail explicitly; do not assume a legacy bool callback certifies atomicity.
-The original bounded read-probe path retains its separate firmware behavior.
+The original standalone probe-only profile retains its separate firmware
+behavior; the restart-aware frontend uses the genuine faulted PC for reads.
 Production execution retains only the latest exception event and a total count;
 it does not accumulate every VDI/GEMDOS trap in an unbounded history vector.
 Isolated tests can explicitly retain full or bounded histories.

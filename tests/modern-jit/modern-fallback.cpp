@@ -203,7 +203,6 @@ void initialize() {
     checked(m040_set_reset_handler([](void *){AtariReset();return 1;},0),"attach original Atari RESET hardware/NatFeat/input path");
     checked(m040_legacy_fpu_operations(legacy_fpu),"select explicit original FPU backend");
     checked(m040_private_operations(1),"enable ARAnyM extension decoder");initialized=true;
-    checked(m040_read_probe_exceptions(1),"enable bounded trace-free pure-read probe fault delivery");
     std::fprintf(stderr,"MODERN040_EXPERIMENTAL source=d82bc254 profile=%s noMMU native-JIT-boundary fault-restart=precise-physical-bus\n",legacy_fpu?"modern-integer-original-ieee-fpu":"integer-lc040-probes");
 }
 bool acceptable(const m040_result &result){return result.exit==M040_BUDGET||result.exit==M040_STOPPED||result.exit==M040_HOST_RETURN;}

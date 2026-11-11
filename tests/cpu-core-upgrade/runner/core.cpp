@@ -354,7 +354,7 @@ Result run(std::uint64_t budget) {
         // perform the operand read before any flags/registers/PC change. There
         // are no pending writes in this synchronous empty-cache interpreter.
         // Full continuation/RTE7 remains blocked, including traced accesses.
-        if(event.result.exit==Exit::MemoryFault&&host.read_probe_exceptions&&host.deliver_exceptions&&host.bus_fault) {
+        if(event.result.exit==Exit::MemoryFault&&!host.fault_recovery&&host.read_probe_exceptions&&host.deliver_exceptions&&host.bus_fault) {
             const auto fault=*host.bus_fault;const auto &req=fault.request;
             const bool tst_byte=(fault.opcode&0xfff8)==0x4a10&&req.size==1&&req.address==regs.regs[8+(fault.opcode&7)];
             // The observed SFP-004 port is wholly unmapped in the Atari
@@ -380,7 +380,7 @@ Result run(std::uint64_t budget) {
             // The old bool callback, partial transfers and unintegrated bodies
             // retain the terminal contract. Never silently re-execute a bus op.
             if(fault.completion==BusCompletion::FaultBeforeTransfer&&
-               ((fault.in_instruction&&host.using_restart)||req.kind==AccessKind::Fetch)&&
+               (fault.in_instruction?host.using_restart:req.kind==AccessKind::Fetch)&&
                !(regs.t0||regs.t1)&&!(regs.spcflags&(SPCFLAG_TRACE|SPCFLAG_DOTRACE))) {
                 const bool writing=req.kind==AccessKind::Write;
                 regs.mmu_fault_addr=req.address;regs.mmu_effective_addr=0;

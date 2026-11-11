@@ -4,7 +4,7 @@
   "integer_sha256": "e4268caf87aca6841be8ff5573cf814b4cdf6dfe5ee9b89c2ea249eb1c719023",
   "types_sha256": "929c3b03e0c58b9cb3c7ec2c13570eb0d9e10d923eaa3a887bd4d85a22ba65a9",
   "runner_inputs": {
-    "tests/cpu-core-upgrade/runner/core.cpp": "09bd8fc4fd0498bf39d4b9c1c996b3b2e2b53a67d1ee3f74ea389cee70e8b515",
+    "tests/cpu-core-upgrade/runner/core.cpp": "732c1c236b179c5dab15b63aba20c6714228c6e01e42c6d91c971421f15d6163",
     "tests/cpu-core-upgrade/runner/c-api.cpp": "fb4fb9f4885910d8591b7b15ba276f08172334d735abe2df4b21023a9e623f1a",
     "tests/cpu-core-upgrade/runner/core.hpp": "7bdd0f480a7826566489c7f39b1507976f80db1967b7ca2013a59718fa8d0cb6",
     "tests/cpu-core-upgrade/runner/c-api.h": "f641c4b77f61fd47d7167fbf352c84fe09174bb28f15d7a84d8cde98bfd798ea",

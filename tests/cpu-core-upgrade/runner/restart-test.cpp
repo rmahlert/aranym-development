@@ -77,6 +77,14 @@ void writeback(){
     }
 }
 void updates_and_movem(){
+    // Modern recovery must supersede the old probe-only next-PC shortcut.
+    // Otherwise a generic failed TST would be silently skipped by RTE.
+    {
+        Bus tst;attach(tst);host.read_probe_exceptions=true;regs.regs[8]=0x500;tst.put(0x500,1,0x80);tst.put(0x100,2,0x4a10);mapping_handler(tst);
+        expect(run(1).vector==2&&tst.peek(regs.regs[15]+2,4)==0x100,"restart-aware TST stacks faulted PC even when legacy probe option is enabled");
+        expect(run(2).exit==Exit::Budget&&regs.pc==0x100&&run(1).exit==Exit::Budget&&regs.pc==0x102,"guest RTE retries failed TST instead of skipping it");
+        expect(regs.x&&regs.n&&!regs.z&&!regs.v&&!regs.c&&tst.count(AccessKind::Read,0x500,BusCompletion::Completed)==1,"retried TST has genuine flags and one successful operand read");
+    }
     for(unsigned op:{0x1218u,0x1220u}){
         Bus b;attach(b);regs.regs[8]=op==0x1220?0x501:0x500;b.put(0x100,2,op);b.put(0x500,1,0x80);mapping_handler(b);
         auto before=regs.regs[8];expect(run(1).vector==2&&regs.regs[8]==before,"failed update read restores address-register fixup");
