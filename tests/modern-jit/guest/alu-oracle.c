@@ -18,43 +18,22 @@ static void hex(const char *label,unsigned long value) {
     out[8]='\r';out[9]='\n';out[10]=0;
     nf_call(nf_id("NF_STDERR"),label);nf_call(nf_id("NF_STDERR"),out);
 }
-static long long signed_value(unsigned long v,unsigned long long modulus,unsigned long sign) {
-    return v&sign ? (long long)v-(long long)modulus : (long long)v;
-}
+#include "alu-cases.h"
 static long run(void) {
     void (*probe[7][3])(void)={
         {alu_addx_b,alu_addx_w,alu_addx_l},{alu_subx_b,alu_subx_w,alu_subx_l},
         {alu_add_b,alu_add_w,alu_add_l},{alu_sub_b,alu_sub_w,alu_sub_l},
         {alu_cmp_b,alu_cmp_w,alu_cmp_l},{alu_neg_b,alu_neg_w,alu_neg_l},
         {alu_negx_b,alu_negx_w,alu_negx_l}};
-    unsigned pass,op,size,si,di,ccr,i;
+    unsigned pass,op=0,size=0,ccr=0,i; unsigned long index;
     unsigned long expected=0,flags=0;long failure=0;
     volatile unsigned long *registration=(volatile unsigned long *)0x00fef020UL;
     registration[0]=(unsigned long)&alu_probe_begin;
     registration[1]=(unsigned long)&alu_probe_end;
-    for(pass=0;pass<2;++pass)for(op=0;op<7;++op)for(size=0;size<3;++size) {
-        unsigned width=size==0?8:size==1?16:32;
-        unsigned long long modulus=1ULL<<width;
-        unsigned long mask=(unsigned long)(modulus-1),sign=(unsigned long)(modulus>>1);
-        unsigned long edge[8]={0,1,2,sign-1,sign,sign+1,mask-1,mask};
-        for(si=0;si<(op>=5?1:8);++si)for(di=0;di<8;++di)for(ccr=0;ccr<32;++ccr) {
-            unsigned long src=edge[si],dst=edge[di],result;
-            unsigned long x=(op==0||op==1||op==6)?((ccr>>4)&1):0;
-            unsigned long long a=op>=5?dst:src,b=op>=5?0:dst,wide;
-            long long smath;
-            int subtract=op==1||op==3||op==4||op>=5,carry,overflow;
-            wide=subtract?b-a-x:b+a+x;
-            result=(unsigned long)(wide&mask);
-            carry=subtract?a+x>b:wide>=modulus;
-            smath=subtract?signed_value((unsigned long)b,modulus,sign)-signed_value((unsigned long)a,modulus,sign)-x:
-                           signed_value((unsigned long)b,modulus,sign)+signed_value((unsigned long)a,modulus,sign)+x;
-            overflow=smath<-(long long)sign||smath>=(long long)sign;
-            flags=(carry?1:0)|(overflow?2:0)|(result==0?4:0)|(result&sign?8:0)|
-                  (op==4?(ccr&16):(carry?16:0));
-            if((op==0||op==1||op==6)&&!(ccr&4))flags&=~4UL;
-            alu_src=(0x76543210UL&~mask)|src;
-            alu_dst=(0xfedcba98UL&~mask)|dst;
-            expected=op==4?alu_dst:(alu_dst&~mask)|result;
+    for(pass=0;pass<2;++pass)for(index=0;index<sizeof(alu_cases)/sizeof(alu_cases[0]);++index) {
+            const struct alu_case *c=&alu_cases[index];
+            op=c->op;size=c->size;ccr=c->ccr;
+            alu_src=c->src;alu_dst=c->dst;expected=c->result;flags=c->flags;
             alu_ccr=ccr;probe[op][size]();++checks;
 #ifdef ALU_WRONG_Z
             if(pass==1)flags^=4;
@@ -63,7 +42,6 @@ static long run(void) {
             for(i=2;i<8;++i)if(alu_registers[i]!=0x11110000UL+i){failure=2;goto done;}
             for(i=0;i<7;++i)if(alu_registers[i+8]!=0x22220000UL+i){failure=3;goto done;}
             if(alu_registers[15]!=alu_before_sp){failure=4;goto done;}
-        }
     }
 done:
     if(failure) {

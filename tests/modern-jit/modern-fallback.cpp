@@ -98,17 +98,17 @@ int side_effect_fixture(const m040_bus_request *request,uint32_t *value) {
     if(request->size==1)*value&=255;else if(request->size==2)*value&=65535;
     return 1;
 }
-int arithmetic_fixture(const m040_bus_request *request,uint32_t value) {
+int arithmetic_fixture(const m040_bus_request *request,const uint32_t *value) {
     static const bool enabled=std::getenv("ARANYM_UPSTREAM_JIT_ALU_FIXTURE")!=nullptr;
     if(!enabled || request->address<0x00fef020 || request->address>0x00fef024)return -1;
     if(request->kind!=M040_WRITE || request->size!=4 || request->transfer_type!=0)return 0;
-    if(request->address==0x00fef020)aranym_jit_alu_probe_begin=value;
-    else if(request->address==0x00fef024)aranym_jit_alu_probe_end=value;
+    if(request->address==0x00fef020)aranym_jit_alu_probe_begin=*value;
+    else if(request->address==0x00fef024)aranym_jit_alu_probe_end=*value;
     else return 0;
     return 1;
 }
 int memory(void *,const m040_bus_request *request,uint32_t *value) {
-    const int arithmetic=arithmetic_fixture(request,*value);
+    const int arithmetic=arithmetic_fixture(request,value);
     if(arithmetic>=0)return arithmetic;
     if(request->transfer_type!=0)return 0; // no invented alternate CPU space.
     const int fixture=side_effect_fixture(request,value);
