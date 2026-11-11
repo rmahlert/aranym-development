@@ -143,7 +143,7 @@ int ea_fixture(const m040_bus_request *request,uint32_t *value) {
     else if(offset==12)*value=last;
     else if(offset==16)*value=faults;
     else if(offset==0x28)*value=std::getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE")!=nullptr;
-    else if(offset==0x2c)*value=std::getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE")!=nullptr;
+    else if(offset==0x2c)*value=!std::getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE_OFF")&&!std::getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE");
     else if(offset>=0x40 && offset<0x60)*value=aranym_upstream_ea_count((offset-0x40)/4);
     else return 0;
     return 1;
@@ -278,7 +278,7 @@ void modern040_execute() {
         }
         m040_result result;checked(m040_run(1,&result),"bounded modern dispatch");attempted+=result.instructions;to_old();
         if(result.exit==M040_BUDGET&&result.vector==2)
-            std::fprintf(stderr,"MODERN040_PROBE_DELIVERED instruction=%08x fault=%08x handler=%08x\n",result.instruction_pc,result.address,result.current_pc);
+            std::fprintf(stderr,"MODERN040_ACCESS_ERROR_DELIVERED instruction=%08x fault=%08x handler=%08x\n",result.instruction_pc,result.address,result.current_pc);
         if(result.exit==M040_HOST_SERVICE)service(result);
         diagnostic_exception();
         if(diagnostics&&attempted&&attempted%1000000==0)std::fprintf(stderr,"MODERN040_PROGRESS attempts=%llu pc=%08x sr=%04x a7=%08x\n",attempted,unsigned(m68k_getpc()),regs.sr,regs.regs[15]);
@@ -359,7 +359,7 @@ void aranym_upstream_memory_deopt() {
 // transfer stops explicitly; generic architectural fault/restart is not admitted.
 namespace {
 uint32_t checked_native_transfer(uint32_t address,unsigned size,bool write,uint32_t value) {
-    static const bool guarded=std::getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE")&&!std::getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE");
+    static const bool guarded=!std::getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE_OFF")&&!std::getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE");
     if(guarded) {
         const uae_u32 physical=address<0xff000000?address:address&0x00ffffff;
         if((physical&0xfff00000)==0x00f00000||!test_ram_boundary(physical,size,regs.s,write))

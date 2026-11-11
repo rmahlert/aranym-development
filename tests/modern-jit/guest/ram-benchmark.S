@@ -23,8 +23,8 @@ begin _ram_scalar
     move.l (%a0)+,%d0
     move.l %d0,(%a1)+
 .endr
+    addq.l #4,%d5
     dbra %d6,2b
-    addq.l #1,%d5
     dbra %d7,1b
 end
 begin _ram_memory
@@ -35,8 +35,8 @@ begin _ram_memory
 .rept 4
     move.l (%a0)+,(%a1)+
 .endr
+    addq.l #4,%d5
     dbra %d6,2b
-    addq.l #1,%d5
     dbra %d7,1b
 end
 begin _ram_fill
@@ -47,7 +47,7 @@ begin _ram_fill
 .rept 4
     move.l %d0,(%a1)+
 .endr
+    addq.l #4,%d5
     dbra %d6,2b
-    addq.l #1,%d5
     dbra %d7,1b
 end

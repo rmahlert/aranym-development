@@ -771,7 +771,7 @@ static uae_u32 aranym_jit_ea_executed[8]={};
 uae_u32 aranym_upstream_ea_count(unsigned index) { return index<8?aranym_jit_ea_executed[index]:0; }
 static bool aranym_checked_move_enabled() {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE")!=nullptr || getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE")!=nullptr;
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE")!=nullptr || !getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE_OFF");
     return enabled;
 #else
     return false;
@@ -779,7 +779,7 @@ static bool aranym_checked_move_enabled() {
 }
 static bool aranym_guarded_move_enabled() {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE")!=nullptr && !getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE");
+    static const bool enabled=!getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE_OFF") && !getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE");
     return enabled;
 #else
     return false;

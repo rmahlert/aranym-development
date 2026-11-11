@@ -10,10 +10,10 @@ static long run(void){
     const char *const begin[3]={"RAMBEN BEGIN SCALAR\n","RAMBEN BEGIN MEMORY\n","RAMBEN BEGIN FILL\n"};
     const char *const end[3]={"RAMBEN END SCALAR\n","RAMBEN END MEMORY\n","RAMBEN END FILL\n"};
     for(i=0;i<16384;++i)ram_source[i]=0x9e3779b9UL^i;
-    for(mode=0;mode<3;++mode)if(fn[mode](2)!=2)error=2;
+    for(mode=0;mode<3;++mode)if(fn[mode](2)!=32768UL)error=2;
     for(round=0;round<5&&!error;++round)for(offset=0;offset<3;++offset){
         mode=(round+offset)%3;
-        nf_call(nf_id("NF_STDERR"),begin[mode]);if(fn[mode](128)!=128)error=2;
+        nf_call(nf_id("NF_STDERR"),begin[mode]);if(fn[mode](512)!=8388608UL)error=2;
         nf_call(nf_id("NF_STDERR"),end[mode]);
         for(i=0;i<16384;++i)if(ram_dest[i]!=(mode==2?0x76543210UL:ram_source[i]))error=1;
     }

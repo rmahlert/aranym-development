@@ -44,7 +44,8 @@ Unknown/partial transfers, locked RMW/MOVE16 faults and FPU/trace continuation
 still fail explicitly; do not assume a legacy bool callback certifies atomicity.
 The original bounded read-probe path retains its separate firmware behavior.
 
-ARANYM_UPSTREAM_JIT_RAM_MOVE=1 selects a separate guarded RAM MOVE path. It
+JIT-enabled native builds now use the guarded RAM MOVE path by default. Set
+ARANYM_UPSTREAM_JIT_RAM_MOVE_OFF=1 only for an explicit comparison control. It
 supports B/W/L loads, stores and memory copies using (An), (An)+, -(An) and
 (d16,An), and MOVEA W/L loads. A pure pre-instruction guard checks both operands
 and auto-update aliases before any transfer. Unsafe/device addresses leave the

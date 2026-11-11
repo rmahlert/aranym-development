@@ -22,7 +22,7 @@
 #define VER_MAJOR	1
 #define VER_MINOR	2
 #define VER_MICRO	0
-#define BUILD_LABEL	" unofficial-rc1"
+#define BUILD_LABEL	" unofficial-rc2"
 #define RELEASE_DATE "2019/04/14"
 
 
