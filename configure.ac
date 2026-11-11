@@ -229,6 +229,22 @@ dnl Experimental hacks around spcflags handling.
 AC_ARG_ENABLE(spcflags-excl, [AS_HELP_STRING([--enable-spcflags-excl],[enable exclusive spcflags handling (default=no)])], [WANT_SPCFLAGS_EXCL=$enableval], [WANT_SPCFLAGS_EXCL=no])
 
 dnl JIT compiler options.
+AC_ARG_ENABLE(modern040-core,
+ [AS_HELP_STRING([--enable-modern040-core],[enable experimental modern040/x64 JIT core (default=no)])],
+ [WANT_MODERN040=$enableval], [WANT_MODERN040=no])
+AC_ARG_WITH(modern040-library,
+ [AS_HELP_STRING([--with-modern040-library=FILE],[target modern040 C-ABI static library for the experimental core])],
+ [MODERN040_LIBRARY=$withval], [MODERN040_LIBRARY=])
+AC_ARG_WITH(modern040-profile,
+ [AS_HELP_STRING([--with-modern040-profile=DIR],[relative experimental profile below the user home])],
+ [MODERN040_PROFILE=$withval], [MODERN040_PROFILE=aranym-modern040-experimental])
+AS_CASE([$WANT_MODERN040], [yes|no], [], [AC_MSG_ERROR([modern040-core must be yes or no])])
+if test "x$WANT_MODERN040" = xyes; then
+ AS_CASE([$MODERN040_PROFILE], [/*|*\\*|../*|*/../*|*/..|..], [AC_MSG_ERROR([modern040 profile must be a relative path without parent traversal])])
+ AS_CASE([$MODERN040_PROFILE], [aranym-modern040-*|*/aranym-modern040-*], [], [AC_MSG_ERROR([use an aranym-modern040- experimental profile])])
+ AS_CASE([$MODERN040_PROFILE], [*[[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./-]]*], [AC_MSG_ERROR([unsupported modern040 profile character])])
+fi
+
 AC_ARG_ENABLE(jit-compiler, [AS_HELP_STRING([--enable-jit-compiler],[enable JIT compiler (default=no)])], [WANT_JIT=$enableval], [WANT_JIT=no])
 AC_ARG_ENABLE(jit2, [AS_HELP_STRING([--enable-jit2],[enable JIT (v2) compiler (experimental/ARM only) (default=no)])], [WANT_JIT2=$enableval], [WANT_JIT2=no])
 
@@ -496,6 +512,10 @@ AC_CHECK_FUNCS(mach_task_self task_self)
 AC_DEFINE([DIRSEPARATOR], "/", [Default directory separator])
 
 AH_TEMPLATE([ARANYMHOME], [Default ARAnyM directory])
+if test "x$WANT_MODERN040" = xyes; then
+ AC_DEFINE_UNQUOTED([ARANYMHOME], ["$MODERN040_PROFILE"])
+fi
+
 AH_TEMPLATE([HAVE_O_FSYNC], [Define if you want to use FreeBSD's imitation of O_SYNC])
 AH_TEMPLATE([ARANYMCONFIG], [Default ARAnyM config file])
 AH_TEMPLATE([ARANYMNVRAM], [Default ARAnyM NVRAM file])
@@ -516,7 +536,9 @@ case "$host_os" in
   linux*)
     ;;
   cygwin*|mingw*)
-    AC_DEFINE([ARANYMHOME], "aranym")
+    if test "x$WANT_MODERN040" != xyes; then
+      AC_DEFINE([ARANYMHOME], "aranym")
+    fi
     ;;
   solaris*)
     AC_DEFINE([_XOPEN_SOURCE], 500, [Define if needed])
@@ -1487,6 +1509,35 @@ else
   JITSRCS=""
   GENJITSRCS=""
 fi
+if test "x$WANT_MODERN040" = xyes; then
+ if ! $HAVE_X86_64 || test "x$WANT_JIT" != xyes || test "x$WANT_MMU" != xno || test "x$WANT_JIT_FPU" != xno; then
+  AC_MSG_ERROR([modern040 requires x86-64 JIT, no guest MMU and no JIT-FPU])
+ fi
+ if test "$OS_TYPE" != linux && test "$OS_TYPE" != mingw; then
+  AC_MSG_ERROR([modern040 currently supports Linux and MinGW x86-64 only])
+ fi
+ AS_CASE([$MODERN040_LIBRARY], [/*], [], [AC_MSG_ERROR([provide an absolute target library path with --with-modern040-library])])
+ AS_CASE([$MODERN040_LIBRARY], [*[[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./+-]]*], [AC_MSG_ERROR([unsupported character in modern040 library path])])
+ if test ! -r "$MODERN040_LIBRARY"; then
+  AC_MSG_ERROR([modern040 target library is not readable])
+ fi
+ modern040_save_LIBS=$LIBS
+ LIBS="$MODERN040_LIBRARY $LIBS"
+ AC_LANG_PUSH([C++])
+ AC_LINK_IFELSE([AC_LANG_PROGRAM([[extern "C" int m040_get_state(void *);]], [[return m040_get_state(0);]])],
+  [], [AC_MSG_ERROR([modern040 library is not compatible with the target C++ toolchain])])
+ AC_LANG_POP([C++])
+ LIBS=$modern040_save_LIBS
+ DEFINES="$DEFINES -DEXPERIMENTAL_UPSTREAM_X86_JIT -DEXPERIMENTAL_UPSTREAM_MODERN040 -DMODERN040_DEFAULT_LEGACY_FPU"
+ FPE_CORE_TEST_ORDER=ieee
+ if test "$OS_TYPE" = linux; then
+  CFLAGS="$CFLAGS -fno-pie"
+  CXXFLAGS="$CXXFLAGS -fno-pie"
+  LDFLAGS="$LDFLAGS -no-pie"
+ fi
+fi
+AM_CONDITIONAL([MODERN040_CORE], test "$WANT_MODERN040" = yes)
+AC_SUBST([MODERN040_LIBRARY])
 AM_CONDITIONAL([USE_JIT], test "$WANT_JIT" = "yes")
 AM_CONDITIONAL([USE_JIT_FPU], test "$WANT_JIT_FPU" = "yes")
 AM_CONDITIONAL([USE_JIT2], test "$WANT_JIT2" = "yes")

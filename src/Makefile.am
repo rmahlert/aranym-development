@@ -189,6 +189,14 @@ libaranym_a_CXXFLAGS = $(CFLAGS_NOWARN) $(CFLAGS_NOREDZONE)
 
 aranym_LDADD = libaranym.a
 
+if MODERN040_CORE
+# Link the independently built/pinned C-ABI core through the ordinary build.
+# Do not mutate libaranym.a with externally injected objects.
+aranym_SOURCES += ../tests/modern-jit/modern-fallback.cpp
+aranym_LDADD += $(MODERN040_LIBRARY)
+endif
+
+
 if SDL_GUI
 aranym_SOURCES += \
 	gui-sdl/sdlgui.cpp gui-sdl/sdlgui.h \

@@ -146,7 +146,11 @@ void initialize() {
 #if defined(FULLMMU) || defined(HW_SIGSEGV) || !defined(EXPERIMENTAL_UPSTREAM_MODERN040)
 #error This derived adapter requires explicit upstream-JIT/modern040 profile without MMU or signal addressing
 #endif
+#ifdef MODERN040_DEFAULT_LEGACY_FPU
+    legacy_fpu=true;
+#else
     legacy_fpu=std::getenv("ARANYM_MODERN040_LEGACY_FPU")!=0;
+#endif
     const m040_options options={M040_ABI_VERSION,1,uint32_t(!legacy_fpu),0};
     diagnostics=std::getenv("ARANYM_MODERN040_DIAGNOSTICS")!=0;
     checked(m040_reset(&options),"reset modern core");checked(m040_set_bus(memory,0),"attach original Atari physical bus");
