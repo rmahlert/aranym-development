@@ -18,6 +18,34 @@ LangString UninstLogMissing ${LANG_ENGLISH} "${UninstLog} not found!$\r$\nUninst
  
 Section -openlogfile
     CreateDirectory "$INSTDIR"
+!ifdef PRESERVE_USER_DATA
+    ; Never inherit user-data deletion entries from an older installer log.
+    ; Keep the complete old record without overwriting any earlier backup.
+    ${If} ${FileExists} "$INSTDIR\${UninstLog}"
+      Push $0
+      Push $1
+      Push $2
+      StrCpy $2 0
+      preserve_log_retry:
+      System::Call 'kernel32::CopyFileW(w "$INSTDIR\${UninstLog}", w "$INSTDIR\uninstall-before-upgrade-${VERSION}-$2.log", i 1) i.r0 ?e'
+      Pop $1
+      ${If} $0 == 0
+        ${If} $1 == 80
+        ${OrIf} $1 == 183
+          IntOp $2 $2 + 1
+          Goto preserve_log_retry
+        ${EndIf}
+        MessageBox MB_ICONSTOP|MB_OK "The previous installation record could not be backed up. Upgrade stopped before changing program files." /SD IDOK
+        Abort
+      ${EndIf}
+      FileOpen $UninstLog "$INSTDIR\${UninstLog}" w
+      Pop $2
+      Pop $1
+      Pop $0
+    ${Else}
+      FileOpen $UninstLog "$INSTDIR\${UninstLog}" w
+    ${EndIf}
+!else
     ${IfNot} ${FileExists} "$INSTDIR\${UninstLog}"
       FileOpen $UninstLog "$INSTDIR\${UninstLog}" w
     ${Else}
@@ -25,6 +53,7 @@ Section -openlogfile
       FileOpen $UninstLog "$INSTDIR\${UninstLog}" a
       FileSeek $UninstLog 0 END
     ${EndIf}
+!endif
 SectionEnd
 
 

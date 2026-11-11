@@ -1,4 +1,5 @@
 ; ARAnyM Setup Script for NSIS
+Unicode true
 ;
 !searchreplace SCRIPTDIR "${__FILE__}" "aranym.nsi" ""
 !addincludedir "${SCRIPTDIR}"
@@ -271,6 +272,7 @@ FunctionEnd
 Function LaunchInstalled
   ; Both fresh installs and upgrades use the same normal user config.
   ; Selecting a bundled system must not silently switch the active profile.
+  SetOutPath "$INSTDIR"
   Exec '$\"$INSTDIR\aranym.exe$\" -c $\"$ActiveConfig$\"'
 FunctionEnd
 
@@ -716,6 +718,7 @@ SectionEnd
 !ifndef NO_STARTMENUSHORTCUTS
 !define STARTMENU 
 ${MementoSection} "Start Menu Shortcuts" SecMenuShortcuts
+  SetOutPath "$INSTDIR"
   DetailPrint "Installing Start Menu Shortcuts..."
   SectionIn 1 2
   StrCpy $0 "$SMPROGRAMS\${NAME}"
@@ -735,6 +738,7 @@ ${MementoSectionEnd}
 
 !ifndef NO_DESKTOPSHORTCUTS
 ${MementoSection} "Desktop Shortcuts" SecDesktopShortcuts
+  SetOutPath "$INSTDIR"
   DetailPrint "Installing Desktop Shortcuts..."
   SectionIn 1 2
   ${CreateShortcut} "$DESKTOP\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" '-c $\"$ActiveConfig$\"' "" "" "${NAME}"
@@ -744,6 +748,7 @@ ${MementoSectionEnd}
 ${MementoSectionDone}
 
 Section -post
+  SetOutPath "$INSTDIR"
   ${If} ${FileExists} "$DESKTOP\ARAnyM - Updated EasyMiNT.lnk"
     ${CreateShortcut} "$DESKTOP\ARAnyM - Updated EasyMiNT.lnk" "$INSTDIR\aranym.exe" '-c $\"$ActiveConfig$\"' "" "" "ARAnyM with existing user configuration"
   ${EndIf}
