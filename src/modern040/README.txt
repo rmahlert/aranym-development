@@ -28,6 +28,10 @@ The normal opt-in build enables the original IEEE FPU service automatically.
 It supports the currently qualified Linux/MinGW x86-64 JIT/no-MMU profile;
 unsupported combinations fail at configure time. The limited checked-memory
 helper pilot remains off unless explicitly selected for its separate tests.
+Its qualified scalar EAs are (An) and (d16,An), MOVE B/W/L Dn reads/writes,
+and MOVEA W/L reads including base/destination aliasing. It performs checked
+transfers once and stops on failure; it does not implement architectural
+fault recovery. Updating, indexed, indirect and multi-transfer EAs fall back.
 
 Native Windows/HighWire acceptance, general fault recovery, broader memory
 translation, modern MMU/FPU engines, ARM/macOS and fair benchmarks retain

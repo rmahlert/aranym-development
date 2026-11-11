@@ -763,6 +763,9 @@ static int aranym_jit_alu_family(uae_u32 opcode) {
     }
 }
 
+uae_u32 aranym_jit_ea_probe_begin=0,aranym_jit_ea_probe_end=0;
+static uae_u32 aranym_jit_ea_executed[8]={};
+uae_u32 aranym_upstream_ea_count(unsigned index) { return index<8?aranym_jit_ea_executed[index]:0; }
 static bool aranym_checked_move_enabled() {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
     static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE")!=nullptr;
@@ -773,8 +776,12 @@ static bool aranym_checked_move_enabled() {
 }
 static bool aranym_checked_move_opcode(uae_u32 canonical) {
     const instr &in=table68k[canonical];
-    return aranym_checked_move_enabled()&&in.mnemo==i_MOVE&&
-        ((in.smode==Aind&&in.dmode==Dreg)||(in.smode==Dreg&&in.dmode==Aind));
+    // No update/index/indirection here: these forms perform exactly one transfer.
+    const bool source=in.smode==Aind || in.smode==Ad16;
+    const bool destination=in.dmode==Aind || in.dmode==Ad16;
+    return aranym_checked_move_enabled() &&
+        ((in.mnemo==i_MOVE && ((source&&in.dmode==Dreg)||(in.smode==Dreg&&destination))) ||
+         (in.mnemo==i_MOVEA && source && in.dmode==Areg));
 }
 static bool aranym_jit_diagnostics(){return getenv("ARANYM_UPSTREAM_JIT_DIAGNOSTICS")!=nullptr;}
 #endif
@@ -6180,6 +6187,11 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                         // before warmup count. Oracle C arithmetic lies outside.
                         if(family>=0 && size>=0 && size<3 && guest_pc>=aranym_jit_alu_probe_begin && guest_pc<aranym_jit_alu_probe_end)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_alu_executed[family][size],1);
+                        if(aranym_checked_move_opcode(canonical) && guest_pc>=aranym_jit_ea_probe_begin && guest_pc<aranym_jit_ea_probe_end) {
+                            const instr &ea=table68k[canonical];
+                            const unsigned index=ea.mnemo==i_MOVEA ? 5+ea.size : (ea.dmode==Dreg?0:3)+ea.size;
+                            if(index<8)compemu_raw_add_l_mi((uintptr)&aranym_jit_ea_executed[index],1);
+                        }
                         raw_popfl();
                     }
                 }

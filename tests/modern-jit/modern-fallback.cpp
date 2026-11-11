@@ -22,6 +22,8 @@
 #include <cstdlib>
 extern uae_u32 aranym_jit_alu_probe_begin,aranym_jit_alu_probe_end;
 extern uae_u32 aranym_upstream_alu_count(unsigned);
+extern uae_u32 aranym_jit_ea_probe_begin,aranym_jit_ea_probe_end;
+extern uae_u32 aranym_upstream_ea_count(unsigned);
 namespace {
 bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
 bool legacy_fpu=false,service_exception_delivered=false;
@@ -113,7 +115,40 @@ int arithmetic_fixture(const m040_bus_request *request,uint32_t *value) {
     else return 0;
     return 1;
 }
+// Separate deterministic EA fixture: configured data, exact transfer counts,
+// and explicitly registered guest-only native execution counters.
+int ea_fixture(const m040_bus_request *request,uint32_t *value) {
+    static const bool enabled=std::getenv("ARANYM_UPSTREAM_JIT_EA_FIXTURE")!=nullptr;
+    if(!enabled || request->address<0x00fed000 || request->address>=0x00fed080)return -1;
+    static uint32_t data=0,reads=0,writes=0,last=0,faults=0;
+    if(request->transfer_type || (request->kind!=M040_READ&&request->kind!=M040_WRITE) || (request->size!=1&&request->size!=2&&request->size!=4))return 0;
+    const uint32_t offset=request->address-0x00fed000;
+    if(offset==0x14){++faults;std::fprintf(stderr,"EA-FAULT reads=%u writes=%u faults=%u\n",reads,writes,faults);return 0;}
+    if(offset==0) {
+        if(request->kind==M040_WRITE) {++writes;last=*value;}
+        else {++reads;*value=data;}
+        if(request->size==1){if(request->kind==M040_WRITE)last&=255;else *value&=255;}
+        if(request->size==2){if(request->kind==M040_WRITE)last&=65535;else *value&=65535;}
+        return 1;
+    }
+    if(request->size!=4 || (offset&3))return 0;
+    if(request->kind==M040_WRITE) {
+        if(offset==4){data=*value;reads=writes=last=faults=0;}
+        else if(offset==0x20)aranym_jit_ea_probe_begin=*value;
+        else if(offset==0x24)aranym_jit_ea_probe_end=*value;
+        else return 0;
+    } else if(offset==4)*value=reads;
+    else if(offset==8)*value=writes;
+    else if(offset==12)*value=last;
+    else if(offset==16)*value=faults;
+    else if(offset==0x28)*value=std::getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE")!=nullptr;
+    else if(offset>=0x40 && offset<0x60)*value=aranym_upstream_ea_count((offset-0x40)/4);
+    else return 0;
+    return 1;
+}
 int memory(void *,const m040_bus_request *request,uint32_t *value) {
+    const int ea=ea_fixture(request,value);
+    if(ea>=0)return ea;
     const int arithmetic=arithmetic_fixture(request,value);
     if(arithmetic>=0)return arithmetic;
     if(request->transfer_type!=0)return 0; // no invented alternate CPU space.
