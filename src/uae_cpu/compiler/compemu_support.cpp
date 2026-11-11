@@ -5368,6 +5368,7 @@ void build_comp(void)
 #endif
 		prop[opcode].use_flags = FLAG_ALL;
 		prop[opcode].set_flags = FLAG_ALL;
+        prop[opcode].is_addx = 0;
 		prop[opcode].cflow = fl_trap; // ILLEGAL instructions do trap
 	}
 
@@ -5378,6 +5379,9 @@ void build_comp(void)
 		else
 			cflow &= ~fl_const_jump;
 		prop[cft_map(tbl[i].opcode)].cflow = cflow;
+        // ADDX/SUBX/NEGX read old Z only when their sticky-Z output is live.
+        // This metadata must be initialized in native ARAnyM too.
+        prop[cft_map(tbl[i].opcode)].is_addx = (tbl[i].specific & COMP_OPCODE_ISADDX)!=0;
 
 		bool uses_fpu = (tbl[i].specific & COMP_OPCODE_USES_FPU) != 0;
 		if (uses_fpu && avoid_fpu)
@@ -6091,8 +6095,19 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 						compemu_raw_mov_l_mi((uintptr)&regs.fault_pc, ((uintptr)(pc_hist[i].location)) - MEMBaseDiff);
 #endif
 
-					comptbl[opcode](opcode);
-					freescratch();
+                    const uae_u8 *owned_emit_begin=get_target();
+                    comptbl[opcode](opcode);
+#ifndef UAE
+                    if(getenv("ARANYM_UPSTREAM_JIT_EMIT_DIAGNOSTIC") && aranym_jit_alu_family(cft_map(opcode))==0 && instruction_guest_pc>=FastRAMBase) {
+                        static unsigned dumps=0;
+                        if(dumps++<64) {
+                            fprintf(stderr,"OWN-JIT-EMIT pc=%08x op=%04x need=%x live=%x xstatus=%d xreg=%d bytes=",instruction_guest_pc,cft_map(opcode),needed_flags,liveflags[i+1],live.state[FLAGX].status,live.state[FLAGX].realreg);
+                            for(const uae_u8 *q=owned_emit_begin;q<get_target();++q)fprintf(stderr,"%02x",*q);
+                            fputc('\n',stderr);
+                        }
+                    }
+#endif
+                    freescratch();
 					if (!unsafe_compile_fallbacks && !(liveflags[i+1] & FLAG_CZNV)) {
 						/* We can forget about flags */
 						dont_care_flags();
