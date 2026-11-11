@@ -52,3 +52,9 @@ probe _alu_negx_b,"negx.b %d1"
 probe _alu_negx_w,"negx.w %d1"
 probe _alu_negx_l,"negx.l %d1"
 _alu_probe_end:
+
+.globl _alu_jit_query
+_alu_jit_query:
+    moveq #-1,%d0
+    .word 0x713b
+    rts

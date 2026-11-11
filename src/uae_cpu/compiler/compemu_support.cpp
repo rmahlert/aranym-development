@@ -753,6 +753,7 @@ static uae_u32 aranym_jit_executed_guest_insns=0;
 static uae_u32 aranym_jit_executed_memory_insns=0;
 uae_u32 aranym_jit_alu_probe_begin=0,aranym_jit_alu_probe_end=0;
 static uae_u32 aranym_jit_alu_executed[7][3]={};
+uae_u32 aranym_upstream_alu_count(unsigned index) { return index<21?aranym_jit_alu_executed[index/3][index%3]:0; }
 static const char *aranym_jit_alu_names[]={"addx","subx","add","sub","cmp","neg","negx"};
 static int aranym_jit_alu_family(uae_u32 opcode) {
     switch(table68k[opcode].mnemo) {

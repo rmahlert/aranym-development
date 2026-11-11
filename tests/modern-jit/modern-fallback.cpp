@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 extern uae_u32 aranym_jit_alu_probe_begin,aranym_jit_alu_probe_end;
+extern uae_u32 aranym_upstream_alu_count(unsigned);
 namespace {
 bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
 bool legacy_fpu=false,service_exception_delivered=false;
@@ -98,9 +99,14 @@ int side_effect_fixture(const m040_bus_request *request,uint32_t *value) {
     if(request->size==1)*value&=255;else if(request->size==2)*value&=65535;
     return 1;
 }
-int arithmetic_fixture(const m040_bus_request *request,const uint32_t *value) {
+int arithmetic_fixture(const m040_bus_request *request,uint32_t *value) {
     static const bool enabled=std::getenv("ARANYM_UPSTREAM_JIT_ALU_FIXTURE")!=nullptr;
-    if(!enabled || request->address<0x00fef020 || request->address>0x00fef024)return -1;
+    if(!enabled)return -1;
+    if(request->address>=0x00fef040 && request->address<0x00fef094) {
+        if(request->kind!=M040_READ || request->size!=4 || (request->address&3) || request->transfer_type!=0)return 0;
+        *value=aranym_upstream_alu_count((request->address-0x00fef040)/4);return 1;
+    }
+    if(request->address<0x00fef020 || request->address>0x00fef024)return -1;
     if(request->kind!=M040_WRITE || request->size!=4 || request->transfer_type!=0)return 0;
     if(request->address==0x00fef020)aranym_jit_alu_probe_begin=*value;
     else if(request->address==0x00fef024)aranym_jit_alu_probe_end=*value;
