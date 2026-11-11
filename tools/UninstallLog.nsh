@@ -14,8 +14,16 @@ Var UninstLog
 !include "WordFunc.nsh"
 
 ;Uninstall log file missing.
-LangString UninstLogMissing ${LANG_ENGLISH} "${UninstLog} not found!$\r$\nUninstallation cannot proceed!"
+LangString UninstLogMissing 1033 "${UninstLog} not found!$\r$\nUninstallation cannot proceed!"
  
+!ifdef PRESERVE_USER_DATA
+  !define LogWrite FileWriteUTF16LE
+  !define LogRead FileReadUTF16LE
+!else
+  !define LogWrite FileWrite
+  !define LogRead FileRead
+!endif
+
 Section -openlogfile
     CreateDirectory "$INSTDIR"
 !ifdef PRESERVE_USER_DATA
@@ -38,12 +46,20 @@ Section -openlogfile
         MessageBox MB_ICONSTOP|MB_OK "The previous installation record could not be backed up. Upgrade stopped before changing program files." /SD IDOK
         Abort
       ${EndIf}
+      SetFileAttributes "$INSTDIR\${UninstLog}" NORMAL
+      ClearErrors
       FileOpen $UninstLog "$INSTDIR\${UninstLog}" w
       Pop $2
       Pop $1
       Pop $0
     ${Else}
+      ClearErrors
       FileOpen $UninstLog "$INSTDIR\${UninstLog}" w
+    ${EndIf}
+    ${If} ${Errors}
+      MessageBox MB_ICONSTOP|MB_OK "The installation record cannot be opened. Upgrade stopped before changing program files." /SD IDOK
+      SetErrorLevel 1
+      Abort
     ${EndIf}
 !else
     ${IfNot} ${FileExists} "$INSTDIR\${UninstLog}"
@@ -59,13 +75,13 @@ SectionEnd
 
 ;AddItem macro
   !macro AddItem type Path
-    FileWrite $UninstLog "${type} ${Path}$\r$\n"
+    ${LogWrite} $UninstLog "${type} ${Path}$\r$\n"
   !macroend
 !define AddItem "!insertmacro AddItem"
  
 ;File macro
   !macro File FileName
-     FileWrite $UninstLog "FIL $OUTDIR\${FileName}$\r$\n"
+     ${LogWrite} $UninstLog "FIL $OUTDIR\${FileName}$\r$\n"
      File "/oname=${FileName}" "${FileName}"
   !macroend
 !define File "!insertmacro File"
@@ -75,9 +91,9 @@ SectionEnd
     Push $0
     ${GetParent} "${FilePath}" $0
     ${IfNot} ${FileExists} "$0\*"
-      FileWrite $UninstLog "DIR $0$\r$\n"
+      ${LogWrite} $UninstLog "DIR $0$\r$\n"
     ${EndIf}
-    FileWrite $UninstLog "FIL ${FilePath}$\r$\n"
+    ${LogWrite} $UninstLog "FIL ${FilePath}$\r$\n"
     CreateShortcut "${FilePath}" "${FilePointer}" "${Parameters}" "${Icon}" "${IconIndex}" "" "" "${Description}"
     Pop $0
   !macroend
@@ -86,27 +102,27 @@ SectionEnd
 ;CreateDirectory macro
   !macro CreateDirectory Path
     CreateDirectory "${Path}"
-    FileWrite $UninstLog "DIR ${Path}$\r$\n"
+    ${LogWrite} $UninstLog "DIR ${Path}$\r$\n"
   !macroend
 !define CreateDirectory "!insertmacro CreateDirectory"
  
 ;SetOutPath macro
   !macro SetOutPath Path
     SetOutPath "${Path}"
-    FileWrite $UninstLog "DIR ${Path}$\r$\n"
+    ${LogWrite} $UninstLog "DIR ${Path}$\r$\n"
   !macroend
 !define SetOutPath "!insertmacro SetOutPath"
  
 ;WriteUninstaller macro
   !macro WriteUninstaller Path
     WriteUninstaller "${Path}"
-    FileWrite $UninstLog "FIL ${Path}$\r$\n"
+    ${LogWrite} $UninstLog "FIL ${Path}$\r$\n"
   !macroend
 !define WriteUninstaller "!insertmacro WriteUninstaller"
  
 ;WriteRegStr macro
   !macro WriteRegStr RegRoot UnInstallPath Key Value
-     FileWrite $UninstLog "KEY ${RegRoot} ${UnInstallPath}\${Key}$\r$\n"
+     ${LogWrite} $UninstLog "KEY ${RegRoot} ${UnInstallPath}\${Key}$\r$\n"
      WriteRegStr "${RegRoot}" "${UnInstallPath}" "${Key}" "${Value}"
   !macroend
 !define WriteRegStr "!insertmacro WriteRegStr"
@@ -114,7 +130,7 @@ SectionEnd
  
 ;WriteRegExpandStr macro
   !macro WriteRegExpandStr RegRoot UnInstallPath Key Value
-     FileWrite $UninstLog "KEY ${RegRoot} ${UnInstallPath}\${Key}$\r$\n"
+     ${LogWrite} $UninstLog "KEY ${RegRoot} ${UnInstallPath}\${Key}$\r$\n"
      WriteRegExpandStr "${RegRoot}" "${UnInstallPath}" "${Key}" "${Value}"
   !macroend
 !define WriteRegExpandStr "!insertmacro WriteRegExpandStr"
@@ -122,7 +138,7 @@ SectionEnd
  
 ;WriteRegDWORD macro
   !macro WriteRegDWORD RegRoot UnInstallPath Key Value
-     FileWrite $UninstLog "KEY ${RegRoot} ${UnInstallPath}\${Key}$\r$\n"
+     ${LogWrite} $UninstLog "KEY ${RegRoot} ${UnInstallPath}\${Key}$\r$\n"
      WriteRegDWORD "${RegRoot}" "${UnInstallPath}" "${Key}" "${Value}"
   !macroend
 !define WriteRegDWORD "!insertmacro WriteRegDWORD" 
@@ -152,7 +168,7 @@ Function un.InstallLog
  
   GetLineCount:
     ClearErrors
-    FileRead $UninstLog $R0
+    ${LogRead} $UninstLog $R0
     IfErrors GetLineEnd
     IntOp $R1 $R1 + 1
     ${TrimNewLines} $R0 $R0

@@ -27,8 +27,10 @@ Var BeforeUninstallProfile
 Var BeforeUninstallApplication
 Var ActiveConfig
 Var HadUserConfig
+!ifdef EASY_DRIVES
 Var EasyDataDir
 Var EasyConfigExisted
+!endif
 
 ;--------------------------------
 ;Configuration
