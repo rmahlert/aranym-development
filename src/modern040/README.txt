@@ -92,6 +92,14 @@ passing check count each have separate negative controls. Actual cohort
 results and binary/source hashes belong to the qualification manifests;
 these counts describe the corpus, not native laptop acceptance.
 
+Preparatory single-operand policies also model unary, quick and immediate
+memory permissions: CLR is write-only on 040, TST/CMPI are read-only and
+the arithmetic/logical updates require both permissions. Immediate words
+precede EA extensions, including the PC-relative base. These policies alone
+do not admit any new native RMW instruction; their separate unit tests are
+not substitutes for connected native ALU, fault and read-sensitive device
+qualification. Locked operations, MOVEM and control flow remain excluded.
+
 Native Windows/HighWire acceptance, broader memory
 translation, modern MMU/FPU engines, ARM/macOS and fair benchmarks retain
 their own gates. Do not replace an installed/default emulator based only on

@@ -4,7 +4,12 @@
     "title": "M68000 FAMILY PROGRAMMER'S REFERENCE MANUAL",
     "source_id": "30243512848e66e8edd5603f",
     "sha256": "06e4864b78da0e815054cead9326b7ec9914661f240fd39a455f2061ff47c4e8",
-    "pdf_pages": [43, 44, 45, 63],
+    "pdf_pages": [
+      43,
+      44,
+      45,
+      63
+    ],
     "table": "Table 2-2 IS-I/IS Memory Indirect Action Encodings",
     "table_page_45_visually_checked": true,
     "retrieval": "TT68K MCP, family=motorola kind=pdf only; no RTL or mailbox source"
@@ -18,5 +23,30 @@
     "Immutable compiled words are embedded in the owning JIT block",
     "LEA does not require its computed final address to be mapped"
   ],
-  "scope": "MOVE/MOVEA and LEA development gate; physical bus only; other memory/control, MMU/FPU and partial-device continuation remain separate gates"
+  "scope": "MOVE/MOVEA and LEA development gate; physical bus only; other memory/control, MMU/FPU and partial-device continuation remain separate gates",
+  "preparatory_single_operand_policy": {
+    "native_admission": false,
+    "families": [
+      "NEG",
+      "NEGX",
+      "CLR",
+      "NOT",
+      "TST",
+      "ADDQ",
+      "SUBQ",
+      "ORI",
+      "ANDI",
+      "EORI",
+      "ADDI",
+      "SUBI",
+      "CMPI"
+    ],
+    "contract": "Check read and write permission before any operand transfer; CLR write-only, TST/CMPI read-only; immediate words precede EA extensions; no locked/MOVEM/control admission",
+    "manual_text_references": [
+      "M68000PRM PDF178: CLR memory read-before-clear note applies to MC68000/MC68008",
+      "M68000PRM PDF184: CMPI supports PC-relative modes on MC68020/MC68030/MC68040",
+      "M68000PRM PDF249: NEGX sticky-Z and borrow rules for the later arithmetic oracle"
+    ],
+    "evidence_scope": "Pure planner permission/order unit tests; not native ALU/fault/device qualification"
+  }
 }

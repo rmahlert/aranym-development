@@ -13,6 +13,25 @@ struct Image {
 };
 static_assert(sizeof(Image)==32&&std::is_trivially_copyable_v<Image>);
 struct Address { std::uint32_t value=0;bool memory=false,ok=false; };
+struct SingleMemoryPolicy {
+    unsigned size=0,immediate_words=0;
+    bool read=false,write=false;
+};
+// Numeric instruction encodings, independently exercised by literal tests.
+// This is a preflight policy, not admission to the native compiler table.
+constexpr SingleMemoryPolicy single_memory_policy(std::uint16_t opcode) {
+    const unsigned mode=(opcode>>3)&7,reg=opcode&7,size_code=(opcode>>6)&3;
+    if(mode<2||size_code==3)return {};
+    const unsigned size=1u<<size_code,group=opcode&0xff00;
+    const bool unary=group==0x4000||group==0x4200||group==0x4400||group==0x4600||group==0x4a00;
+    const bool quick=(opcode&0xf000)==0x5000;
+    const bool immediate=group==0x0000||group==0x0200||group==0x0400||group==0x0600||group==0x0a00||group==0x0c00;
+    if(!unary&&!quick&&!immediate)return {};
+    const bool read_only=group==0x4a00||group==0x0c00;
+    // Only TST/CMPI can use PC-relative sources; no immediate pseudo-EA.
+    if(mode==7&&(reg>3||(!read_only&&reg>1)))return {};
+    return {size,immediate?(size==4?2u:1u):0u,group!=0x4200,!read_only};
+}
 template<class Memory> class Preflight {
     const Image &image;
     Memory &memory;
@@ -95,6 +114,16 @@ public:
             const auto source=ea(mode,reg,4);
             // LEA computes an address; the final target need not be mapped.
             return good&&source.ok;
+        }
+        const auto policy=single_memory_policy(opcode);
+        if(policy.size) {
+            // Immediate data appears before EA extension words. Consume it
+            // without reading an operand or changing the caller's registers.
+            for(unsigned i=0;i<policy.immediate_words;++i)word();
+            const auto operand=ea((opcode>>3)&7,opcode&7,policy.size,policy.write);
+            return good&&operand.ok&&operand.memory&&
+                (!policy.read||memory.allowed(operand.value,policy.size,false))&&
+                (!policy.write||memory.allowed(operand.value,policy.size,true));
         }
         return false;
     }

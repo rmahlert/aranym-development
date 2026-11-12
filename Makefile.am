@@ -315,6 +315,7 @@ EXTRA_DIST = \
 # Corresponding source required by the opt-in modern040 build/library tool.
 EXTRA_DIST += tools/build-modern040-library.py \
  src/modern040/native-ea-plan.hpp tests/modern-jit/native-ea-plan-test.cpp \
+ tests/modern-jit/native-rmw-plan-test.cpp \
  src/modern040/native-ea-plan-source.json \
  tests/modern-jit/generate-extended-ea.py tests/modern-jit/guest/extended-ea-oracle.c \
  tests/modern-jit/generate-scalar-oracle.py tests/modern-jit/guest/scalar-oracle.c \
