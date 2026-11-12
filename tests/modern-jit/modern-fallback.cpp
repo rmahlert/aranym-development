@@ -207,8 +207,18 @@ int rmw_fault_fixture(const m040_bus_request *request,uint32_t *value) {
 // BEFORE_TRANSFER and is armed once. Inspection never consumes operand reads.
 int movem_bus_fixture(const m040_bus_request *request,uint32_t *value) {
     static const bool enabled=std::getenv("ARANYM_UPSTREAM_JIT_MOVEM_BUS_FIXTURE")!=nullptr;
+    if(!enabled)return -1;
+    static const bool suppress_fetch_fault=std::getenv("ARANYM_UPSTREAM_JIT_MOVEM_FETCH_DISABLE")!=nullptr;
+    static uint32_t fetch_address=0,fetch_armed=0,fetch_attempts=0,fetch_faults=0,fetch_size=0,fetch_fc=0;
+    // A separate one-shot instruction-fetch denial lets the guest exercise
+    // CM recovery without pretending the device data window contains code.
+    // Successful watched fetches fall through to the real checked RAM bus.
+    if(fetch_address&&request->kind==M040_FETCH&&request->address==fetch_address) {
+        ++fetch_attempts;fetch_size=request->size;fetch_fc=request->function_code;
+        if(fetch_armed&&!suppress_fetch_fault){fetch_armed=0;++fetch_faults;return M040_BUS_FAULT_BEFORE_TRANSFER;}
+    }
     const bool signed_alias=request->address>=0xfffffa80&&request->address<0xfffffac0;
-    if(!enabled||(!signed_alias&&(request->address<0x00fed200||request->address>=0x00fed340)))return -1;
+    if(!signed_alias&&(request->address<0x00fed200||request->address>=0x00fed340))return -1;
     struct Event {uint32_t address=0,info=0,value=0;};
     static std::array<uint8_t,64> data{};
     static std::array<Event,64> events{};
@@ -243,9 +253,12 @@ int movem_bus_fixture(const m040_bus_request *request,uint32_t *value) {
         if(offset==0x80) {
             for(unsigned i=0;i<data.size();++i)data[i]=uint8_t(i*19+0x80);
             events={};count=selected=reads=writes=faults=0;fail_at=~0u;
+            fetch_address=fetch_armed=fetch_attempts=fetch_faults=fetch_size=fetch_fc=0;
         } else if(offset==0x88)selected=*value;
         else if(offset==0xa4)fail_at=*value;
         else if(offset==0xac)pointer=*value;
+        else if(offset==0xb0)fetch_address=*value;
+        else if(offset==0xb4)fetch_armed=*value;
         else return M040_BUS_FAULT_BEFORE_TRANSFER;
     } else {
         if(offset==0x84)*value=count;
@@ -256,6 +269,10 @@ int movem_bus_fixture(const m040_bus_request *request,uint32_t *value) {
         } else if(offset==0x98)*value=reads;
         else if(offset==0x9c)*value=writes;
         else if(offset==0xa0)*value=faults;
+        else if(offset==0xb8)*value=fetch_attempts;
+        else if(offset==0xbc)*value=fetch_faults;
+        else if(offset==0xc0)*value=fetch_size;
+        else if(offset==0xc4)*value=fetch_fc;
         else return M040_BUS_FAULT_BEFORE_TRANSFER;
     }
     return M040_BUS_COMPLETED;
