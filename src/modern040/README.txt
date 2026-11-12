@@ -115,6 +115,16 @@ JIT_END_COMPILE flag. Cached block links must return to the dispatcher before
 entering the genuine restarted body; checking only the outer dispatch loop
 does not protect a directly linked successor after a compiled format7 RTE.
 
+Preparatory MOVEM permissions use a separate movem_allowed entry, leaving
+the MOVE/LEA/RMW planner dispatch unchanged. It checks a nonzero register
+mask's complete word/long span, the lower predecrement span, direction and
+the mask-before-PC-extension ordering. Zero masks retain interpreter behavior
+without adding a speculative indirect-pointer read. This is permission
+planning only: no native MOVEM admission or register-transfer/fault/device
+qualification is implied. The independent data oracle must check the 040's
+base-in-mask value (initial minus one operand size on predecrement stores)
+and postincrement-base override, as well as word sign extension and order.
+
 Native Windows/HighWire acceptance, broader memory
 translation, modern MMU/FPU engines, ARM/macOS and fair benchmarks retain
 their own gates. Do not replace an installed/default emulator based only on

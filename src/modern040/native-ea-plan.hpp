@@ -17,6 +17,19 @@ struct SingleMemoryPolicy {
     unsigned size=0,immediate_words=0;
     bool read=false,write=false;
 };
+struct MultipleMemoryPolicy {
+    unsigned size=0,mode=0,reg=0;
+    bool load=false;
+};
+// MOVEM preflight only; no native admission is implied by this policy.
+constexpr MultipleMemoryPolicy multiple_memory_policy(std::uint16_t opcode) {
+    if((opcode&0xfb80)!=0x4880)return {};
+    const unsigned mode=(opcode>>3)&7,reg=opcode&7;
+    const bool load=bool(opcode&0x400);
+    if(mode<2||(load&&mode==4)||(!load&&mode==3))return {};
+    if(mode==7&&reg>(load?3u:1u))return {};
+    return {opcode&0x40?4u:2u,mode,reg,load};
+}
 // Numeric instruction encodings, independently exercised by literal tests.
 // This is a preflight policy, not admission to the native compiler table.
 constexpr SingleMemoryPolicy single_memory_policy(std::uint16_t opcode) {
@@ -95,6 +108,33 @@ template<class Memory> class Preflight {
     }
 public:
     Preflight(const Image &i,const std::array<std::uint32_t,16>&r,Memory &m):image(i),memory(m),registers(r){}
+    bool multiple_allowed() {
+        if(image.count<1||image.count>image.words.size()||!memory.allowed(image.pc,2,false))return false;
+        const auto opcode=image.words[0];
+        const auto multiple=multiple_memory_policy(opcode);
+        if(multiple.size) {
+            auto mask=std::uint32_t(word());unsigned count=0;
+            // Empty lists retain the genuine interpreter's EA/bus behavior
+            // until separately qualified; never add a speculative pointer
+            // read merely to optimize a zero-transfer instruction.
+            if(!good||!mask)return false;
+            for(;mask;mask&=mask-1)++count;
+            const unsigned span=count*multiple.size;
+            Address operand;
+            if(multiple.mode==4) {
+                // Predecrement stores cover the complete lower span, not
+                // just the first element. Mask order does not change bounds.
+                operand={registers[8+multiple.reg]-span,true,true};
+            } else {
+                // Postincrement loads start at the original address; no
+                // caller-visible register update occurs in this planner.
+                operand=ea(multiple.mode==3?2:multiple.mode,multiple.reg,multiple.size,!multiple.load);
+            }
+            return good&&operand.ok&&operand.memory&&
+                memory.allowed(operand.value,span,!multiple.load);
+        }
+        return false;
+    }
     bool allowed() {
         if(image.count<1||image.count>image.words.size()||!memory.allowed(image.pc,2,false))return false;
         const auto opcode=image.words[0];const unsigned top=opcode>>12;
@@ -130,5 +170,8 @@ public:
 };
 template<class Memory> bool allowed(const Image&i,const std::array<std::uint32_t,16>&r,Memory&m) {
     return Preflight<Memory>(i,r,m).allowed();
+}
+template<class Memory> bool movem_allowed(const Image&i,const std::array<std::uint32_t,16>&r,Memory&m) {
+    return Preflight<Memory>(i,r,m).multiple_allowed();
 }
 }
