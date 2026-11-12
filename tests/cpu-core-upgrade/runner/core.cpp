@@ -346,7 +346,13 @@ Result run(std::uint64_t budget) {
                 // A synchronous RTE fault (e.g. odd return PC) has priority.
                 // Otherwise normal Exception9 builds the manual's format2
                 // at old-format7-SP+48, with the already-restored SR/PC/banks.
-                if(host.exception_count==frames_before){regs.trace_pc=traced_pc;Exception(9);}
+                if(host.exception_count==frames_before){
+                    regs.trace_pc=traced_pc;Exception(9);
+                    // CT's original instruction and pending trace are now
+                    // complete. A pending IRQ enters before the first trace
+                    // handler opcode; genuine read/CM restart holdoff remains.
+                    regs.spcflags&=~SPCFLAG_MMURESTART;
+                }
             }
             if (regs.spcflags & SPCFLAG_DOTRACE) Exception(9);
             else if (trace_before && host.exception_count==frames_before) { regs.spcflags |= SPCFLAG_DOTRACE; Exception(9); }
