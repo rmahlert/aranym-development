@@ -320,6 +320,11 @@ EXTRA_DIST += tools/build-modern040-library.py \
  tests/modern-jit/generate-rmw-oracle.py tests/modern-jit/guest/rmw-oracle.c \
  tests/modern-jit/guest/rmw-fault.c tests/modern-jit/guest/rmw-fault.S \
  tests/modern-jit/guest/movem-alias.c tests/modern-jit/guest/movem-alias.S \
+ tests/modern-jit/guest/movem-oracle.c tests/modern-jit/guest/movem-oracle.S \
+ tests/modern-jit/guest/movem-bus.c \
+ tests/modern-jit/guest/movem-fault.c tests/modern-jit/guest/movem-fault.S \
+ tests/cpu-core-upgrade/runner/movem-restart-test.cpp \
+ tools/adapt-modern040-movem-restart.py src/modern040/MOVEM-RESTART-CORRECTION.json \
  tools/adapt-modern040-movem.py tests/modern-jit/MOVEM-PREDECREMENT-CORRECTION.json \
  tests/modern-jit/import-provenance.json \
  src/modern040/native-ea-plan-source.json \

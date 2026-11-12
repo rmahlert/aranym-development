@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Extract pinned restart-aware 040 bodies for the physical-bus adapter.
 
-The instruction bodies are copied verbatim from cpuemu_31.cpp. This does not
+The instruction bodies are copied from cpuemu_31.cpp, then a separately pinned
+six-body MOVEM CM cursor correction is applied with provenance. This does not
 enable paged translation: the adapter below the bodies supplies a physical bus.
 SPDX-License-Identifier: GPL-2.0-or-later
 """
@@ -60,10 +61,17 @@ def main():
             'restart_handlers.fill(nullptr);',
             'for(const auto &entry:restart_dispatch) restart_handlers[entry.opcode]=entry.handler;',
             '}','}']
-    target=ROOT/'src/modern040/restart.cpp';target.write_text('\n'.join(out)+'\n')
+    unmodified='\n'.join(out)+'\n'
+    spec=importlib.util.spec_from_file_location('movem_cm',ROOT/'tools/adapt-modern040-movem-restart.py')
+    correction_tool=importlib.util.module_from_spec(spec);spec.loader.exec_module(correction_tool)
+    corrected,correction=correction_tool.correct(unmodified)
+    target=ROOT/'src/modern040/restart.cpp';target.write_text(corrected)
+    (target.parent/'MOVEM-RESTART-CORRECTION.json').write_text(json.dumps(correction,indent=2)+'\n')
     record={'upstream_pin':PIN,'inputs':inputs,'body_sha256':hashes,
             'extracted_families':len(functions),'mapped_opcodes':len(mapping),'excluded_families':excluded,
             'restart_sha256':sha(target),
+            'unmodified_restart_sha256':hashlib.sha256(unmodified.encode()).hexdigest(),
+            'post_import_corrections':[correction],
             'scope':'physical bus; genuine 040 restart/update/writeback ordering; no paged MMU, locked RMW, MOVE16 or FPU continuation'}
     (ROOT/'src/modern040/RESTART-SOURCE.json').write_text(json.dumps(record,indent=2)+'\n')
     print('Restart bodies:',len(functions),'families,',len(mapping),'mapped opcodes')

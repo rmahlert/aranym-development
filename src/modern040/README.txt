@@ -138,6 +138,18 @@ and current hash are in MOVEM-PREDECREMENT-CORRECTION.json and import-provenance
 The vendor pin remains unchanged. Corrected alias/CCR/RAM checks do not certify
 the wider mask/EA, device-order, partial-transfer or MOVEM restart contracts.
 
+The separate CM restart correction consumes the indexed instruction extension
+stream while reusing the stacked calculated operand EA. The original six W/L
+indexed/PC-indexed MOVEM bodies skipped the stream on CM continuation, so the
+next opcode fetch landed in an EA extension. MOVEM-RESTART-CORRECTION.json pins
+the exact preimage and six local changes; extract-modern040-restart.py applies
+them reproducibly without changing the upstream pin. The helper fetches only
+instruction words and never reevaluates an index or operand pointer. Dedicated
+PC/fetch-count/saved-EA controls and guest format7/RTE tests cover this contract.
+The test-only ordered bus fixture records attempted operand transfers and an
+explicit BEFORE_TRANSFER failure. A partial-store discard test does not certify
+write restart, arbitrary device failure atomicity, paged MMU or FPU continuation.
+
 Native Windows/HighWire acceptance, broader memory
 translation, modern MMU/FPU engines, ARM/macOS and fair benchmarks retain
 their own gates. Do not replace an installed/default emulator based only on

@@ -1,4 +1,4 @@
-// Verbatim pinned WinUAE instruction bodies; GPL-2.0-or-later.
+// Pinned WinUAE bodies plus explicit MOVEM CM cursor correction; GPL-2.0-or-later.
 // Copyright Bernd Schmidt and WinUAE contributors.
 #include "restart.hpp"
 namespace modern040 {
@@ -15503,6 +15503,7 @@ uae_u32 REGPARAM2 op_48b0_31_ff(uae_u32 opcode)
 	m68k_incpci(4);
 	if (mmu040_movem) {
 		srca = mmu040_movem_ea;
+		consume_movem_restart_ea();
 	} else {
 		srca = x_get_disp_ea_020(m68k_areg(regs, dstreg), 0);
 	}
@@ -15689,6 +15690,7 @@ uae_u32 REGPARAM2 op_48f0_31_ff(uae_u32 opcode)
 	m68k_incpci(4);
 	if (mmu040_movem) {
 		srca = mmu040_movem_ea;
+		consume_movem_restart_ea();
 	} else {
 		srca = x_get_disp_ea_020(m68k_areg(regs, dstreg), 0);
 	}
@@ -16807,6 +16809,7 @@ uae_u32 REGPARAM2 op_4cb0_31_ff(uae_u32 opcode)
 	m68k_incpci(4);
 	if (mmu040_movem) {
 		srca = mmu040_movem_ea;
+		consume_movem_restart_ea();
 	} else {
 		srca = x_get_disp_ea_020(m68k_areg(regs, dstreg), 0);
 	}
@@ -16918,6 +16921,7 @@ uae_u32 REGPARAM2 op_4cbb_31_ff(uae_u32 opcode)
 	m68k_incpci(4);
 	if (mmu040_movem) {
 		srca = mmu040_movem_ea;
+		consume_movem_restart_ea();
 	} else {
 		uaecptr tmppc = m68k_getpci();
 		srca = x_get_disp_ea_020(tmppc, 0);
@@ -17036,6 +17040,7 @@ uae_u32 REGPARAM2 op_4cf0_31_ff(uae_u32 opcode)
 	m68k_incpci(4);
 	if (mmu040_movem) {
 		srca = mmu040_movem_ea;
+		consume_movem_restart_ea();
 	} else {
 		srca = x_get_disp_ea_020(m68k_areg(regs, dstreg), 0);
 	}
@@ -17147,6 +17152,7 @@ uae_u32 REGPARAM2 op_4cfb_31_ff(uae_u32 opcode)
 	m68k_incpci(4);
 	if (mmu040_movem) {
 		srca = mmu040_movem_ea;
+		consume_movem_restart_ea();
 	} else {
 		uaecptr tmppc = m68k_getpci();
 		srca = x_get_disp_ea_020(tmppc, 0);

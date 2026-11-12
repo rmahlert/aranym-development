@@ -43,6 +43,17 @@ inline void put_long_mmu040(uaecptr a,uae_u32 v){put_long_jit(a,v);}
 inline uae_u32 get_ibyte_mmu040(int o){return get_dibyte(o);}
 inline uae_u32 get_iword_mmu040(int o){return get_diword(o);}
 inline uae_u32 get_ilong_mmu040(int o){return get_dilong(o);}
+// CM resumes the saved calculated operand EA, but the instruction cursor must
+// still consume its extension stream. Fetch only instruction words: no GPR
+// evaluation, effective-address calculation or data-pointer read is repeated.
+inline void consume_movem_restart_ea() {
+    const auto extension=next_diword();
+    if(!(extension&0x100))return;
+    if((extension&0x30)==0x20)(void)next_diword();
+    else if((extension&0x30)==0x30)(void)next_dilong();
+    if((extension&3)==2)(void)next_diword();
+    else if((extension&3)==3)(void)next_dilong();
+}
 inline uaecptr x_get_disp_ea_020(uaecptr a,int i){return get_disp_ea_020(a,i);}
 inline void Exception_cpu(int nr){Exception(nr);}
 inline uae_u32 x_get_bitfield(uaecptr a,uae_u32 *b,uae_s32 o,int w){return get_bitfield(a,b,o,w);}

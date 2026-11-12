@@ -201,6 +201,65 @@ int rmw_fault_fixture(const m040_bus_request *request,uint32_t *value) {
     else return 0;
     return M040_BUS_COMPLETED;
 }
+// Closed qualification fixture only. Operand data and a read-sensitive pointer
+// have separate addresses from the inspection controls. Each attempted operand
+// request is recorded before completion; an injected failure is explicitly
+// BEFORE_TRANSFER and is armed once. Inspection never consumes operand reads.
+int movem_bus_fixture(const m040_bus_request *request,uint32_t *value) {
+    static const bool enabled=std::getenv("ARANYM_UPSTREAM_JIT_MOVEM_BUS_FIXTURE")!=nullptr;
+    const bool signed_alias=request->address>=0xfffffa80&&request->address<0xfffffac0;
+    if(!enabled||(!signed_alias&&(request->address<0x00fed200||request->address>=0x00fed340)))return -1;
+    struct Event {uint32_t address=0,info=0,value=0;};
+    static std::array<uint8_t,64> data{};
+    static std::array<Event,64> events{};
+    static uint32_t count=0,selected=0,reads=0,writes=0,faults=0,fail_at=~0u,pointer=0;
+    const auto offset=request->address-(signed_alias?0xfffffa80:0x00fed200);
+    const bool write=request->kind==M040_WRITE,read=request->kind==M040_READ;
+    if(request->transfer_type||request->has_alternate_function_code||(!read&&!write))return M040_BUS_FAULT_BEFORE_TRANSFER;
+    if(offset<64||offset==0x40) {
+        if((request->size!=2&&request->size!=4)||(offset<64&&offset+request->size>64)||(offset==0x40&&(write||request->size!=4))||count==events.size())return M040_BUS_FAULT_BEFORE_TRANSFER;
+        auto &event=events[count++];event={request->address,request->size|(write?0x100u:0u),write?(*value&(request->size==2?0xffffu:~0u)):0};
+        if(count-1==fail_at) {
+            fail_at=~0u;++faults;event.info|=0x10000;return M040_BUS_FAULT_BEFORE_TRANSFER;
+        }
+        if(write) {
+            for(unsigned i=0;i<request->size;++i)data[offset+i]=uint8_t(*value>>(8*(request->size-1-i)));
+            ++writes;
+        } else {
+            *value=0;
+            if(offset==0x40)*value=pointer;
+            else for(unsigned i=0;i<request->size;++i)*value=(*value<<8)|data[offset+i];
+            event.value=*value;++reads;
+        }
+        return M040_BUS_COMPLETED;
+    }
+    if(request->size!=4||(offset&3))return M040_BUS_FAULT_BEFORE_TRANSFER;
+    if(offset>=0x100) {
+        if(!read)return M040_BUS_FAULT_BEFORE_TRANSFER;
+        *value=0;for(unsigned i=0;i<4;++i)*value=(*value<<8)|data[offset-0x100+i];
+        return M040_BUS_COMPLETED;
+    }
+    if(write) {
+        if(offset==0x80) {
+            for(unsigned i=0;i<data.size();++i)data[i]=uint8_t(i*19+0x80);
+            events={};count=selected=reads=writes=faults=0;fail_at=~0u;
+        } else if(offset==0x88)selected=*value;
+        else if(offset==0xa4)fail_at=*value;
+        else if(offset==0xac)pointer=*value;
+        else return M040_BUS_FAULT_BEFORE_TRANSFER;
+    } else {
+        if(offset==0x84)*value=count;
+        else if(offset>=0x8c&&offset<=0x94) {
+            if(selected>=count)return M040_BUS_FAULT_BEFORE_TRANSFER;
+            const auto &event=events[selected];
+            *value=offset==0x8c?event.address:offset==0x90?event.info:event.value;
+        } else if(offset==0x98)*value=reads;
+        else if(offset==0x9c)*value=writes;
+        else if(offset==0xa0)*value=faults;
+        else return M040_BUS_FAULT_BEFORE_TRANSFER;
+    }
+    return M040_BUS_COMPLETED;
+}
 int memory(void *,const m040_bus_request *request,uint32_t *value) {
     const int native=native_pc_fixture(request,value);
     if(native>=0)return native;
@@ -208,6 +267,8 @@ int memory(void *,const m040_bus_request *request,uint32_t *value) {
     if(ea>=0)return ea;
     const int rmw=rmw_fault_fixture(request,value);
     if(rmw>=0)return rmw;
+    const int movem=movem_bus_fixture(request,value);
+    if(movem>=0)return movem;
     const int arithmetic=arithmetic_fixture(request,value);
     if(arithmetic>=0)return arithmetic;
     if(request->transfer_type!=0)return 0; // no invented alternate CPU space.
