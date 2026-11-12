@@ -31,13 +31,19 @@ static long run(void){
  volatile unsigned long*w=(volatile unsigned long*)0x00fec000UL,*ctl=(volatile unsigned long*)0x00fed280UL;
  unsigned long vbr=irqb_vbr();volatile unsigned long*v2=(volatile unsigned long*)(vbr+8),*v9=(volatile unsigned long*)(vbr+36),*vt=(volatile unsigned long*)(vbr+(((*vr&0xf0)|5)*4));
  unsigned long old2=*v2,old9=*v9,expected[16],fault[16],expected_pc=0,before=0,after=0,next_before=0,next_after=0;
- unsigned ccr=0,i=0,retry,checks=0,warmed=0,flags=0;unsigned char saved_imra=*imra,saved_imrb=*imrb,saved_tcdcr=*tcdcr;long error=0,native=0;char args[32];long bootstrap=nf_id("BOOTSTRAP");args[0]=0;
+ unsigned ccr=0,i=0,retry,checks=0,warmed=0,handler_warmed=0,flags=0;unsigned long handler_before=0,handler_after=0;unsigned char saved_imra=*imra,saved_imrb=*imrb,saved_tcdcr=*tcdcr;long error=0,native=0;char args[32];long bootstrap=nf_id("BOOTSTRAP");args[0]=0;
  if(bootstrap>0)nf_call(bootstrap+2,args,(long)sizeof(args));native=!strcmp(args,"native");if(native&&!(movemo_jit_query()&1)){error=5;goto done;}
  irqb_old_timer=*vt;*v2=(unsigned long)irqb_access;*v9=(unsigned long)irqb_trace;*vt=(unsigned long)irqb_timer;
- *imra=*imrb=0;w[0]=(unsigned long)&movemo_begin;w[1]=(unsigned long)&movemo_end;
+ *imra=*imrb=0;w[0]=(unsigned long)irqb_trace<(unsigned long)&movemo_begin?(unsigned long)irqb_trace:(unsigned long)&movemo_begin;w[1]=(unsigned long)&movemo_end;
  for(ccr=0;ccr<32;++ccr){
   ++checks;*imrb=0;*tcdcr=saved_tcdcr;ctl[0]=0;
   if(native){for(retry=0;retry<64;++retry){init(ccr,0);before=query(w,&irqb_target);next_before=query(w,&irqb_next);irqb_probe();after=query(w,&irqb_target);next_after=query(w,&irqb_next);if(after==before+1&&next_after==next_before+1)break;if(after>before+1||next_after>next_before+1){error=5;goto done;}}if(retry==64){error=5;goto done;}++warmed;}
+  if(native&&IRQB_TRACE){
+   /* A separate no-fault T1 run reaches the actual handler while MFP is
+    * masked. Require its exact first MOVE to execute natively before cold CT. */
+   for(retry=0;retry<128;++retry){init(ccr,0);irqb_target_sr=(unsigned short)(0xa700|ccr);handler_before=query(w,(unsigned char*)irqb_trace);irqb_probe();handler_after=query(w,(unsigned char*)irqb_trace);if(handler_after==handler_before+1)break;if(handler_after>handler_before+1){error=5;goto done;}}
+   if(retry==128){error=5;goto done;}++handler_warmed;
+  }
   init(ccr,1);for(i=0;i<16;++i)expected[i]=fault[i]=movemo_input[i];ctl[0]=0;ctl[18]=0x89abcdefUL;ctl[9]=0;
   flags=(ccr&16)|8;expected[10]+=4;if(!IRQB_WRITE)expected[1]=0x89abcdefUL;
   if(IRQB_WRITE)for(i=0;i<16;++i)fault[i]=expected[i];fault[15]-=60;
@@ -58,7 +64,7 @@ static long run(void){
  }
 done:
  *imra=0;*imrb=0;*v2=old2;*v9=old9;if(irqb_old_timer)*vt=irqb_old_timer;*tcdcr=saved_tcdcr;*imra=saved_imra;*imrb=saved_imrb;
- hex("IRQB checks=",checks);hex("IRQB warmed=",warmed);hex("IRQB error=",error);hex("IRQB CCR=",ccr);hex("IRQB PC=",irqb_irq_pc);hex("IRQB expected-PC=",expected_pc);hex("IRQB saved-SR=",irqb_irq_sr);hex("IRQB trace-started=",irqb_trace_at_irq);hex("IRQB next-started=",irqb_next_at_irq);hex("IRQB pending-before=",irqb_pending_before);hex("IRQB pending-at-IRQ=",irqb_pending_at_irq);hex("IRQB IRQ-count=",irqb_irq_count);hex("IRQB trace-count=",irqb_trace_count);hex("IRQB before=",before);hex("IRQB after=",after);hex("IRQB fault-SSW=",frame(irqb_fault_frame,12,2));hex("IRQB fault-PC=",frame(irqb_fault_frame,2,4));
+ hex("IRQB checks=",checks);hex("IRQB warmed=",warmed);hex("IRQB handler-warmed=",handler_warmed);hex("IRQB handler-before=",handler_before);hex("IRQB handler-after=",handler_after);hex("IRQB error=",error);hex("IRQB CCR=",ccr);hex("IRQB PC=",irqb_irq_pc);hex("IRQB expected-PC=",expected_pc);hex("IRQB saved-SR=",irqb_irq_sr);hex("IRQB trace-started=",irqb_trace_at_irq);hex("IRQB next-started=",irqb_next_at_irq);hex("IRQB pending-before=",irqb_pending_before);hex("IRQB pending-at-IRQ=",irqb_pending_at_irq);hex("IRQB IRQ-count=",irqb_irq_count);hex("IRQB trace-count=",irqb_trace_count);hex("IRQB before=",before);hex("IRQB after=",after);hex("IRQB fault-SSW=",frame(irqb_fault_frame,12,2));hex("IRQB fault-PC=",frame(irqb_fault_frame,2,4));
  nf_call(nf_id("NF_STDERR"),error?"IRQB ORACLE FAIL\r\n":"IRQB ORACLE PASS real-MFP-TimerC pending ack RTE trace-order allCCR GPR\r\n");nf_call(nf_id("NF_EXIT"),error);return error;
 }
 int main(void){return(int)Supexec(run);}
