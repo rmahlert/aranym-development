@@ -325,6 +325,9 @@ EXTRA_DIST += tools/build-modern040-library.py \
  tests/modern-jit/guest/movem-fault.c tests/modern-jit/guest/movem-fault.S \
  tests/modern-jit/guest/movem-fetch.c tests/modern-jit/guest/movem-fetch.S \
  tests/modern-jit/guest/writeback.c tests/modern-jit/guest/writeback.S \
+ tests/modern-jit/guest/trace-fault.c tests/modern-jit/guest/trace-fault.S \
+ tests/cpu-core-upgrade/runner/trace-fault-test.cpp \
+ tools/adapt-modern040-trace-restart.py src/modern040/TRACE-RESTART-CORRECTION.json \
  tests/cpu-core-upgrade/runner/movem-fetch-restart-test.cpp \
  tests/cpu-core-upgrade/runner/movem-restart-test.cpp \
  tools/adapt-modern040-movem-restart.py src/modern040/MOVEM-RESTART-CORRECTION.json \

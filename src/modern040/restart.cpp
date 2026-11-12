@@ -1,4 +1,4 @@
-// Pinned WinUAE bodies plus explicit MOVEM CM cursor correction; GPL-2.0-or-later.
+// Pinned WinUAE bodies plus explicit physical-bus restart corrections; GPL-2.0-or-later.
 // Copyright Bernd Schmidt and WinUAE contributors.
 #include "restart.hpp"
 namespace modern040 {
@@ -44,12 +44,7 @@ void m68k_do_rte_mmu040 (uaecptr a7)
 {
 	uae_u16 ssr = get_word_mmu040 (a7 + 8 + 4);
 	if (ssr & MMU_SSW_CT) {
-		uaecptr src_a7 = a7 + 8 - 8;
-		uaecptr dst_a7 = a7 + 8 + 52;
-		put_word_mmu040 (dst_a7 + 0, get_word_mmu040 (src_a7 + 0));
-		put_long_mmu040 (dst_a7 + 2, get_long_mmu040 (src_a7 + 2));
-		// skip this word
-		put_long_mmu040 (dst_a7 + 8, get_long_mmu040 (src_a7 + 8));
+		record_rte_trace(get_long_mmu040(a7 + 8));
 	}
 	if (ssr & MMU_SSW_CM) {
 		mmu040_movem = 1;

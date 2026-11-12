@@ -154,8 +154,12 @@ uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
         if (format==3||(format==4&&!host.lc040_probes)||(format==7&&!host.using_restart))
             stop(Exit::Unsupported,0,address,2,"RTE FPU/access-error continuation profile not integrated");
     }
-    if(host.using_restart&&host.in_instruction&&regs.opcode==0x4e73&&kind==AccessKind::Read&&size==2&&address==regs.regs[15]+12&&(value&0xe000))
-        stop(Exit::Unsupported,0,address,2,"RTE FPU/trace continuation requires integrated pending exception state");
+    if(host.using_restart&&host.in_instruction&&regs.opcode==0x4e73&&kind==AccessKind::Read&&size==2&&address==regs.regs[15]+12) {
+        if(value&0xc000)stop(Exit::Unsupported,0,address,2,"RTE FPU continuation requires integrated pending FPU state");
+        // The synchronous integer producer never combines a completed CT
+        // instruction with unfinished MOVEM execution sharing the EA field.
+        if((value&0x3000)==0x3000)stop(Exit::Unsupported,0,address,2,"combined CT/CM continuation is outside the declared physical-bus profile");
+    }
     return value;
 }
 void poke(uae_u32 address, unsigned size, uae_u32 value) {
@@ -235,6 +239,7 @@ void ExceptionX(int nr, uae_u32, uae_u32 oldpc) {
     enter_exception(nr,false,0);
 }
 void op_illg(uae_u32 opcode) { Exception((opcode & 0xf000)==0xa000?10:(opcode & 0xf000)==0xf000?11:4); }
+void record_rte_trace(uaecptr pc) noexcept {host.rte_trace_pc=pc;host.rte_trace_pending=true;}
 [[noreturn]] void unsupported_frame(int format) { stop(Exit::Unsupported,14,regs.pc,unsigned(format),"non-040 exception frame format excluded"); }
 [[noreturn]] void unsupported_fpu_body() { stop(Exit::Unsupported,0,regs.pc,0,"active-FPU/arithmetic tail outside declared absent-LC040 probe profile"); }
 bool inject_interrupt(int vector, unsigned level) {
@@ -304,6 +309,7 @@ Result run(std::uint64_t budget) {
             regs.trace_pc = regs.pc;
             host.start_pc=regs.pc;host.bus_fault.reset();host.using_restart=false;
             host.initial_ccr=(unsigned(regs.x)<<4)|(unsigned(regs.n)<<3)|(unsigned(regs.z)<<2)|(unsigned(regs.v)<<1)|unsigned(regs.c);
+            host.initial_t1=regs.t1;
             mmu_restart=true;
             if (regs.pc & 1) {
                 exception3_read_prefetch(0, regs.pc);
@@ -335,6 +341,13 @@ Result run(std::uint64_t budget) {
             else handler(regs.opcode);
             if (translation_enabled())
                 stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "paged MMU or protected transparent-region profile enabled by control write");
+            if(host.rte_trace_pending) {
+                const auto traced_pc=host.rte_trace_pc;host.rte_trace_pending=false;
+                // A synchronous RTE fault (e.g. odd return PC) has priority.
+                // Otherwise normal Exception9 builds the manual's format2
+                // at old-format7-SP+48, with the already-restored SR/PC/banks.
+                if(host.exception_count==frames_before){regs.trace_pc=traced_pc;Exception(9);}
+            }
             if (regs.spcflags & SPCFLAG_DOTRACE) Exception(9);
             else if (trace_before && host.exception_count==frames_before) { regs.spcflags |= SPCFLAG_DOTRACE; Exception(9); }
             if (regs.stopped) return {Exit::Stopped, instructions, 0, regs.instruction_pc, regs.pc};
@@ -380,8 +393,7 @@ Result run(std::uint64_t budget) {
             // The old bool callback, partial transfers and unintegrated bodies
             // retain the terminal contract. Never silently re-execute a bus op.
             if(fault.completion==BusCompletion::FaultBeforeTransfer&&
-               (fault.in_instruction?host.using_restart:req.kind==AccessKind::Fetch)&&
-               !(regs.t0||regs.t1)&&!(regs.spcflags&(SPCFLAG_TRACE|SPCFLAG_DOTRACE))) {
+               (fault.in_instruction?host.using_restart:req.kind==AccessKind::Fetch)) {
                 const bool writing=req.kind==AccessKind::Write;
                 regs.mmu_fault_addr=req.address;regs.mmu_effective_addr=0;
                 regs.mmu_ssw=uae_u16((req.size==1?0x20:req.size==2?0x40:0)|
@@ -392,6 +404,10 @@ Result run(std::uint64_t budget) {
                 for(auto &word:mmu040_move16)word=0;
                 if(mmu040_movem) {
                     regs.mmu_ssw|=0x1000;regs.mmu_effective_addr=mmu040_movem_ea;mmu040_movem=0;
+                } else if(writing&&!mmu_restart&&(host.initial_t1||(regs.spcflags&SPCFLAG_DOTRACE))) {
+                    // This instruction completed; its queued write blocks a
+                    // pending trace until guest WB3 handling and real RTE.
+                    regs.mmu_ssw|=0x2000;regs.mmu_effective_addr=host.start_pc;
                 }
                 // Pinned newcpu.cpp:m68k_run_mmu040 restores flags/PC only
                 // while mmu_restart remains true. Completed writes instead

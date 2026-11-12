@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Extract pinned restart-aware 040 bodies for the physical-bus adapter.
 
-The instruction bodies are copied from cpuemu_31.cpp, then a separately pinned
-six-body MOVEM CM cursor correction is applied with provenance. This does not
+The instruction bodies are copied from cpuemu_31.cpp, then separately pinned
+MOVEM CM cursor and pending integer CT corrections are applied with provenance. This does not
 enable paged translation: the adapter below the bodies supplies a physical bus.
 SPDX-License-Identifier: GPL-2.0-or-later
 """
@@ -43,8 +43,8 @@ def main():
     common=(upstream/'newcpu_common.cpp').read_text()
     mmu=(upstream/'cpummu.cpp').read_text()
     helpers=[build.extract((upstream/'od-unix/machdep/m68k.h').read_text(),'cctrue'),build.extract(common,'cpu_restore_fixup')]
-    # The RTE helper is retained verbatim; the physical adapter validates and
-    # rejects unintegrated FPU/trace continuation before this helper is called.
+    # Extract the original RTE helper first. A separately hashed correction
+    # integrates integer CT below; the physical adapter still rejects FPU CP/CU.
     for name in ['m68k_do_rte_mmu040','m68k_do_rts_mmu040','m68k_do_bsr_mmu040']:
         helpers.append(build.extract(mmu,name))
     legacy=(ROOT/'src/modern040/integer.cpp').read_text()
@@ -65,13 +65,17 @@ def main():
     spec=importlib.util.spec_from_file_location('movem_cm',ROOT/'tools/adapt-modern040-movem-restart.py')
     correction_tool=importlib.util.module_from_spec(spec);spec.loader.exec_module(correction_tool)
     corrected,correction=correction_tool.correct(unmodified)
+    spec=importlib.util.spec_from_file_location('integer_ct',ROOT/'tools/adapt-modern040-trace-restart.py')
+    trace_tool=importlib.util.module_from_spec(spec);spec.loader.exec_module(trace_tool)
+    corrected,trace_correction=trace_tool.correct(corrected)
     target=ROOT/'src/modern040/restart.cpp';target.write_text(corrected)
     (target.parent/'MOVEM-RESTART-CORRECTION.json').write_text(json.dumps(correction,indent=2)+'\n')
+    (target.parent/'TRACE-RESTART-CORRECTION.json').write_text(json.dumps(trace_correction,indent=2)+'\n')
     record={'upstream_pin':PIN,'inputs':inputs,'body_sha256':hashes,
             'extracted_families':len(functions),'mapped_opcodes':len(mapping),'excluded_families':excluded,
             'restart_sha256':sha(target),
             'unmodified_restart_sha256':hashlib.sha256(unmodified.encode()).hexdigest(),
-            'post_import_corrections':[correction],
+            'post_import_corrections':[correction,trace_correction],
             'scope':'physical bus; genuine 040 restart/update/writeback ordering; no paged MMU, locked RMW, MOVE16 or FPU continuation'}
     (ROOT/'src/modern040/RESTART-SOURCE.json').write_text(json.dumps(record,indent=2)+'\n')
     print('Restart bodies:',len(functions),'families,',len(mapping),'mapped opcodes')

@@ -30,6 +30,7 @@ void dfc_nommu_put_long(uaecptr,uae_u32);
 void install_restart_handlers();
 void cpu_restore_fixup();
 void m68k_do_rte_mmu040(uaecptr);
+void record_rte_trace(uaecptr) noexcept;
 void m68k_do_rts_mmu040();
 void m68k_do_bsr_mmu040(uaecptr,uae_s32);
 inline uae_u32 m68k_getpci(){return regs.pc;}

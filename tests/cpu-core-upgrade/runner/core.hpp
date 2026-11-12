@@ -112,6 +112,8 @@ struct Host {
     bool fault_recovery=false, using_restart=false, delivering_fault=false;
     uae_u32 start_pc=0,recovery_pc=0;
     unsigned initial_ccr=0;
+    bool initial_t1=false,rte_trace_pending=false;
+    uae_u32 rte_trace_pc=0;
     std::optional<BusFault> bus_fault;
     std::optional<Service> service;
     unsigned exception_depth = 0;
