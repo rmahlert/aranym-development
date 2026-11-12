@@ -1,0 +1,22 @@
+{
+  "implementation": "independent physical-RAM preflight, not an interpreter replacement",
+  "manual": {
+    "title": "M68000 FAMILY PROGRAMMER'S REFERENCE MANUAL",
+    "source_id": "30243512848e66e8edd5603f",
+    "sha256": "06e4864b78da0e815054cead9326b7ec9914661f240fd39a455f2061ff47c4e8",
+    "pdf_pages": [43, 44, 45, 63],
+    "table": "Table 2-2 IS-I/IS Memory Indirect Action Encodings",
+    "table_page_45_visually_checked": true,
+    "retrieval": "TT68K MCP, family=motorola kind=pdf only; no RTL or mailbox source"
+  },
+  "contract": [
+    "No guest register updates or operand/device transfers during planning",
+    "Full-format pointer indirection may peek only independently permitted ordinary RAM",
+    "Both final operands must be permitted before native execution",
+    "Code and extension permissions are checked; reserved forms deopt",
+    "PC-relative base is the extension-word address",
+    "Immutable compiled words are embedded in the owning JIT block",
+    "LEA does not require its computed final address to be mapped"
+  ],
+  "scope": "MOVE/MOVEA and LEA development gate; physical bus only; other memory/control, MMU/FPU and partial-device continuation remain separate gates"
+}

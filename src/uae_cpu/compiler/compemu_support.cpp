@@ -93,9 +93,11 @@
 #include "parameters.h"
 static void build_comp(void);
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+#include "../../modern040/native-ea-plan.hpp"
 extern void REGPARAM2 aranym_upstream_modern_step(uae_u32 opcode);
 extern uae_u32 REGPARAM2 aranym_upstream_ram_move_guard(uae_u32 opcode,uae_u32 extensions);
 extern void aranym_upstream_memory_deopt();
+extern uae_u32 REGPARAM2 aranym_upstream_ram_complex_guard(const void *);
 extern bool modern040_restart_pending();
 extern uae_u32 REGPARAM2 aranym_upstream_checked_read_b(uae_u32 address);
 extern uae_u32 REGPARAM2 aranym_upstream_checked_read_w(uae_u32 address);
@@ -754,6 +756,7 @@ static unsigned long long aranym_jit_cached_dispatches=0;
 static uae_u32 aranym_jit_executed_translated_insns=0;
 static uae_u32 aranym_jit_executed_guest_insns=0;
 static uae_u32 aranym_jit_executed_memory_insns=0;
+static uae_u32 aranym_jit_executed_extended_ea_insns=0;
 uae_u32 aranym_jit_alu_probe_begin=0,aranym_jit_alu_probe_end=0;
 static uae_u32 aranym_jit_alu_executed[7][3]={};
 uae_u32 aranym_upstream_alu_count(unsigned index) { return index<21?aranym_jit_alu_executed[index/3][index%3]:0; }
@@ -772,12 +775,13 @@ uae_u32 aranym_upstream_ea_count(unsigned index) { return index<8?aranym_jit_ea_
 // Exact guest-PC witnesses for explicitly registered owned test code. These
 // counters are emitted only with diagnostics, never in ordinary execution.
 uae_u32 aranym_jit_native_probe_begin=0,aranym_jit_native_probe_end=0;
-static uae_u32 aranym_jit_native_pc_executed[16384]={};
+static constexpr unsigned native_pc_slots=65536;
+static uae_u32 aranym_jit_native_pc_executed[native_pc_slots]={};
 uae_u32 aranym_upstream_native_pc_count(uae_u32 pc) {
     if(pc<aranym_jit_native_probe_begin||pc>=aranym_jit_native_probe_end||
        ((pc-aranym_jit_native_probe_begin)&1))return 0;
     const unsigned index=(pc-aranym_jit_native_probe_begin)/2;
-    return index<16384?aranym_jit_native_pc_executed[index]:0;
+    return index<native_pc_slots?aranym_jit_native_pc_executed[index]:0;
 }
 static bool aranym_checked_move_enabled() {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
@@ -795,14 +799,26 @@ static bool aranym_guarded_move_enabled() {
     return false;
 #endif
 }
+static bool aranym_extended_ea_enabled() {
+    // Remains an explicit development gate until the connected Windows
+    // instruction/state/device corpus qualifies the new addressing families.
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_EXTENDED_EA")!=nullptr;
+    return enabled;
+}
 static bool aranym_checked_move_opcode(uae_u32 canonical) {
     const instr &in=table68k[canonical];
     if(aranym_guarded_move_enabled()) {
-        const bool src=in.smode==Aind||in.smode==Aipi||in.smode==Apdi||in.smode==Ad16;
-        const bool dst=in.dmode==Aind||in.dmode==Aipi||in.dmode==Apdi||in.dmode==Ad16;
-        return (in.mnemo==i_MOVE&&((src&&(dst||in.dmode==Dreg))||
-            (dst&&(in.smode==Dreg||in.smode==Areg)))) ||
-            (in.mnemo==i_MOVEA&&src&&in.dmode==Areg);
+        if(!aranym_extended_ea_enabled()) {
+            const bool src=in.smode==Aind||in.smode==Aipi||in.smode==Apdi||in.smode==Ad16;
+            const bool dst=in.dmode==Aind||in.dmode==Aipi||in.dmode==Apdi||in.dmode==Ad16;
+            return (in.mnemo==i_MOVE&&((src&&(dst||in.dmode==Dreg))||
+                (dst&&(in.smode==Dreg||in.smode==Areg)))) ||
+                (in.mnemo==i_MOVEA&&src&&in.dmode==Areg);
+        }
+        const bool src=in.smode>=Aind&&in.smode<=PC8r;
+        const bool dst=in.dmode>=Aind&&in.dmode<=absl;
+        return ((in.mnemo==i_MOVE||in.mnemo==i_MOVEA)&&(src||dst)) ||
+            (in.mnemo==i_LEA&&src);
     }
     // No update/index/indirection here: these forms perform exactly one transfer.
     const bool source=in.smode==Aind || in.smode==Ad16;
@@ -3702,8 +3718,8 @@ void compiler_exit(void)
 {
 #ifndef UAE
     if(aranym_jit_diagnostics())
-        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u\n",
-            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns);
+        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u executed-extended-ea=%u\n",
+            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns,aranym_jit_executed_extended_ea_insns);
     if(aranym_jit_diagnostics() && aranym_jit_alu_probe_begin<aranym_jit_alu_probe_end)
         for(unsigned f=0;f<7;++f)
             fprintf(stderr,"UPSTREAM-ALU family=%s b=%u w=%u l=%u\n",aranym_jit_alu_names[f],
@@ -5536,8 +5552,11 @@ void build_comp(void)
         case i_ROL:case i_ROR:case i_ROXL:case i_ROXR:case i_SWAP:case i_EXT:
         case i_NEG:case i_NEGX:case i_CLR:case i_NOT:case i_TST:case i_BCHG:
         case i_BCLR:case i_BSET:case i_BTST:case i_Bcc:case i_DBcc:case i_Scc:
-        case i_NOP:case i_MULU:case i_MULS:case i_MULL:case i_EXG:
+        case i_NOP:register_family=true;break;
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+        case i_MULU:case i_MULS:case i_MULL:case i_EXG:case i_LEA:
             register_family=true;break;
+#endif
         default:break;
         }
         const bool memory=(in.suse&&in.smode>=Aind&&in.smode<=PC8r)
@@ -6112,6 +6131,10 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 				prepare_compiled_exception_state((uintptr)pc_hist[i].location, opcode);
 				const uae_u32 instruction_guest_pc=get_virtual_compile_pc((uintptr)pc_hist[i].location);
                 const bool checked_move=aranym_checked_move_opcode(cft_map(opcode));
+                const instr &checked_instruction=table68k[cft_map(opcode)];
+                const bool complex_ea=checked_move&&aranym_guarded_move_enabled()&&
+                    !((checked_instruction.mnemo==i_MOVE||checked_instruction.mnemo==i_MOVEA)&&
+                      checked_instruction.smode<=Ad16&&checked_instruction.dmode<=Ad16);
                 const bool checked_move_code_ok=!checked_move || (instruction_guest_pc>=FastRAMBase && uint64(instruction_guest_pc)<uint64(FastRAMBase)+FastRAMSize);
                 if (comptbl[opcode] && optlev>1 && !unsafe_control_flow && !unsafe_flags && checked_move_code_ok) {
 					failure=0;
@@ -6152,13 +6175,30 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                         compemu_raw_mov_l_mi((uintptr)&regs.pc,instruction_guest_pc);
                         compemu_raw_mov_l_mi((uintptr)&regs.fault_pc,instruction_guest_pc);
                         const instr &move=table68k[cft_map(opcode)];
+                        const bool simple_move=(move.mnemo==i_MOVE||move.mnemo==i_MOVEA)&&
+                            move.smode<=Ad16&&move.dmode<=Ad16;
                         const bool displacement=move.smode==Ad16||move.dmode==Ad16;
-                        compemu_raw_mov_l_ri(REG_PAR1,cft_map(opcode));
-                        const uae_u32 extension1=displacement?do_get_mem_word(pc_hist[i].location+1):0;
-                        const uae_u32 extension2=(move.smode==Ad16&&move.dmode==Ad16)?do_get_mem_word(pc_hist[i].location+2):0;
-                        compemu_raw_mov_l_ri(REG_PAR2,extension1|(extension2<<16));
+                        if(simple_move) {
+                            compemu_raw_mov_l_ri(REG_PAR1,cft_map(opcode));
+                            const uae_u32 extension1=displacement?do_get_mem_word(pc_hist[i].location+1):0;
+                            const uae_u32 extension2=(move.smode==Ad16&&move.dmode==Ad16)?do_get_mem_word(pc_hist[i].location+2):0;
+                            compemu_raw_mov_l_ri(REG_PAR2,extension1|(extension2<<16));
+                        } else {
+                            // Keep immutable extension words with the block.
+                            // Reading current guest words during execution
+                            // could disagree with the compiled instruction.
+                            modern040::native_ea::Image image;
+                            image.pc=instruction_guest_pc;
+                            const uint64 available=(uint64(FastRAMBase)+FastRAMSize-instruction_guest_pc)/2;
+                            image.count=available<image.words.size()?unsigned(available):unsigned(image.words.size());
+                            for(unsigned w=0;w<image.count;++w)image.words[w]=do_get_mem_word(pc_hist[i].location+w);
+                            emit_byte(0xe9);uae_u32 *literal_skip=(uae_u32*)get_target();skip_long();
+                            const void *literal=get_target();emit_block((const uae_u8*)&image,sizeof image);
+                            *literal_skip=get_target()-(uae_u8*)(literal_skip+1);
+                            raw_mov_q_ri(REG_PAR1,(uintptr)literal);
+                        }
                         raw_dec_sp(STACK_SHADOW_SPACE);
-                        compemu_raw_call((uintptr)aranym_upstream_ram_move_guard);
+                        compemu_raw_call((uintptr)(simple_move?(void*)aranym_upstream_ram_move_guard:(void*)aranym_upstream_ram_complex_guard));
                         raw_inc_sp(STACK_SHADOW_SPACE);
                         compemu_raw_test_l_rr(REG_RESULT,REG_RESULT);
                         compemu_raw_jcc_l_oponly(NATIVE_CC_NE);
@@ -6267,10 +6307,12 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_guest_insns,1);
                         if(aranym_checked_move_opcode(cft_map(opcode)))
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_memory_insns,1);
+                        if(complex_ea)
+                            compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_extended_ea_insns,1);
                         const uae_u32 canonical=cft_map(opcode);
                         if(guest_pc>=aranym_jit_native_probe_begin && guest_pc<aranym_jit_native_probe_end) {
                             const unsigned index=(guest_pc-aranym_jit_native_probe_begin)/2;
-                            if(index<16384)compemu_raw_add_l_mi((uintptr)&aranym_jit_native_pc_executed[index],1);
+                            if(index<native_pc_slots)compemu_raw_add_l_mi((uintptr)&aranym_jit_native_pc_executed[index],1);
                         }
                         const int family=aranym_jit_alu_family(canonical);
                         const int size=table68k[canonical].size;
@@ -6278,7 +6320,13 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                         // before warmup count. Oracle C arithmetic lies outside.
                         if(family>=0 && size>=0 && size<3 && guest_pc>=aranym_jit_alu_probe_begin && guest_pc<aranym_jit_alu_probe_end)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_alu_executed[family][size],1);
-                        if(aranym_checked_move_opcode(canonical) && guest_pc>=aranym_jit_ea_probe_begin && guest_pc<aranym_jit_ea_probe_end) {
+                        // This older fixture's range contains its absolute
+                        // register setup/save instructions too. Its eight
+                        // counters describe only the original simple EA
+                        // families; newly admitted setup loads must not count
+                        // as a second execution of the instruction under test.
+                        // New corpora use the exact-PC witness above.
+                        if(aranym_checked_move_opcode(canonical) && !complex_ea && (table68k[canonical].mnemo==i_MOVE||table68k[canonical].mnemo==i_MOVEA) && guest_pc>=aranym_jit_ea_probe_begin && guest_pc<aranym_jit_ea_probe_end) {
                             const instr &ea=table68k[canonical];
                             const unsigned index=ea.mnemo==i_MOVEA ? 5+ea.size : (ea.dmode==Dreg?0:3)+ea.size;
                             if(index<8)compemu_raw_add_l_mi((uintptr)&aranym_jit_ea_executed[index],1);

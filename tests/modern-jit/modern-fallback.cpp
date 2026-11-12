@@ -19,6 +19,9 @@
 #include "../cpu-core-upgrade/runner/c-api.h"
 #include "../cpu-core-upgrade/platform/adapter.h"
 #include "compiler/compemu.h"
+#include "../../src/modern040/native-ea-plan.hpp"
+#include <algorithm>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 extern uae_u32 aranym_jit_alu_probe_begin,aranym_jit_alu_probe_end;
@@ -368,6 +371,25 @@ uae_u32 REGPARAM2 aranym_upstream_ram_move_guard(uae_u32 opcode,uae_u32 extensio
         if(!permitted(destination_base,true))return 0;
     }
     return 1;
+}
+uae_u32 REGPARAM2 aranym_upstream_ram_complex_guard(const void *encoded) {
+    modern040::native_ea::Image image;
+    std::memcpy(&image,encoded,sizeof image);
+    std::array<std::uint32_t,16> state;
+    std::copy(std::begin(regs.regs),std::end(regs.regs),state.begin());
+    struct Memory {
+        bool allowed(std::uint32_t address,unsigned size,bool write) {
+            const auto physical=address<0xff000000?address:address&0x00ffffff;
+            return !(regs.tc&0x8000)&&(physical&0xfff00000)!=0x00f00000&&
+                test_ram_boundary(physical,size,regs.s,write);
+        }
+        bool peek32(std::uint32_t address,std::uint32_t &value) {
+            // The planner already checked this pointer transfer as ordinary
+            // RAM. No device callback or guest register change is permitted.
+            value=phys_get_long(address);return true;
+        }
+    } memory;
+    return modern040::native_ea::allowed(image,state,memory)?1:0;
 }
 void aranym_upstream_memory_deopt() {
     aranym_upstream_modern_step(GET_OPCODE);

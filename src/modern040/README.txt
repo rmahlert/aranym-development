@@ -70,6 +70,28 @@ in each JIT arm. Wrong-result and missing-native-witness controls are rejected.
 Paired owned MiNT/fVDI/XaAES/font/text/shutdown arms pass too. This is a saved
 development stage, not completion of memory/control/MMU/FPU or a new RC.
 
+The next development gate, ARANYM_UPSTREAM_JIT_EXTENDED_EA=1, admits broader
+MOVE/MOVEA addressing and LEA. It remains off by default. A preflight planner
+checks immutable instruction words, extension permissions, source-before-
+destination address updates and both final transfer spans. Full-format
+indirection can peek independently permitted ordinary RAM pointers; it never
+reads a device pointer or operand. Unsafe forms use the genuine interpreter.
+The original simple-MOVE guard remains the fast path. This gate retains the
+TT-RAM code restriction and does not add RMW, MOVEM, stack/control, MMU or FPU
+translations. Reserved full-index encodings deliberately deopt.
+
+The owned expanded oracle has 869 literal MOVE/MOVEA/LEA forms, 55616 checks
+per run and 27232 mandatory exact-PC native cases in a JIT arm. It checks
+every GPR, CCR, all 256 data bytes and all 16 pointer cells, including A7 byte
+updates, source/destination/index aliases and scaled-index wrap. Another 576
+cases warm the same instruction with RAM before changing its address to a
+read-sensitive device: the device call must execute once in the interpreter
+with no increment of that instruction's native counter. Wrong results,
+missing native witnesses, an inactive development gate and a fabricated
+passing check count each have separate negative controls. Actual cohort
+results and binary/source hashes belong to the qualification manifests;
+these counts describe the corpus, not native laptop acceptance.
+
 Native Windows/HighWire acceptance, broader memory
 translation, modern MMU/FPU engines, ARM/macOS and fair benchmarks retain
 their own gates. Do not replace an installed/default emulator based only on

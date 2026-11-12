@@ -1,0 +1,105 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Pure 68040 EA preflight for the native physical-RAM path. No register writes
+ * or operand/device transfers. Full-format indirection peeks only checked RAM.
+ */
+#pragma once
+#include <array>
+#include <cstdint>
+#include <type_traits>
+namespace modern040::native_ea {
+struct Image {
+    std::uint32_t pc=0,count=0;
+    std::array<std::uint16_t,12> words{};
+};
+static_assert(sizeof(Image)==32&&std::is_trivially_copyable_v<Image>);
+struct Address { std::uint32_t value=0;bool memory=false,ok=false; };
+template<class Memory> class Preflight {
+    const Image &image;
+    Memory &memory;
+    std::array<std::uint32_t,16> registers;
+    unsigned cursor=1;
+    bool good=true;
+    std::uint16_t word() {
+        if(cursor>=image.count||!memory.allowed(image.pc+cursor*2,2,false)) {
+            good=false;return 0;
+        }
+        return image.words[cursor++];
+    }
+    std::uint32_t longword() {
+        const auto hi=std::uint32_t(word());return (hi<<16)|word();
+    }
+    std::uint32_t indexed(std::uint32_t base) {
+        const auto extension=word();
+        auto index=registers[(extension>>12)&15];
+        if(!(extension&0x800))index=std::uint32_t(std::int32_t(std::int16_t(index)));
+        index<<=(extension>>9)&3;
+        if(!(extension&0x100))return base+index+std::uint32_t(std::int32_t(std::int8_t(extension)));
+        // Reserved forms deopt; do not invent a native interpretation.
+        const unsigned bd=(extension>>4)&3,iis=extension&7;
+        // M68000PRM Table2-2: with IS=1 every I/IS=1xx is reserved.
+        if(!bd||(extension&8)||iis==4||((extension&0x40)&&iis>=4)){good=false;return 0;}
+        if(extension&0x80)base=0;
+        if(extension&0x40)index=0;
+        if(bd==2)base+=std::uint32_t(std::int32_t(std::int16_t(word())));
+        else if(bd==3)base+=longword();
+        std::uint32_t outer=0;
+        if((iis&3)==2)outer=std::uint32_t(std::int32_t(std::int16_t(word())));
+        else if((iis&3)==3)outer=longword();
+        if(!good)return 0;
+        if(!iis)return base+index;
+        const auto pointer_address=base+(iis<4?index:0);
+        std::uint32_t pointer=0;
+        if(!memory.allowed(pointer_address,4,false)||!memory.peek32(pointer_address,pointer)) {
+            good=false;return 0;
+        }
+        return pointer+outer+(iis>4?index:0);
+    }
+    Address ea(unsigned mode,unsigned reg,unsigned size,bool destination=false) {
+        const auto increment=size==1&&reg==7?2:size;
+        switch(mode) {
+        case 0:case 1:return {0,false,true};
+        case 2:return {registers[8+reg],true,true};
+        case 3:{const auto address=registers[8+reg];registers[8+reg]+=increment;return {address,true,true};}
+        case 4:registers[8+reg]-=increment;return {registers[8+reg],true,true};
+        case 5:{const auto displacement=std::int16_t(word());return {registers[8+reg]+std::uint32_t(std::int32_t(displacement)),true,good};}
+        case 6:{const auto address=indexed(registers[8+reg]);return {address,true,good};}
+        case 7:
+            if(reg==0){const auto value=std::uint32_t(std::int32_t(std::int16_t(word())));return {value,true,good};}
+            if(reg==1){const auto value=longword();return {value,true,good};}
+            if(destination)return {};
+            if(reg==2){const auto base=image.pc+cursor*2;const auto displacement=std::int16_t(word());return {base+std::uint32_t(std::int32_t(displacement)),true,good};}
+            if(reg==3){const auto address=indexed(image.pc+cursor*2);return {address,true,good};}
+            if(reg==4){if(size==4)longword();else word();return {0,false,good};}
+            return {};
+        default:return {};
+        }
+    }
+public:
+    Preflight(const Image &i,const std::array<std::uint32_t,16>&r,Memory &m):image(i),memory(m),registers(r){}
+    bool allowed() {
+        if(image.count<1||image.count>image.words.size()||!memory.allowed(image.pc,2,false))return false;
+        const auto opcode=image.words[0];const unsigned top=opcode>>12;
+        if(top>=1&&top<=3) {
+            const unsigned size=top==1?1:top==2?4:2;
+            const unsigned sm=(opcode>>3)&7,dm=(opcode>>6)&7;
+            if(size==1&&(sm==1||dm==1))return false;
+            const auto source=ea(sm,opcode&7,size);
+            const auto destination=ea(dm,(opcode>>9)&7,size,true);
+            return good&&source.ok&&destination.ok&&
+                (!source.memory||memory.allowed(source.value,size,false))&&
+                (!destination.memory||memory.allowed(destination.value,size,true));
+        }
+        if((opcode&0xf1c0)==0x41c0) {
+            const unsigned mode=(opcode>>3)&7,reg=opcode&7;
+            if(mode<2||mode==3||mode==4||(mode==7&&reg>3))return false;
+            const auto source=ea(mode,reg,4);
+            // LEA computes an address; the final target need not be mapped.
+            return good&&source.ok;
+        }
+        return false;
+    }
+};
+template<class Memory> bool allowed(const Image&i,const std::array<std::uint32_t,16>&r,Memory&m) {
+    return Preflight<Memory>(i,r,m).allowed();
+}
+}

@@ -314,6 +314,10 @@ EXTRA_DIST = \
 
 # Corresponding source required by the opt-in modern040 build/library tool.
 EXTRA_DIST += tools/build-modern040-library.py \
+ src/modern040/native-ea-plan.hpp tests/modern-jit/native-ea-plan-test.cpp \
+ src/modern040/native-ea-plan-source.json \
+ tests/modern-jit/generate-extended-ea.py tests/modern-jit/guest/extended-ea-oracle.c \
+ tests/modern-jit/generate-scalar-oracle.py tests/modern-jit/guest/scalar-oracle.c \
  src/modern040/integer.cpp src/modern040/restart.cpp src/modern040/RESTART-SOURCE.json \
  tools/extract-modern040-restart.py tests/cpu-core-upgrade/runner/restart.hpp \
  tests/cpu-core-upgrade/runner/restart-test.cpp src/modern040/include/uae/types.h \
