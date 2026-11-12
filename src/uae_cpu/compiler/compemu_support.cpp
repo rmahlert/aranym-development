@@ -769,6 +769,16 @@ static int aranym_jit_alu_family(uae_u32 opcode) {
 uae_u32 aranym_jit_ea_probe_begin=0,aranym_jit_ea_probe_end=0;
 static uae_u32 aranym_jit_ea_executed[8]={};
 uae_u32 aranym_upstream_ea_count(unsigned index) { return index<8?aranym_jit_ea_executed[index]:0; }
+// Exact guest-PC witnesses for explicitly registered owned test code. These
+// counters are emitted only with diagnostics, never in ordinary execution.
+uae_u32 aranym_jit_native_probe_begin=0,aranym_jit_native_probe_end=0;
+static uae_u32 aranym_jit_native_pc_executed[16384]={};
+uae_u32 aranym_upstream_native_pc_count(uae_u32 pc) {
+    if(pc<aranym_jit_native_probe_begin||pc>=aranym_jit_native_probe_end||
+       ((pc-aranym_jit_native_probe_begin)&1))return 0;
+    const unsigned index=(pc-aranym_jit_native_probe_begin)/2;
+    return index<16384?aranym_jit_native_pc_executed[index]:0;
+}
 static bool aranym_checked_move_enabled() {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
     static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE")!=nullptr || !getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE_OFF");
@@ -5526,7 +5536,8 @@ void build_comp(void)
         case i_ROL:case i_ROR:case i_ROXL:case i_ROXR:case i_SWAP:case i_EXT:
         case i_NEG:case i_NEGX:case i_CLR:case i_NOT:case i_TST:case i_BCHG:
         case i_BCLR:case i_BSET:case i_BTST:case i_Bcc:case i_DBcc:case i_Scc:
-        case i_NOP:register_family=true;break;
+        case i_NOP:case i_MULU:case i_MULS:case i_MULL:case i_EXG:
+            register_family=true;break;
         default:break;
         }
         const bool memory=(in.suse&&in.smode>=Aind&&in.smode<=PC8r)
@@ -6257,6 +6268,10 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                         if(aranym_checked_move_opcode(cft_map(opcode)))
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_memory_insns,1);
                         const uae_u32 canonical=cft_map(opcode);
+                        if(guest_pc>=aranym_jit_native_probe_begin && guest_pc<aranym_jit_native_probe_end) {
+                            const unsigned index=(guest_pc-aranym_jit_native_probe_begin)/2;
+                            if(index<16384)compemu_raw_add_l_mi((uintptr)&aranym_jit_native_pc_executed[index],1);
+                        }
                         const int family=aranym_jit_alu_family(canonical);
                         const int size=table68k[canonical].size;
                         // Only ordinary guest probe functions explicitly registered

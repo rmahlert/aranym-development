@@ -25,6 +25,8 @@ extern uae_u32 aranym_jit_alu_probe_begin,aranym_jit_alu_probe_end;
 extern uae_u32 aranym_upstream_alu_count(unsigned);
 extern uae_u32 aranym_jit_ea_probe_begin,aranym_jit_ea_probe_end;
 extern uae_u32 aranym_upstream_ea_count(unsigned);
+extern uae_u32 aranym_jit_native_probe_begin,aranym_jit_native_probe_end;
+extern uae_u32 aranym_upstream_native_pc_count(uae_u32);
 namespace {
 bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
 bool legacy_fpu=false,service_exception_delivered=false;
@@ -148,7 +150,25 @@ int ea_fixture(const m040_bus_request *request,uint32_t *value) {
     else return 0;
     return 1;
 }
+int native_pc_fixture(const m040_bus_request *request,uint32_t *value) {
+    static const bool enabled=std::getenv("ARANYM_UPSTREAM_JIT_NATIVE_FIXTURE")!=nullptr;
+    if(!enabled||request->address<0x00fec000||request->address>=0x00fec010)return -1;
+    static uae_u32 selected_pc=0;
+    if(request->size!=4||request->transfer_type||request->has_alternate_function_code)return 0;
+    const auto offset=request->address-0x00fec000;
+    if(request->kind==M040_WRITE) {
+        if(offset==0)aranym_jit_native_probe_begin=*value;
+        else if(offset==4)aranym_jit_native_probe_end=*value;
+        else if(offset==8)selected_pc=*value;
+        else return 0;
+    } else if(request->kind==M040_READ&&offset==8) {
+        *value=aranym_upstream_native_pc_count(selected_pc);
+    } else return 0;
+    return 1;
+}
 int memory(void *,const m040_bus_request *request,uint32_t *value) {
+    const int native=native_pc_fixture(request,value);
+    if(native>=0)return native;
     const int ea=ea_fixture(request,value);
     if(ea>=0)return ea;
     const int arithmetic=arithmetic_fixture(request,value);

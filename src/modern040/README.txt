@@ -59,6 +59,17 @@ per-transfer exception wrapper. This uses normal JIT epilogues, not a host
 unwind through generated code. Incoming CCR remains live at fault boundaries.
 The older CHECKED_MOVE pilot remains distinct and default-off.
 
+2026-11-12 scalar admission stage: upstream register/immediate MULU/MULS,
+flags-dead MULL and EXG are now admitted. The upstream flags-producing MULL
+table is null, so live-flag cases deliberately execute the genuine interpreter.
+Owned immutable product/register oracles cover 284 forms, all EXG register pairs
+including A7, all CCR inputs, 32/64-bit multiply/source aliases and immediates.
+Linux and the actual Windows PE under Wine pass 210944 checks per run, with
+75776 mandatory exact-PC native cases and 29696 deliberate live-MULL fallbacks
+in each JIT arm. Wrong-result and missing-native-witness controls are rejected.
+Paired owned MiNT/fVDI/XaAES/font/text/shutdown arms pass too. This is a saved
+development stage, not completion of memory/control/MMU/FPU or a new RC.
+
 Native Windows/HighWire acceptance, broader memory
 translation, modern MMU/FPU engines, ARM/macOS and fair benchmarks retain
 their own gates. Do not replace an installed/default emulator based only on
