@@ -98,6 +98,7 @@ extern void REGPARAM2 aranym_upstream_modern_step(uae_u32 opcode);
 extern uae_u32 REGPARAM2 aranym_upstream_ram_move_guard(uae_u32 opcode,uae_u32 extensions);
 extern void aranym_upstream_memory_deopt();
 extern uae_u32 REGPARAM2 aranym_upstream_ram_complex_guard(const void *);
+extern uae_u32 REGPARAM2 aranym_upstream_ram_movem_guard(const void *);
 extern bool modern040_restart_pending();
 extern uae_u32 REGPARAM2 aranym_upstream_checked_read_b(uae_u32 address);
 extern uae_u32 REGPARAM2 aranym_upstream_checked_read_w(uae_u32 address);
@@ -758,6 +759,7 @@ static uae_u32 aranym_jit_executed_guest_insns=0;
 static uae_u32 aranym_jit_executed_memory_insns=0;
 static uae_u32 aranym_jit_executed_extended_ea_insns=0;
 static uae_u32 aranym_jit_executed_rmw_insns=0;
+static uae_u32 aranym_jit_executed_movem_insns=0;
 uae_u32 aranym_jit_alu_probe_begin=0,aranym_jit_alu_probe_end=0;
 static uae_u32 aranym_jit_alu_executed[7][3]={};
 uae_u32 aranym_upstream_alu_count(unsigned index) { return index<21?aranym_jit_alu_executed[index/3][index%3]:0; }
@@ -819,11 +821,18 @@ static bool aranym_rmw_enabled() {
     static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_RMW")!=nullptr;
     return enabled;
 }
+static bool aranym_movem_enabled() {
+    // Qualification-only gate. Empty masks and unsafe spans deopt before
+    // any transfer; no integration default changes with this experiment.
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_MOVEM")!=nullptr;
+    return enabled;
+}
 static bool aranym_checked_move_opcode(uae_u32 canonical) {
     const instr &in=table68k[canonical];
     if(aranym_guarded_move_enabled()) {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
         if(aranym_rmw_enabled()&&modern040::native_ea::single_memory_policy(canonical).size)return true;
+        if(aranym_movem_enabled()&&modern040::native_ea::multiple_memory_policy(canonical).size)return true;
 #endif
         if(!aranym_extended_ea_enabled()) {
             const bool src=in.smode==Aind||in.smode==Aipi||in.smode==Apdi||in.smode==Ad16;
@@ -3735,8 +3744,8 @@ void compiler_exit(void)
 {
 #ifndef UAE
     if(aranym_jit_diagnostics())
-        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u executed-extended-ea=%u executed-rmw=%u\n",
-            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns,aranym_jit_executed_extended_ea_insns,aranym_jit_executed_rmw_insns);
+        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u executed-extended-ea=%u executed-rmw=%u executed-movem=%u\n",
+            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns,aranym_jit_executed_extended_ea_insns,aranym_jit_executed_rmw_insns,aranym_jit_executed_movem_insns);
     if(aranym_jit_diagnostics() && aranym_jit_alu_probe_begin<aranym_jit_alu_probe_end)
         for(unsigned f=0;f<7;++f)
             fprintf(stderr,"UPSTREAM-ALU family=%s b=%u w=%u l=%u\n",aranym_jit_alu_names[f],
@@ -5571,7 +5580,7 @@ void build_comp(void)
         case i_BCLR:case i_BSET:case i_BTST:case i_Bcc:case i_DBcc:case i_Scc:
         case i_NOP:register_family=true;break;
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-        case i_MULU:case i_MULS:case i_MULL:case i_EXG:case i_LEA:
+        case i_MULU:case i_MULS:case i_MULL:case i_EXG:case i_LEA:case i_MVMEL:case i_MVMLE:
             register_family=true;break;
 #endif
         default:break;
@@ -6152,6 +6161,7 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                 const bool complex_ea=checked_move&&aranym_guarded_move_enabled()&&
                     !((checked_instruction.mnemo==i_MOVE||checked_instruction.mnemo==i_MOVEA)&&
                       checked_instruction.smode<=Ad16&&checked_instruction.dmode<=Ad16);
+                const bool guarded_movem=complex_ea&&(checked_instruction.mnemo==i_MVMEL||checked_instruction.mnemo==i_MVMLE);
                 const bool checked_move_code_ok=!checked_move || (instruction_guest_pc>=FastRAMBase && uint64(instruction_guest_pc)<uint64(FastRAMBase)+FastRAMSize);
                 if (comptbl[opcode] && optlev>1 && !unsafe_control_flow && !unsafe_flags && checked_move_code_ok) {
 					failure=0;
@@ -6215,7 +6225,7 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                             raw_mov_q_ri(REG_PAR1,(uintptr)literal);
                         }
                         raw_dec_sp(STACK_SHADOW_SPACE);
-                        compemu_raw_call((uintptr)(simple_move?(void*)aranym_upstream_ram_move_guard:(void*)aranym_upstream_ram_complex_guard));
+                        compemu_raw_call((uintptr)(simple_move?(void*)aranym_upstream_ram_move_guard:guarded_movem?(void*)aranym_upstream_ram_movem_guard:(void*)aranym_upstream_ram_complex_guard));
                         raw_inc_sp(STACK_SHADOW_SPACE);
                         compemu_raw_test_l_rr(REG_RESULT,REG_RESULT);
                         compemu_raw_jcc_l_oponly(NATIVE_CC_NE);
@@ -6329,6 +6339,8 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
                         if(complex_ea&&aranym_rmw_enabled()&&modern040::native_ea::single_memory_policy(cft_map(opcode)).size)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_rmw_insns,1);
+                        if(guarded_movem)
+                            compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_movem_insns,1);
 #endif
                         const uae_u32 canonical=cft_map(opcode);
                         if(guest_pc>=aranym_jit_native_probe_begin && guest_pc<aranym_jit_native_probe_end) {

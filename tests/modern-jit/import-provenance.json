@@ -79,5 +79,16 @@
     ],
     "admission": "MOVE B/W/L Dn <-> (An), TT-RAM code only",
     "failure": "uncompleted transfer stops3, no replay or architectural restart claim"
-  }
+  },
+  "post_import_corrections": [
+    {
+      "id": "040-movem-predecrement-base-in-mask",
+      "path": "tests/modern-jit/upstream-compemu.cpp",
+      "initial_native_adapted_sha256": "d865a4ff366887a8e20ff13448b557480d18d54374143bf81da5e9a25f4a24ce",
+      "corrected_sha256": "0cebda87550b484c21bc36a4d2df5e21f5dfbb92190ba81ec4be1c0d2eeda8dc",
+      "record": "tests/modern-jit/MOVEM-PREDECREMENT-CORRECTION.json",
+      "reproducer": "tools/adapt-modern040-movem.py --apply on exact initial preimage only",
+      "scope": "Four W/L predecrement FF/NF functions with verified identical bodies; upstream pin unchanged; runtime post-fix acceptance separate"
+    }
+  ]
 }

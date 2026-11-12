@@ -125,6 +125,19 @@ qualification is implied. The independent data oracle must check the 040's
 base-in-mask value (initial minus one operand size on predecrement stores)
 and postincrement-base override, as well as word sign extension and order.
 
+ARANYM_UPSTREAM_JIT_MOVEM=1 is an isolated development experiment, default-off.
+It uses the complete-span planner and existing checked helpers; an unsafe or
+empty-mask instruction executes the real interpreter. The independent alias
+oracle uses individual qualified MOVEs for setup/capture, so a MOVEM defect
+cannot cancel inside its own input/output machinery. Its 384 cases exposed
+an imported predecrement base-in-mask defect on Linux and Windows PE: a base
+stored after another register used the cumulative EA instead of initial-size.
+Only four W/L FF/NF generated functions are corrected, with identical FF/NF
+bodies verified before and after. The exact preimage, reproducible correction
+and current hash are in MOVEM-PREDECREMENT-CORRECTION.json and import-provenance.
+The vendor pin remains unchanged. Corrected alias/CCR/RAM checks do not certify
+the wider mask/EA, device-order, partial-transfer or MOVEM restart contracts.
+
 Native Windows/HighWire acceptance, broader memory
 translation, modern MMU/FPU engines, ARM/macOS and fair benchmarks retain
 their own gates. Do not replace an installed/default emulator based only on

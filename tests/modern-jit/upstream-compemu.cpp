@@ -25974,10 +25974,18 @@ void REGPARAM2 op_48a0_0_comp_ff(uae_u32 opcode) /* MVMLE */
 				}
 				lea_l_brr(8+dstreg,srca,(uae_s32)offset);
 			} else {
+				// 020/030/040: stored base is INITIAL minus one size,
+				// not the cumulatively decremented effective address.
+				const bool base_in_mask = (mask & (1u << (7 - dstreg))) != 0;
+				if (base_in_mask) {
+					mov_l_rr(native, 8 + dstreg);
+					sub_l_ri(native, 2);
+				}
 				for (i=0;i<16 && mask;i++) {
 					if ((mask>>i)&1) {
 						sub_l_ri(srca,2);
-						writeword(srca,15-i,scratchie);
+						const int value = base_in_mask && (15 - i) == int(8 + dstreg) ? native : 15 - i;
+						writeword(srca,value,scratchie);
 					}
 				}
 				mov_l_rr(8+dstreg,srca);
@@ -26280,10 +26288,18 @@ void REGPARAM2 op_48e0_0_comp_ff(uae_u32 opcode) /* MVMLE */
 				}
 				lea_l_brr(8+dstreg,srca,(uae_s32)offset);
 			} else {
+				// 020/030/040: stored base is INITIAL minus one size,
+				// not the cumulatively decremented effective address.
+				const bool base_in_mask = (mask & (1u << (7 - dstreg))) != 0;
+				if (base_in_mask) {
+					mov_l_rr(native, 8 + dstreg);
+					sub_l_ri(native, 4);
+				}
 				for (i=0;i<16 && mask;i++) {
 					if ((mask>>i)&1) {
 						sub_l_ri(srca,4);
-						writelong(srca,15-i,scratchie);
+						const int value = base_in_mask && (15 - i) == int(8 + dstreg) ? native : 15 - i;
+						writelong(srca,value,scratchie);
 					}
 				}
 				mov_l_rr(8+dstreg,srca);
@@ -78528,10 +78544,18 @@ void REGPARAM2 op_48a0_0_comp_nf(uae_u32 opcode) /* MVMLE */
 				}
 				lea_l_brr(8+dstreg,srca,(uae_s32)offset);
 			} else {
+				// 020/030/040: stored base is INITIAL minus one size,
+				// not the cumulatively decremented effective address.
+				const bool base_in_mask = (mask & (1u << (7 - dstreg))) != 0;
+				if (base_in_mask) {
+					mov_l_rr(native, 8 + dstreg);
+					sub_l_ri(native, 2);
+				}
 				for (i=0;i<16 && mask;i++) {
 					if ((mask>>i)&1) {
 						sub_l_ri(srca,2);
-						writeword(srca,15-i,scratchie);
+						const int value = base_in_mask && (15 - i) == int(8 + dstreg) ? native : 15 - i;
+						writeword(srca,value,scratchie);
 					}
 				}
 				mov_l_rr(8+dstreg,srca);
@@ -78827,10 +78851,18 @@ void REGPARAM2 op_48e0_0_comp_nf(uae_u32 opcode) /* MVMLE */
 				}
 				lea_l_brr(8+dstreg,srca,(uae_s32)offset);
 			} else {
+				// 020/030/040: stored base is INITIAL minus one size,
+				// not the cumulatively decremented effective address.
+				const bool base_in_mask = (mask & (1u << (7 - dstreg))) != 0;
+				if (base_in_mask) {
+					mov_l_rr(native, 8 + dstreg);
+					sub_l_ri(native, 4);
+				}
 				for (i=0;i<16 && mask;i++) {
 					if ((mask>>i)&1) {
 						sub_l_ri(srca,4);
-						writelong(srca,15-i,scratchie);
+						const int value = base_in_mask && (15 - i) == int(8 + dstreg) ? native : 15 - i;
+						writelong(srca,value,scratchie);
 					}
 				}
 				mov_l_rr(8+dstreg,srca);

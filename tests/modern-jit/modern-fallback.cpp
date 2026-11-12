@@ -410,7 +410,8 @@ uae_u32 REGPARAM2 aranym_upstream_ram_move_guard(uae_u32 opcode,uae_u32 extensio
     }
     return 1;
 }
-uae_u32 REGPARAM2 aranym_upstream_ram_complex_guard(const void *encoded) {
+namespace {
+template<bool Multiple> uae_u32 native_ram_plan(const void *encoded) {
     modern040::native_ea::Image image;
     std::memcpy(&image,encoded,sizeof image);
     std::array<std::uint32_t,16> state;
@@ -427,7 +428,15 @@ uae_u32 REGPARAM2 aranym_upstream_ram_complex_guard(const void *encoded) {
             value=phys_get_long(address);return true;
         }
     } memory;
-    return modern040::native_ea::allowed(image,state,memory)?1:0;
+    if constexpr(Multiple)return modern040::native_ea::movem_allowed(image,state,memory)?1:0;
+    else return modern040::native_ea::allowed(image,state,memory)?1:0;
+}
+}
+uae_u32 REGPARAM2 aranym_upstream_ram_complex_guard(const void *encoded) {
+    return native_ram_plan<false>(encoded);
+}
+uae_u32 REGPARAM2 aranym_upstream_ram_movem_guard(const void *encoded) {
+    return native_ram_plan<true>(encoded);
 }
 void aranym_upstream_memory_deopt() {
     aranym_upstream_modern_step(GET_OPCODE);
