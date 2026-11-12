@@ -20,7 +20,7 @@ def main():
     parser.add_argument('--output', type=pathlib.Path)
     args = parser.parse_args()
     source_names = [
-        'configure.ac', 'src/modern040/README.txt', 'src/modern040/SOURCE.json',
+        'configure.ac', 'tools/aranym.nsi', 'src/modern040/README.txt', 'src/modern040/SOURCE.json',
         'src/modern040/RESTART-SOURCE.json', 'src/uae_cpu/registers.h',
         'src/uae_cpu/compiler/compemu_support.cpp',
         'tests/cpu-core-upgrade/runner/core.hpp',
@@ -83,11 +83,12 @@ def main():
          'current': 'x64 imported backend only',
          'missing': ['ARM32/AArch64 emitter/ABI and native acceptance', 'Apple allocation/protection/signing and fault context'],
          'gate': 'separate native Linux ARM and macOS gates; not an excuse to exclude unfinished Windows work'},
-        {'issue': 'shin-95jh.3.9 / shin-95jh.2', 'target': 'Windows x64', 'component': 'owner acceptance and installer',
+        {'issue': 'shin-95jh.3.13 / shin-95jh.3.9 / shin-95jh.2', 'target': 'Windows x64', 'component': 'owner acceptance and in-place installer',
          'current': 'RC2 owned full-system/Windows-under-Wine/preservation-installer checks passed; laptop same-image acceptance pending',
          'missing': ['same-input laptop desktop/HighWire acceptance after the reported faults',
-                     'new exact-binary interpreter/JIT/installer gates after remaining integrations'],
-         'gate': 'preserve config/NVRAM/ROM/drives/fVDI; no superseding RC until bounded gates pass'},
+                     'new exact-binary interpreter/JIT/installer gates after remaining integrations',
+                     'existing external -c config/custom shortcut paths need explicit coverage beyond the RC2 profile/app-local cases'],
+         'gate': 'required in-place installed-app upgrade, repeated upgrade and uninstall preservation of config paths/settings, networking selections, NVRAM, ROM/EmuTOS choice, disks/floppies/HOSTFS/host files/guest software/current fVDI; no drives, reset, portable-only packet or clean-install requirement; no superseding RC until bounded gates pass'},
     ]
     report = {
         'kind': 'static source audit; not executable qualification',

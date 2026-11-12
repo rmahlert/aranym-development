@@ -1,9 +1,10 @@
 {
   "kind": "static source audit; not executable qualification",
   "baseline_rc2": "e866507747383d9d768d3a398ee8668607dc3226",
-  "source_commit_at_audit": "e866507747383d9d768d3a398ee8668607dc3226",
+  "source_commit_at_audit": "f3215661cccb2f98c6cbb63a3b23b9b39c404830",
   "source_sha256": {
     "configure.ac": "838a154c7d79261663b9a2d553fa69972cdb7abaacacd7fba9e333317ca4783a",
+    "tools/aranym.nsi": "b10a29111e42538c53cb36808d987e6b6fe002d6c482512e22895c8c3d2c2c2c",
     "src/modern040/README.txt": "72ebc46eca6c95219ebbd78e17c5d237bdf8b809da7c77ecde065cf77662eb2e",
     "src/modern040/SOURCE.json": "8aa2b9c3c35bbb034faced854d8326aed4e0cbd44c2dfde050c7984e04535798",
     "src/modern040/RESTART-SOURCE.json": "be5e00d9906c2a2f2f06b2aa4a458a55cefdd31247b6fa307e682b6e5572c485",
@@ -489,15 +490,16 @@
       "gate": "separate native Linux ARM and macOS gates; not an excuse to exclude unfinished Windows work"
     },
     {
-      "issue": "shin-95jh.3.9 / shin-95jh.2",
+      "issue": "shin-95jh.3.13 / shin-95jh.3.9 / shin-95jh.2",
       "target": "Windows x64",
-      "component": "owner acceptance and installer",
+      "component": "owner acceptance and in-place installer",
       "current": "RC2 owned full-system/Windows-under-Wine/preservation-installer checks passed; laptop same-image acceptance pending",
       "missing": [
         "same-input laptop desktop/HighWire acceptance after the reported faults",
-        "new exact-binary interpreter/JIT/installer gates after remaining integrations"
+        "new exact-binary interpreter/JIT/installer gates after remaining integrations",
+        "existing external -c config/custom shortcut paths need explicit coverage beyond the RC2 profile/app-local cases"
       ],
-      "gate": "preserve config/NVRAM/ROM/drives/fVDI; no superseding RC until bounded gates pass"
+      "gate": "required in-place installed-app upgrade, repeated upgrade and uninstall preservation of config paths/settings, networking selections, NVRAM, ROM/EmuTOS choice, disks/floppies/HOSTFS/host files/guest software/current fVDI; no drives, reset, portable-only packet or clean-install requirement; no superseding RC until bounded gates pass"
     }
   ],
   "completion": "open; Windows gaps above must not be renamed out-of-target ARM work"

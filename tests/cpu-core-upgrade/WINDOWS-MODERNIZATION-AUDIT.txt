@@ -128,3 +128,28 @@ JIT, full owned system and exact preservation-installer payload. Same-image
 native Windows desktop/HighWire acceptance remains distinct. Do not publish
 a superseding RC or claim completion until the applicable bounded gates pass.
 Owner configs/images/drives/fVDI and the existing RC2 deliverable stay intact.
+
+Hard final delivery gate: in-place Windows upgrade (shin-95jh.3.13)
+
+The final deliverable must be an installer that detects and upgrades the
+existing installed ARAnyM application in place, including its host executable,
+runtime and completed Windows CPU/JIT code. It must preserve existing config
+paths/content/settings, ROM/EmuTOS selection, NVRAM, disks/floppies, HOSTFS and
+host files, networking selections, guest software and current fVDI. There is
+no drive bundle, forced config reset, portable-only substitute or requirement
+to clean install. Repeat double-upgrade and uninstall data-preservation tests
+on the exact superseding payload before publishing it.
+
+Existing RC2 preservation tests are a regression seed. They already exercise
+registry-selected application directories, default user and app-local config
+paths, repeated upgrade, user data and uninstall preservation. Existing-config
+network saving defaults off, and the preservation installer skips the old
+uninstaller. That evidence does not qualify a future changed installer/binary.
+
+An additional path-coverage gap remains: current .onInit discovers the standard
+profile or application-local config, and shortcuts bind to that ActiveConfig.
+An arbitrary external -c config/custom existing shortcut is not discovered by
+this code or covered by the RC2 lifecycle fixture. Do not claim all existing
+config paths preserved by merely keeping the external file bytes intact;
+the upgraded launch path must still select it with the same relative-path
+meaning. Add explicit coverage and a preservation policy before final delivery.
