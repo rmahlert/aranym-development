@@ -227,8 +227,8 @@ int movem_bus_fixture(const m040_bus_request *request,uint32_t *value) {
     const bool write=request->kind==M040_WRITE,read=request->kind==M040_READ;
     if(request->transfer_type||request->has_alternate_function_code||(!read&&!write))return M040_BUS_FAULT_BEFORE_TRANSFER;
     if(offset<64||offset==0x40) {
-        if((request->size!=2&&request->size!=4)||(offset<64&&offset+request->size>64)||(offset==0x40&&(write||request->size!=4))||count==events.size())return M040_BUS_FAULT_BEFORE_TRANSFER;
-        auto &event=events[count++];event={request->address,request->size|(write?0x100u:0u),write?(*value&(request->size==2?0xffffu:~0u)):0};
+        if((request->size!=1&&request->size!=2&&request->size!=4)||(offset<64&&offset+request->size>64)||(offset==0x40&&(write||request->size!=4))||count==events.size())return M040_BUS_FAULT_BEFORE_TRANSFER;
+        auto &event=events[count++];event={request->address,request->size|(write?0x100u:0u),write?(*value&(request->size==1?0xffu:request->size==2?0xffffu:~0u)):0};
         if(count-1==fail_at) {
             fail_at=~0u;++faults;event.info|=0x10000;return M040_BUS_FAULT_BEFORE_TRANSFER;
         }
@@ -259,6 +259,7 @@ int movem_bus_fixture(const m040_bus_request *request,uint32_t *value) {
         else if(offset==0xac)pointer=*value;
         else if(offset==0xb0)fetch_address=*value;
         else if(offset==0xb4)fetch_armed=*value;
+        else if(offset==0xc8)for(unsigned i=0;i<4;++i)data[i]=uint8_t(*value>>(8*(3-i)));
         else return M040_BUS_FAULT_BEFORE_TRANSFER;
     } else {
         if(offset==0x84)*value=count;
