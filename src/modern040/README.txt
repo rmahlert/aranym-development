@@ -92,13 +92,28 @@ passing check count each have separate negative controls. Actual cohort
 results and binary/source hashes belong to the qualification manifests;
 these counts describe the corpus, not native laptop acceptance.
 
-Preparatory single-operand policies also model unary, quick and immediate
-memory permissions: CLR is write-only on 040, TST/CMPI are read-only and
-the arithmetic/logical updates require both permissions. Immediate words
-precede EA extensions, including the PC-relative base. These policies alone
-do not admit any new native RMW instruction; their separate unit tests are
-not substitutes for connected native ALU, fault and read-sensitive device
-qualification. Locked operations, MOVEM and control flow remain excluded.
+The separate development gate ARANYM_UPSTREAM_JIT_RMW=1 admits unary, quick
+and immediate memory ALU forms through the shared planner. It remains off by
+default. CLR is write-only on 040, TST/CMPI are read-only and arithmetic/logical
+updates require both permissions before an operand transfer. Immediate words
+precede EA extensions, including the PC-relative base. The independent host-
+integer oracles each have 918 forms, 78912 checks per run, 35136 required exact-PC
+native cases and 4320 RAM-warmed device deoptimizations per JIT arm. Separate
+flags-live and flags-dead guests require exact compiler-variant witnesses;
+the latter overwrites all target flags with native register instructions.
+They check
+all GPRs, CCRs, RAM bytes and pointer cells, including A7 updates. A separate
+64-case actual guest format7 corpus covers a completed read plus writeback/
+discard and read-fault/RTE/retry, all CCRs and exact bus counts. Wrong results,
+writeback data, native witnesses, inactive gates and a fabricated PASS count
+have deliberate negative controls. Qualification manifests bind actual runs
+and binaries; the permission unit tests alone do not certify native behavior.
+Locked operations, ADDX/SUBX memory forms, MOVEM and control flow remain excluded.
+
+An external fallback which leaves MMURESTART pending also sets the native
+JIT_END_COMPILE flag. Cached block links must return to the dispatcher before
+entering the genuine restarted body; checking only the outer dispatch loop
+does not protect a directly linked successor after a compiled format7 RTE.
 
 Native Windows/HighWire acceptance, broader memory
 translation, modern MMU/FPU engines, ARM/macOS and fair benchmarks retain

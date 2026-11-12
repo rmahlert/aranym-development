@@ -24,8 +24,8 @@
     "LEA does not require its computed final address to be mapped"
   ],
   "scope": "MOVE/MOVEA and LEA development gate; physical bus only; other memory/control, MMU/FPU and partial-device continuation remain separate gates",
-  "preparatory_single_operand_policy": {
-    "native_admission": false,
+  "single_operand_policy": {
+    "native_admission": "ARANYM_UPSTREAM_JIT_RMW=1 development gate; default off",
     "families": [
       "NEG",
       "NEGX",
@@ -47,6 +47,6 @@
       "M68000PRM PDF184: CMPI supports PC-relative modes on MC68020/MC68030/MC68040",
       "M68000PRM PDF249: NEGX sticky-Z and borrow rules for the later arithmetic oracle"
     ],
-    "evidence_scope": "Pure planner permission/order unit tests; not native ALU/fault/device qualification"
+    "evidence_scope": "Independent planner unit tests plus separate immutable host-ALU/GPR/CCR/RAM/device-once and actual guest format7/RTE qualification cohorts; see manifests"
   }
 }

@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Derived from cpu-core-upgrade/platform/adapter.cpp (669bb6c0).
  * Modern interpreter fallback for the experimental full native x86 JIT.
- * No MMU/restart/desktop/cycle-performance acceptance.
+ * Physical-bus restart uses the qualified genuine 040 bodies. Paged MMU,
+ * modern FPU and broader fault/trace/nested-service boundaries remain separate.
  */
 #include "sysdeps.h"
 // Fixed mapping is retained for native JIT PC pointers. This C-ABI bus TU uses
@@ -30,6 +31,7 @@ extern uae_u32 aranym_jit_ea_probe_begin,aranym_jit_ea_probe_end;
 extern uae_u32 aranym_upstream_ea_count(unsigned);
 extern uae_u32 aranym_jit_native_probe_begin,aranym_jit_native_probe_end;
 extern uae_u32 aranym_upstream_native_pc_count(uae_u32);
+extern uae_u32 aranym_upstream_native_pc_noflags_count(uae_u32);
 namespace {
 bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
 bool legacy_fpu=false,service_exception_delivered=false;
@@ -166,14 +168,46 @@ int native_pc_fixture(const m040_bus_request *request,uint32_t *value) {
         else return 0;
     } else if(request->kind==M040_READ&&offset==8) {
         *value=aranym_upstream_native_pc_count(selected_pc);
+    } else if(request->kind==M040_READ&&offset==12) {
+        *value=aranym_upstream_native_pc_noflags_count(selected_pc);
     } else return 0;
     return 1;
+}
+// Owned fault fixture: reads at +0x80 complete, writes at +0x80 fail before
+// any store; reads at +0x90 fail before returning data. This explicit contract
+// must never be inferred for a mapped production device that throws midway.
+int rmw_fault_fixture(const m040_bus_request *request,uint32_t *value) {
+    static const bool enabled=std::getenv("ARANYM_UPSTREAM_JIT_RMW_FAULT_FIXTURE")!=nullptr;
+    if(!enabled||request->address<0x00fed080||request->address>=0x00fed098)return -1;
+    if(request->transfer_type||(request->kind!=M040_READ&&request->kind!=M040_WRITE))return 0;
+    static uint32_t data=0,reads=0,write_attempts=0,last=0,read_faults=0;
+    const auto offset=request->address-0x00fed080;
+    if(offset==0||offset==0x10) {
+        if(request->size!=1&&request->size!=2&&request->size!=4)return 0;
+        const auto mask=request->size==1?255u:request->size==2?65535u:0xffffffffu;
+        if(request->kind==M040_WRITE){++write_attempts;last=*value&mask;return M040_BUS_FAULT_BEFORE_TRANSFER;}
+        if(offset==0x10){++read_faults;return M040_BUS_FAULT_BEFORE_TRANSFER;}
+        ++reads;*value=data&mask;return M040_BUS_COMPLETED;
+    }
+    if(request->size!=4)return 0;
+    if(request->kind==M040_WRITE) {
+        if(offset!=4)return 0;
+        data=*value;reads=write_attempts=last=read_faults=0;return M040_BUS_COMPLETED;
+    }
+    if(offset==4)*value=reads;
+    else if(offset==8)*value=write_attempts;
+    else if(offset==12)*value=last;
+    else if(offset==20)*value=read_faults;
+    else return 0;
+    return M040_BUS_COMPLETED;
 }
 int memory(void *,const m040_bus_request *request,uint32_t *value) {
     const int native=native_pc_fixture(request,value);
     if(native>=0)return native;
     const int ea=ea_fixture(request,value);
     if(ea>=0)return ea;
+    const int rmw=rmw_fault_fixture(request,value);
+    if(rmw>=0)return rmw;
     const int arithmetic=arithmetic_fixture(request,value);
     if(arithmetic>=0)return arithmetic;
     if(request->transfer_type!=0)return 0; // no invented alternate CPU space.
@@ -323,7 +357,11 @@ void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
     m040_result result;checked(m040_run(1,&result),"modern JIT fallback");
     attempted+=result.instructions;to_old();
     if(result.exit==M040_HOST_SERVICE)service(result);
-    if(result.vector||regs.t1||regs.t0)SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
+    // Compiled fallback blocks may link directly to their successor instead
+    // of re-entering m68k_do_compile_execute's trace/restart dispatch check.
+    // A format7 RTE must leave that chain before any cached target runs, so
+    // the genuine restarted body consumes MMURESTART and retains IRQ order.
+    if(result.vector||regs.t1||regs.t0||modern040_restart_pending())SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
     diagnostic_exception();
     if(!acceptable(result))fail("modern JIT fallback unsupported",&result);
     // Core cache helpers have empty synchronous interpreter caches. Propagate

@@ -757,6 +757,7 @@ static uae_u32 aranym_jit_executed_translated_insns=0;
 static uae_u32 aranym_jit_executed_guest_insns=0;
 static uae_u32 aranym_jit_executed_memory_insns=0;
 static uae_u32 aranym_jit_executed_extended_ea_insns=0;
+static uae_u32 aranym_jit_executed_rmw_insns=0;
 uae_u32 aranym_jit_alu_probe_begin=0,aranym_jit_alu_probe_end=0;
 static uae_u32 aranym_jit_alu_executed[7][3]={};
 uae_u32 aranym_upstream_alu_count(unsigned index) { return index<21?aranym_jit_alu_executed[index/3][index%3]:0; }
@@ -777,11 +778,18 @@ uae_u32 aranym_upstream_ea_count(unsigned index) { return index<8?aranym_jit_ea_
 uae_u32 aranym_jit_native_probe_begin=0,aranym_jit_native_probe_end=0;
 static constexpr unsigned native_pc_slots=65536;
 static uae_u32 aranym_jit_native_pc_executed[native_pc_slots]={};
+static uae_u32 aranym_jit_native_pc_noflags_executed[native_pc_slots]={};
 uae_u32 aranym_upstream_native_pc_count(uae_u32 pc) {
     if(pc<aranym_jit_native_probe_begin||pc>=aranym_jit_native_probe_end||
        ((pc-aranym_jit_native_probe_begin)&1))return 0;
     const unsigned index=(pc-aranym_jit_native_probe_begin)/2;
     return index<native_pc_slots?aranym_jit_native_pc_executed[index]:0;
+}
+uae_u32 aranym_upstream_native_pc_noflags_count(uae_u32 pc) {
+    if(pc<aranym_jit_native_probe_begin||pc>=aranym_jit_native_probe_end||
+       ((pc-aranym_jit_native_probe_begin)&1))return 0;
+    const unsigned index=(pc-aranym_jit_native_probe_begin)/2;
+    return index<native_pc_slots?aranym_jit_native_pc_noflags_executed[index]:0;
 }
 static bool aranym_checked_move_enabled() {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
@@ -805,9 +813,18 @@ static bool aranym_extended_ea_enabled() {
     static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_EXTENDED_EA")!=nullptr;
     return enabled;
 }
+static bool aranym_rmw_enabled() {
+    // Separate default-off qualification gate; this does not admit locked
+    // RMW, multi-transfer instructions or stack/control flow.
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_RMW")!=nullptr;
+    return enabled;
+}
 static bool aranym_checked_move_opcode(uae_u32 canonical) {
     const instr &in=table68k[canonical];
     if(aranym_guarded_move_enabled()) {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+        if(aranym_rmw_enabled()&&modern040::native_ea::single_memory_policy(canonical).size)return true;
+#endif
         if(!aranym_extended_ea_enabled()) {
             const bool src=in.smode==Aind||in.smode==Aipi||in.smode==Apdi||in.smode==Ad16;
             const bool dst=in.dmode==Aind||in.dmode==Aipi||in.dmode==Apdi||in.dmode==Ad16;
@@ -3718,8 +3735,8 @@ void compiler_exit(void)
 {
 #ifndef UAE
     if(aranym_jit_diagnostics())
-        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u executed-extended-ea=%u\n",
-            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns,aranym_jit_executed_extended_ea_insns);
+        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u executed-extended-ea=%u executed-rmw=%u\n",
+            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns,aranym_jit_executed_extended_ea_insns,aranym_jit_executed_rmw_insns);
     if(aranym_jit_diagnostics() && aranym_jit_alu_probe_begin<aranym_jit_alu_probe_end)
         for(unsigned f=0;f<7;++f)
             fprintf(stderr,"UPSTREAM-ALU family=%s b=%u w=%u l=%u\n",aranym_jit_alu_names[f],
@@ -6309,10 +6326,15 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_memory_insns,1);
                         if(complex_ea)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_extended_ea_insns,1);
+                        if(complex_ea&&aranym_rmw_enabled()&&modern040::native_ea::single_memory_policy(cft_map(opcode)).size)
+                            compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_rmw_insns,1);
                         const uae_u32 canonical=cft_map(opcode);
                         if(guest_pc>=aranym_jit_native_probe_begin && guest_pc<aranym_jit_native_probe_end) {
                             const unsigned index=(guest_pc-aranym_jit_native_probe_begin)/2;
-                            if(index<native_pc_slots)compemu_raw_add_l_mi((uintptr)&aranym_jit_native_pc_executed[index],1);
+                            if(index<native_pc_slots) {
+                                compemu_raw_add_l_mi((uintptr)&aranym_jit_native_pc_executed[index],1);
+                                if(!needed_flags)compemu_raw_add_l_mi((uintptr)&aranym_jit_native_pc_noflags_executed[index],1);
+                            }
                         }
                         const int family=aranym_jit_alu_family(canonical);
                         const int size=table68k[canonical].size;

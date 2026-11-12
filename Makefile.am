@@ -316,6 +316,8 @@ EXTRA_DIST = \
 EXTRA_DIST += tools/build-modern040-library.py \
  src/modern040/native-ea-plan.hpp tests/modern-jit/native-ea-plan-test.cpp \
  tests/modern-jit/native-rmw-plan-test.cpp \
+ tests/modern-jit/generate-rmw-oracle.py tests/modern-jit/guest/rmw-oracle.c \
+ tests/modern-jit/guest/rmw-fault.c tests/modern-jit/guest/rmw-fault.S \
  src/modern040/native-ea-plan-source.json \
  tests/modern-jit/generate-extended-ea.py tests/modern-jit/guest/extended-ea-oracle.c \
  tests/modern-jit/generate-scalar-oracle.py tests/modern-jit/guest/scalar-oracle.c \
