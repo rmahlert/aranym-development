@@ -6326,8 +6326,10 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_memory_insns,1);
                         if(complex_ea)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_extended_ea_insns,1);
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
                         if(complex_ea&&aranym_rmw_enabled()&&modern040::native_ea::single_memory_policy(cft_map(opcode)).size)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_rmw_insns,1);
+#endif
                         const uae_u32 canonical=cft_map(opcode);
                         if(guest_pc>=aranym_jit_native_probe_begin && guest_pc<aranym_jit_native_probe_end) {
                             const unsigned index=(guest_pc-aranym_jit_native_probe_begin)/2;
