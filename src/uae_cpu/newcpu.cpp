@@ -1315,11 +1315,43 @@ static void do_trace (void)
 
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 #define MODERN040_IRQ_BLOCKED modern040_irq_restart_pending()
+static bool modern040_serve_priority_irqs(bool resetStop)
+{
+    static const bool enabled=std::getenv("ARANYM_MODERN040_IRQ_PRIORITY")!=nullptr;
+    if(!enabled)return false; // Retain the original dispatcher by default.
+    if(!SPCFLAGS_TEST(SPCFLAG_INT3|SPCFLAG_VBL|SPCFLAG_INT5|SPCFLAG_SCC|SPCFLAG_MFP))return true;
+    // Choose the highest eligible level before acknowledging any source.
+    // A pure shared core predicate preserves halt/service/restart blocking.
+    if(SPCFLAGS_TEST(SPCFLAG_MFP)&&modern040_interrupt_ready(6)) {
+        const int vector=MFPdoInterrupt();
+        if(vector){MFPInterrupt(vector);regs.stopped=0;if(resetStop)SPCFLAGS_CLEAR(SPCFLAG_STOP);return true;}
+        SPCFLAGS_CLEAR(SPCFLAG_MFP); // Existing spurious-source handling.
+    }
+    // Preserve the existing deterministic order of the two level5 sources.
+    if(SPCFLAGS_TEST(SPCFLAG_INT5)&&modern040_interrupt_ready(5)) {
+        Interrupt(5);regs.stopped=0;SPCFLAGS_CLEAR(SPCFLAG_INT5);if(resetStop)SPCFLAGS_CLEAR(SPCFLAG_STOP);return true;
+    }
+    if(SPCFLAGS_TEST(SPCFLAG_SCC)&&modern040_interrupt_ready(5)) {
+        const int vector=SCCdoInterrupt();
+        if(vector){SCCInterrupt(vector);regs.stopped=0;SPCFLAGS_CLEAR(SPCFLAG_SCC);if(resetStop)SPCFLAGS_CLEAR(SPCFLAG_STOP);return true;}
+        SPCFLAGS_CLEAR(SPCFLAG_SCC);
+    }
+    if(SPCFLAGS_TEST(SPCFLAG_VBL)&&modern040_interrupt_ready(4)) {
+        Interrupt(4);regs.stopped=0;SPCFLAGS_CLEAR(SPCFLAG_VBL);if(resetStop)SPCFLAGS_CLEAR(SPCFLAG_STOP);return true;
+    }
+    if(SPCFLAGS_TEST(SPCFLAG_INT3)&&modern040_interrupt_ready(3)) {
+        Interrupt(3);regs.stopped=0;SPCFLAGS_CLEAR(SPCFLAG_INT3);if(resetStop)SPCFLAGS_CLEAR(SPCFLAG_STOP);return true;
+    }
+    return true;
+}
+#define MODERN040_PRIORITY_IRQS(resetStop) modern040_serve_priority_irqs(resetStop)
 #else
 #define MODERN040_IRQ_BLOCKED false
+#define MODERN040_PRIORITY_IRQS(resetStop) false
 #endif
 #define SERVE_VBL_MFP(resetStop)							\
 {															\
+	if (MODERN040_PRIORITY_IRQS(resetStop)) {} else			\
 	if (!MODERN040_IRQ_BLOCKED && SPCFLAGS_TEST( SPCFLAG_INT3|SPCFLAG_VBL|SPCFLAG_INT5|SPCFLAG_SCC|SPCFLAG_MFP )) {		\
 		if (SPCFLAGS_TEST( SPCFLAG_INT3 )) {					\
 			if (3 > regs.intmask) {							\

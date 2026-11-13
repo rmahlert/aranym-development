@@ -10,5 +10,6 @@ void modern040_external_interrupt(int vector,unsigned level);
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 bool modern040_restart_pending();
 bool modern040_irq_restart_pending();
+bool modern040_interrupt_ready(unsigned level);
 #endif
 #endif

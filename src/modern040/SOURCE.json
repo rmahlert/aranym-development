@@ -4,10 +4,10 @@
   "integer_sha256": "032d6620c568f60aa74acd140335508b0a0a82b268b7b0940b4ab3c68edb735b",
   "types_sha256": "929c3b03e0c58b9cb3c7ec2c13570eb0d9e10d923eaa3a887bd4d85a22ba65a9",
   "runner_inputs": {
-    "tests/cpu-core-upgrade/runner/core.cpp": "84afafe7f1dc8f07e4df5cc096cc561f65f2ba032a0ad2b529d1f5fc2fcaeacb",
-    "tests/cpu-core-upgrade/runner/c-api.cpp": "83d713d3895f93c85c852913ce1230b41676b5607cdc2842acfe738d0339dbae",
-    "tests/cpu-core-upgrade/runner/core.hpp": "b6bec7838c6573479b7a08ca6ac2d9cdcd734dbde02ac836ec9d067961db647a",
-    "tests/cpu-core-upgrade/runner/c-api.h": "46e772b4ccb595601d262cea0e040d6bbd8f03f12b74e868449c6cb1b0c2762e",
+    "tests/cpu-core-upgrade/runner/core.cpp": "0738483f0016b6e14fe71d7ae26acd4cd6690599713a08e0393c4e8e3d7e69f2",
+    "tests/cpu-core-upgrade/runner/c-api.cpp": "1dd47c7a77ffe16b337ab04a1dde8174b9b5714be9a3e00ad6ae9d1936ea85ba",
+    "tests/cpu-core-upgrade/runner/core.hpp": "f023b4e52f8f2a48c5b7eca554f42752b81c04a4f6d52632b984217abc407837",
+    "tests/cpu-core-upgrade/runner/c-api.h": "5bb51d54986bb5d372fd9f1af825f00baf6ae91625aadeca69fb93e8e1811a35",
     "tests/cpu-core-upgrade/runner/restart.hpp": "616500f578cab537a2aa91198eec42adad846807e5188240420c98862f814ae4"
   },
   "original_seed_identity": {
@@ -138,5 +138,6 @@
   "physical_read_policy": "PHYSICAL-READ-POLICY.json",
   "physical_bitfield_frame_correction": "PHYSICAL-BITFIELD-FRAME-CORRECTION.json",
   "bitfield_writeback_policy": "BITFIELD-WRITEBACK-POLICY.json",
-  "completed_frame_irq_policy": "COMPLETED-FRAME-IRQ-POLICY.json"
+  "completed_frame_irq_policy": "COMPLETED-FRAME-IRQ-POLICY.json",
+  "irq_arbitration_policy": "IRQ-ARBITRATION-POLICY.json"
 }

@@ -139,6 +139,9 @@ int m040_set_reset_handler(m040_reset_callback, void *opaque);
 int m040_poke(uint32_t address, uint32_t size, uint32_t value);
 int m040_run(uint64_t budget, struct m040_result *);
 int m040_interrupt(uint32_t vector, uint32_t level, int *accepted, struct m040_result *);
+/* Pure acceptance query before a platform acknowledges its source. No target
+ * reads, vector acknowledgement, frame delivery or service completion. */
+int m040_interrupt_ready(uint32_t level, int *ready);
 int m040_private_operations(int enabled);
 int m040_get_service(struct m040_service *);
 int m040_complete_service(struct m040_result *);

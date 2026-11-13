@@ -291,6 +291,7 @@ void Exception_build_stack_frame(uae_u32, uae_u32, uae_u32, int, int);
 void Exception_build_stack_frame_common(uae_u32, uae_u32, uae_u32, int, int);
 uae_u32 exception_pc(int);
 [[noreturn]] void unsupported_frame(int);
+bool interrupt_ready(unsigned level) noexcept;
 bool inject_interrupt(int vector, unsigned level);
 inline constexpr int sz_byte = 0, sz_word = 1, sz_long = 2;
 inline constexpr unsigned cpucycleunit = 1;

@@ -420,6 +420,10 @@ bool modern040_irq_restart_pending() {
     if(!initialized)return false;
     int pending=0;checked(m040_restart_pending(&pending),"read restart boundary");return pending;
 }
+bool modern040_interrupt_ready(unsigned level) {
+    if(!initialized)return false;
+    int ready=0;checked(m040_interrupt_ready(level,&ready),"query pure IRQ acceptance before acknowledgement");return ready;
+}
 void modern040_external_exception(int vector) {
     if(!initialized)fail("external exception before initialization");
     m040_service pending;const bool service_pending=m040_get_service(&pending)==M040_OK;

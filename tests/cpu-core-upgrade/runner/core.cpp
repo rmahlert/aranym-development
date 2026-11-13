@@ -373,9 +373,14 @@ void op_illg(uae_u32 opcode) { Exception((opcode & 0xf000)==0xa000?10:(opcode & 
 void record_rte_trace(uaecptr pc) noexcept {host.rte_trace_pc=pc;host.rte_trace_pending=true;}
 [[noreturn]] void unsupported_frame(int format) { stop(Exit::Unsupported,14,regs.pc,unsigned(format),"non-040 exception frame format excluded"); }
 [[noreturn]] void unsupported_fpu_body() { stop(Exit::Unsupported,0,regs.pc,0,"active-FPU/arithmetic tail outside declared absent-LC040 probe profile"); }
+bool interrupt_ready(unsigned level) noexcept {
+    return level>=1&&level<=7&&!host.halted&&!host.service&&
+        (!(regs.spcflags&SPCFLAG_MMURESTART)||host.completed_irq_ready)&&
+        (level>unsigned(regs.intmask)||level==7);
+}
 bool inject_interrupt(int vector, unsigned level) {
     if (vector<0||vector>255||level<1||level>7) throw std::invalid_argument("invalid architectural interrupt request");
-    if (host.halted||host.service||((regs.spcflags&SPCFLAG_MMURESTART)&&!host.completed_irq_ready)||(level<=unsigned(regs.intmask)&&level!=7)) return false;
+    if (!interrupt_ready(level)) return false;
     enter_exception(vector,true,level);
     return true;
 }

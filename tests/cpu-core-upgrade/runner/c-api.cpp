@@ -226,6 +226,11 @@ int m040_interrupt(uint32_t vector,uint32_t level,int *accepted,m040_result *out
         result(event.result,*out);return M040_OK;}
     catch(...){return failed();}
 }
+int m040_interrupt_ready(uint32_t level,int *ready) {
+    if(busy)return M040_BUSY;
+    if(!ready||level<1||level>7)return M040_BAD_ARGUMENT;
+    *ready=modern040::interrupt_ready(level);return M040_OK;
+}
 int m040_private_operations(int enabled) {
     if(busy||modern040::host.service)return M040_BUSY;
     if(enabled!=0&&enabled!=1)return M040_BAD_ARGUMENT;
