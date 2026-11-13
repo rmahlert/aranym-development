@@ -327,6 +327,7 @@ EXTRA_DIST += tools/build-modern040-library.py \
  tests/modern-jit/guest/writeback.c tests/modern-jit/guest/writeback.S \
  tests/modern-jit/guest/trace-fault.c tests/modern-jit/guest/trace-fault.S \
  tests/modern-jit/guest/irq-boundary.c tests/modern-jit/guest/irq-boundary.S \
+ tests/modern-jit/guest/moves-probe.c tests/modern-jit/guest/moves-probe.S \
  tests/cpu-core-upgrade/runner/trace-fault-test.cpp \
  tests/cpu-core-upgrade/runner/irq-restart-test.cpp \
  tests/cpu-core-upgrade/runner/write-producer-test.cpp \
