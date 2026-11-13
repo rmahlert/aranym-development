@@ -343,6 +343,7 @@ EXTRA_DIST += tools/build-modern040-library.py \
  tests/cpu-core-upgrade/runner/completed-frame-before-test.cpp tests/cpu-core-upgrade/runner/completed-frame-irq-test.cpp \
  tests/cpu-core-upgrade/runner/frame-dma-test.cpp \
  tests/modern-jit/guest/frame-native-before.c tests/modern-jit/guest/frame-native-before.S \
+ tests/modern-jit/guest/irq-arbitration.c tests/modern-jit/guest/irq-arbitration.S \
  src/include/modern040-frame.h src/modern040/COMPLETED-FRAME-IRQ-POLICY.json \
  tests/cpu-core-upgrade/runner/moves-trace-test.cpp \
  tests/cpu-core-upgrade/runner/rte-load-test.cpp \
