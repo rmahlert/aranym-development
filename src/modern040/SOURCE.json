@@ -4,7 +4,7 @@
   "integer_sha256": "e4268caf87aca6841be8ff5573cf814b4cdf6dfe5ee9b89c2ea249eb1c719023",
   "types_sha256": "929c3b03e0c58b9cb3c7ec2c13570eb0d9e10d923eaa3a887bd4d85a22ba65a9",
   "runner_inputs": {
-    "tests/cpu-core-upgrade/runner/core.cpp": "586c8652962a795964d832a22cca9fdb7eb47750dd38a3e929800ffbdaeb9127",
+    "tests/cpu-core-upgrade/runner/core.cpp": "c15bf421c354e0529076edd285ae2c6825ddcc6b4a11fb3bc69395ab15dcac5c",
     "tests/cpu-core-upgrade/runner/c-api.cpp": "fb4fb9f4885910d8591b7b15ba276f08172334d735abe2df4b21023a9e623f1a",
     "tests/cpu-core-upgrade/runner/core.hpp": "e7d5bd40702dd28981f3e9d25eef91a16d96d7a0d365f8cf8cb43a879ec72698",
     "tests/cpu-core-upgrade/runner/c-api.h": "f641c4b77f61fd47d7167fbf352c84fe09174bb28f15d7a84d8cde98bfd798ea",
@@ -126,5 +126,8 @@
   "local_restart_corrections": [
     "MOVEM-RESTART-CORRECTION.json",
     "TRACE-RESTART-CORRECTION.json"
+  ],
+  "physical_fault_trace_policies": [
+    "MOVES-TRACE-POLICY.json"
   ]
 }

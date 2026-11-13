@@ -410,9 +410,13 @@ Result run(std::uint64_t budget) {
                 for(auto &word:mmu040_move16)word=0;
                 if(mmu040_movem) {
                     regs.mmu_ssw|=0x1000;regs.mmu_effective_addr=mmu040_movem_ea;mmu040_movem=0;
-                } else if(writing&&!mmu_restart&&(host.initial_t1||(regs.spcflags&SPCFLAG_DOTRACE))) {
+                } else if(writing&&!mmu_restart&&(host.initial_t1||(regs.spcflags&SPCFLAG_DOTRACE)||
+                    (regs.t0&&(fault.opcode&0xff00)==0x0e00&&(fault.opcode&0xc0)!=0xc0))) {
                     // This instruction completed; its queued write blocks a
                     // pending trace until guest WB3 handling and real RTE.
+                    // All admitted MOVES bodies check T0 after their store;
+                    // a failed completed store must retain that trace here.
+                    // Size-field11 (CAS) is excluded from this MOVES class.
                     regs.mmu_ssw|=0x2000;regs.mmu_effective_addr=host.start_pc;
                 }
                 // Pinned newcpu.cpp:m68k_run_mmu040 restores flags/PC only
