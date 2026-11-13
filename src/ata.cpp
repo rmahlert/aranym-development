@@ -31,6 +31,7 @@
 #include "parameters.h"
 #include "ata.h"
 #include "hardware.h"
+#include "modern040-frame.h"
 #define DEBUG 0
 #include "debug.h"
 
@@ -410,6 +411,7 @@ Bit32u bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 					BX_HD_THIS devices->bulkIOQuantumsTransferred = quantumsMax;
 
 				transferLen = io_len * BX_HD_THIS devices->bulkIOQuantumsTransferred;
+				modern040_memory_barrier();
 				memcpy((Bit8u *) BX_HD_THIS devices->bulkIOHostAddr,
 					   &BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index],
 					   transferLen);

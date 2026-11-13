@@ -16,6 +16,7 @@
 #include "cpu_emulation.h"
 #include "newcpu.h"
 #include "hardware.h"
+#include "modern040-frame.h"
 #include "fpu/fpu.h"
 #include "../cpu-core-upgrade/runner/c-api.h"
 #include "../cpu-core-upgrade/platform/adapter.h"
@@ -35,6 +36,7 @@ extern uae_u32 aranym_upstream_native_pc_noflags_count(uae_u32);
 namespace {
 bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
 bool legacy_fpu=false,service_exception_delivered=false;
+bool frame_irq_profile=false,frame_irq_skip_native_notify=false;
 bool diagnostics=false;uint64_t last_exception=0;unsigned service_messages=0,guest_messages=0,guest_traps=0;
 void checked(int,const char *);
 void diagnostic_exception() {
@@ -278,6 +280,17 @@ int movem_bus_fixture(const m040_bus_request *request,uint32_t *value) {
     }
     return M040_BUS_COMPLETED;
 }
+int frame_storage_identity(void*,const m040_bus_request*request,uint64_t*key) {
+    // This is this backend's actual NoMMU RAM-storage alias, not a CPU
+    // physical address supplied to format7 or a target memory access.
+    if(request->transfer_type||!request->size||request->size>0x7fffffffU)return M040_FRAME_UNKNOWN;
+    const uae_u32 address=request->address<0xff000000?request->address:request->address&0x00ffffff;
+    const uint64_t end=uint64_t(address)+request->size;
+    if(end>0x100000000ULL)return M040_FRAME_UNKNOWN;
+    if((address&0xfff00000)==0x00f00000&&end<=0x01000000)return M040_FRAME_DISJOINT;
+    if(test_ram_boundary(address,int(request->size),true,true)) {*key=address;return M040_FRAME_RAM;}
+    return M040_FRAME_UNKNOWN;
+}
 int memory(void *,const m040_bus_request *request,uint32_t *value) {
     const int native=native_pc_fixture(request,value);
     if(native>=0)return native;
@@ -335,6 +348,15 @@ void initialize() {
     diagnostics=std::getenv("ARANYM_MODERN040_DIAGNOSTICS")!=0;
     checked(m040_reset(&options),"reset modern core");checked(m040_set_precise_bus(memory,0),"attach precise Atari physical bus");
     checked(m040_fault_recovery(1),"enable restart-aware physical-bus integer bodies");
+    frame_irq_profile=std::getenv("ARANYM_MODERN040_FRAME_IRQ")!=nullptr;
+    frame_irq_skip_native_notify=frame_irq_profile&&std::getenv("ARANYM_MODERN040_FRAME_IRQ_NO_NATIVE_NOTIFY")!=nullptr;
+    if(frame_irq_skip_native_notify&&(!std::getenv("ARANYM_UPSTREAM_JIT_NATIVE_FIXTURE")||!std::getenv("ARANYM_UPSTREAM_JIT_MOVEM_BUS_FIXTURE")))
+        fail("missing native-notify control requires both owned fixture backends");
+    if(frame_irq_profile) {
+        checked(m040_set_frame_storage(frame_storage_identity,nullptr),"attach pure Atari RAM-storage identity");
+        checked(m040_completed_frame_irq(1),"enable bounded exact-frame IRQ completion");
+        std::fprintf(stderr,"MODERN040_FRAME_IRQ exact-storage default-off native-notify=%s\n",frame_irq_skip_native_notify?"negative-fixture-disabled":"on");
+    }
     checked(m040_exception_history_limit(0),"retain bounded exception diagnostics without accumulating every guest trap");
     checked(m040_set_reset_handler([](void *){AtariReset();return 1;},0),"attach original Atari RESET hardware/NatFeat/input path");
     checked(m040_legacy_fpu_operations(legacy_fpu),"select explicit original FPU backend");
@@ -384,8 +406,17 @@ void service(m040_result &result) {
     if(trace_service)std::fprintf(stderr,"MODERN040_SERVICE end kind=%u pc=%08x d0=%08x sr=%04x\n",call.kind,unsigned(m68k_getpc()),regs.regs[0],regs.sr);
 }
 }
+void modern040_memory_barrier() {
+    // Hardware copies can run inside an existing CPU bus callback. The core
+    // barrier touches only same-thread provenance, with no resolver/reentry.
+    if(initialized&&frame_irq_profile)checked(m040_frame_barrier(),"invalidate direct hardware RAM write provenance");
+}
 void modern040_reset_requested(){initialized=false;}
 bool modern040_restart_pending() {
+    if(!initialized)return false;
+    int pending=0;checked(m040_native_restart_pending(&pending),"read native restart boundary");return pending;
+}
+bool modern040_irq_restart_pending() {
     if(!initialized)return false;
     int pending=0;checked(m040_restart_pending(&pending),"read restart boundary");return pending;
 }
@@ -440,7 +471,9 @@ void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
     // of re-entering m68k_do_compile_execute's trace/restart dispatch check.
     // A format7 RTE must leave that chain before any cached target runs, so
     // the genuine restarted body consumes MMURESTART and retains IRQ order.
-    if(result.vector||regs.t1||regs.t0||modern040_restart_pending())SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
+    int completed_return=0;
+    if(frame_irq_profile)checked(m040_completed_rte_event(&completed_return),"read actual completed-RTE native boundary");
+    if(result.vector||regs.t1||regs.t0||modern040_restart_pending()||completed_return)SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
     diagnostic_exception();
     if(!acceptable(result))fail("modern JIT fallback unsupported",&result);
     // Core cache helpers have empty synchronous interpreter caches. Propagate
@@ -527,6 +560,10 @@ void aranym_upstream_memory_deopt() {
 // transfer stops explicitly; generic architectural fault/restart is not admitted.
 namespace {
 uint32_t checked_native_transfer(uint32_t address,unsigned size,bool write,uint32_t value) {
+    if(write&&frame_irq_profile&&!frame_irq_skip_native_notify) {
+        const m040_bus_request request{M040_ABI_VERSION,M040_WRITE,address,size,regs.s?5u:1u,0,0,0};
+        checked(m040_frame_write_notify(&request),"invalidate native RAM-store frame identity before transfer");
+    }
     static const bool guarded=!std::getenv("ARANYM_UPSTREAM_JIT_RAM_MOVE_OFF")&&!std::getenv("ARANYM_UPSTREAM_JIT_CHECKED_MOVE");
     if(guarded) {
         const uae_u32 physical=address<0xff000000?address:address&0x00ffffff;

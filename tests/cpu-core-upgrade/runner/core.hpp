@@ -119,6 +119,18 @@ struct DeferredBitfieldWrite {
     BusFault primary;
     std::optional<PendingIuWrite> iu_write{};
 };
+enum class FrameStorageClass { Unknown, Ram, Disjoint };
+struct FrameStorage { FrameStorageClass kind=FrameStorageClass::Unknown;std::uint64_t address=0; };
+// Pure backend storage identity, never an architectural physical-address guess
+// or another target read. RAM aliases must resolve to the same opaque key.
+using FrameStorageIdentity=FrameStorage (*)(void*,const BusRequest&);
+struct CompletedFrame {
+    bool valid=false;
+    std::uint64_t id=0,storage=0;
+    uae_u32 stack=0,pc=0;
+    uae_u16 ssw=0;
+};
+struct RteCompletion { std::uint64_t id;uae_u32 pc;bool ssw_loaded=false; };
 struct Host {
     std::array<uae_u8, 65536> ram{};
     std::vector<Access> accesses;
@@ -134,6 +146,14 @@ struct Host {
     bool physical_write_exceptions=false,physical_read_exceptions=false;
     bool bitfield_write_exceptions=false;
     std::optional<DeferredBitfieldWrite> deferred_bitfield;
+    bool completed_frame_irq=false,completed_frame_overflow=false,completed_write_delivery=false,completed_rte_event=false;
+    bool completed_irq_ready=false;
+    FrameStorageIdentity frame_storage=nullptr;void*frame_storage_opaque=nullptr;
+    std::array<CompletedFrame,32> completed_frames{};
+    unsigned completed_frame_count=0;
+    std::uint64_t completed_frame_serial=0;
+    std::optional<uae_u32> rte_header_pc;
+    std::optional<RteCompletion> rte_completion;
     // Present only during the corresponding actual format7 construction.
     std::optional<PhysicalWriteback> physical_writeback;
     void *bus_opaque = nullptr;
@@ -158,6 +178,8 @@ struct Host {
     std::vector<CacheOperation> cache_operations;
 };
 extern Host host;
+void invalidate_completed_frames() noexcept;
+void observe_frame_write(const BusRequest&);
 extern bool ismoves_nommu;
 extern bool mmu_ttr_enabled,mmu_ttr_enabled_ins,mmu_ttr_enabled_data;
 extern uae_u8 mmu_cache_state;

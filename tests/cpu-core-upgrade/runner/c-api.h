@@ -94,10 +94,43 @@ int m040_physical_read_exceptions(int enabled);
  * certificate. Only a proved write-only CPU tail and one unissued IU write
  * can finish; this does not enable a generic queue or unknown/partial retry. */
 int m040_bitfield_write_exceptions(int enabled);
+/* Pure storage identity for the separate bounded completed-frame IRQ profile.
+ * Return UNKNOWN unless the entire requested range has a stable identity.
+ * RAM aliases MUST return the same contiguous opaque uint64 key; DISJOINT
+ * certifies storage cannot overlap a RAM frame. This callback may not read a
+ * target, access MMIO, change state or perform translation/table-walk effects.
+ * Requests include the 60-byte frame range. Keys are backend storage offsets,
+ * not architectural CPU physical addresses or guessed normalized addresses.
+ */
+enum m040_frame_storage_class { M040_FRAME_UNKNOWN=0, M040_FRAME_RAM=1, M040_FRAME_DISJOINT=2 };
+typedef int (*m040_frame_storage_callback)(void*,const struct m040_bus_request*,uint64_t*);
+int m040_set_frame_storage(m040_frame_storage_callback,void*);
+/* Default-off; requires the pure storage callback. At most32 live identities;
+ * exhaustion drops all identities and retains conservative holdoff until the
+ * profile is reset. Only genuine successful RTE consumes an identity.
+ * SavedSR-only edits are allowed; PC/format/EA/SSW writes invalidate. Copied,
+ * relocated, untracked and ambiguous frames retain the old restart holdoff.
+ * Replacing a bus callback clears the profile and storage callback contract.
+ * ALL non-core RAM writers must notify before writing, or invalidate through
+ * a barrier. Native/service/DMA cooperation is a backend obligation.
+ */
+int m040_completed_frame_irq(int enabled);
+int m040_frame_write_notify(const struct m040_bus_request*);
+/* Metadata-only same-CPU-thread barrier is also allowed within an existing
+ * bus callback, before hardware DMA/copy writes; it performs no resolver or
+ * target operation and does not make the core safe for concurrent threads. */
+int m040_frame_barrier(void);
+/* True only when the last core instruction consumed a qualified frame.
+ * Native dispatch must leave its compiled chain and acknowledge pending IRQ
+ * before its successor. The raw native restart holdoff remains set. */
+int m040_completed_rte_event(int*);
 /* Genuine 040 restart-aware physical-bus bodies; no paged MMU, FPU/trace
  * continuation, MOVE16 or unknown partial-transfer recovery. */
 int m040_fault_recovery(int enabled);
 int m040_restart_pending(int *pending);
+/* Raw restart holdoff for native dispatch/compiler admission. Architectural
+ * IRQ eligibility from m040_restart_pending must not replace this guard. */
+int m040_native_restart_pending(int *pending);
 /* Limit diagnostic history without changing total counts or the last event.
  * Production frontends can use zero; tests default to full history. */
 int m040_exception_history_limit(uint32_t entries);

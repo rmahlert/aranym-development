@@ -8,6 +8,7 @@ bool busy=false;
 m040_bus_callback callback=nullptr;void *callback_opaque=nullptr;
 m040_precise_bus_callback precise_callback=nullptr;
 m040_detailed_bus_callback detailed_callback=nullptr;
+m040_frame_storage_callback storage_callback=nullptr;void*storage_opaque=nullptr;
 m040_reset_callback reset_callback=nullptr;void *reset_opaque=nullptr;
 bool reset_hardware(void *) {
     const auto status=reset_callback(reset_opaque);
@@ -54,6 +55,13 @@ modern040::BusOutcome detailed_bus(void *,const modern040::BusRequest &source,ua
     return {completion,modern040::FaultEvidence{modern040::FaultOrigin(detail.origin),bool(detail.whole_scalar_no_commit),
         detail.has_cpu_physical_address?std::optional<uae_u32>(detail.cpu_physical_address):std::nullopt}};
 }
+modern040::FrameStorage frame_storage(void*,const modern040::BusRequest&source) {
+    const m040_bus_request request{M040_ABI_VERSION,uint32_t(source.kind),source.address,source.size,
+        source.function_code,uint32_t(source.alternate_function_code.has_value()),source.alternate_function_code.value_or(0),source.transfer_type};
+    uint64_t key=0;const auto kind=storage_callback(storage_opaque,&request,&key);
+    if(kind<M040_FRAME_UNKNOWN||kind>M040_FRAME_DISJOINT)throw std::runtime_error("malformed frame storage identity");
+    return {modern040::FrameStorageClass(kind),key};
+}
 int failed() noexcept {modern040::ismoves_nommu=false;modern040::host.capability_latched=true;return M040_HOST_ERROR;}
 }
 extern "C" {
@@ -61,7 +69,7 @@ int m040_reset(const m040_options *options) {
     if(busy)return M040_BUSY;
     if(!options||options->abi_version!=M040_ABI_VERSION||options->deliver_exceptions>1||options->lc040_probes>1||options->log_accesses>1)return M040_BAD_ARGUMENT;
     try{Boundary guard;modern040::reset();modern040::install_handlers();callback=nullptr;precise_callback=nullptr;detailed_callback=nullptr;callback_opaque=nullptr;
-        reset_callback=nullptr;reset_opaque=nullptr;
+        reset_callback=nullptr;reset_opaque=nullptr;storage_callback=nullptr;storage_opaque=nullptr;
         modern040::host.deliver_exceptions=options->deliver_exceptions;modern040::host.lc040_probes=options->lc040_probes;
         modern040::host.log_accesses=options->log_accesses;return M040_OK;}catch(...){return failed();}
 }
@@ -97,6 +105,8 @@ int m040_set_state(const m040_state *in) {
 }
 int m040_set_bus(m040_bus_callback function,void *opaque) {
     if(busy)return M040_BUSY;
+    modern040::invalidate_completed_frames();modern040::host.completed_frame_irq=false;
+    storage_callback=nullptr;storage_opaque=nullptr;modern040::host.frame_storage=nullptr;
     callback=function;callback_opaque=opaque;
     precise_callback=nullptr;detailed_callback=nullptr;modern040::host.precise_bus=nullptr;modern040::host.detailed_bus=nullptr;
     modern040::host.bus=function?bus:nullptr;modern040::host.bus_opaque=nullptr;return M040_OK;
@@ -108,6 +118,8 @@ int m040_set_reset_handler(m040_reset_callback function,void *opaque) {
 }
 int m040_set_precise_bus(m040_precise_bus_callback function,void *opaque) {
     if(busy)return M040_BUSY;
+    modern040::invalidate_completed_frames();modern040::host.completed_frame_irq=false;
+    storage_callback=nullptr;storage_opaque=nullptr;modern040::host.frame_storage=nullptr;
     precise_callback=function;callback=nullptr;detailed_callback=nullptr;callback_opaque=opaque;
     modern040::host.detailed_bus=nullptr;
     modern040::host.bus=nullptr;modern040::host.precise_bus=function?precise_bus:nullptr;
@@ -115,6 +127,8 @@ int m040_set_precise_bus(m040_precise_bus_callback function,void *opaque) {
 }
 int m040_set_detailed_bus(m040_detailed_bus_callback function,void *opaque) {
     if(busy)return M040_BUSY;
+    modern040::invalidate_completed_frames();modern040::host.completed_frame_irq=false;
+    storage_callback=nullptr;storage_opaque=nullptr;modern040::host.frame_storage=nullptr;
     detailed_callback=function;callback=nullptr;precise_callback=nullptr;callback_opaque=opaque;
     modern040::host.bus=nullptr;modern040::host.precise_bus=nullptr;
     modern040::host.detailed_bus=function?detailed_bus:nullptr;modern040::host.bus_opaque=nullptr;return M040_OK;
@@ -134,6 +148,37 @@ int m040_bitfield_write_exceptions(int enabled) {
     if(enabled!=0&&enabled!=1)return M040_BAD_ARGUMENT;
     modern040::host.bitfield_write_exceptions=enabled;return M040_OK;
 }
+int m040_set_frame_storage(m040_frame_storage_callback function,void*opaque) {
+    if(busy||modern040::host.service)return M040_BUSY;
+    modern040::invalidate_completed_frames();storage_callback=function;storage_opaque=opaque;
+    modern040::host.frame_storage=function?frame_storage:nullptr;modern040::host.frame_storage_opaque=nullptr;
+    return M040_OK;
+}
+int m040_completed_frame_irq(int enabled) {
+    if(busy||modern040::host.service)return M040_BUSY;
+    if((enabled!=0&&enabled!=1)||(enabled&&!storage_callback))return M040_BAD_ARGUMENT;
+    modern040::invalidate_completed_frames();modern040::host.completed_frame_overflow=false;
+    modern040::host.completed_frame_irq=enabled;return M040_OK;
+}
+int m040_frame_write_notify(const m040_bus_request*request) {
+    if(busy)return M040_BUSY;
+    if(!request||request->abi_version!=M040_ABI_VERSION||request->kind!=M040_WRITE||!request->size||
+       uint64_t(request->address)+request->size>0x100000000ULL||request->function_code>7||request->transfer_type>3||
+       request->has_alternate_function_code>1||(request->has_alternate_function_code&&request->alternate_function_code>7))return M040_BAD_ARGUMENT;
+    try{Boundary guard;modern040::observe_frame_write({modern040::AccessKind::Write,request->address,request->size,request->function_code,
+        request->has_alternate_function_code?std::optional<unsigned>(request->alternate_function_code):std::nullopt,request->transfer_type});return M040_OK;}catch(...){return failed();}
+}
+int m040_frame_barrier(void) {
+    // A hardware RAM writer can run inside the current CPU bus callback.
+    // This same-thread metadata-only operation cannot reenter a resolver or
+    // alter architectural state, and is deliberately safe at that boundary.
+    modern040::invalidate_completed_frames();return M040_OK;
+}
+int m040_completed_rte_event(int*out) {
+    if(busy)return M040_BUSY;
+    if(!out)return M040_BAD_ARGUMENT;
+    *out=modern040::host.completed_rte_event;return M040_OK;
+}
 int m040_fault_recovery(int enabled) {
     if(busy||modern040::host.service)return M040_BUSY;
     if(enabled!=0&&enabled!=1)return M040_BAD_ARGUMENT;
@@ -141,6 +186,11 @@ int m040_fault_recovery(int enabled) {
     modern040::host.fault_recovery=enabled;return M040_OK;
 }
 int m040_restart_pending(int *pending) {
+    if(busy)return M040_BUSY;
+    if(!pending)return M040_BAD_ARGUMENT;
+    *pending=bool(modern040::regs.spcflags&modern040::SPCFLAG_MMURESTART)&&!modern040::host.completed_irq_ready;return M040_OK;
+}
+int m040_native_restart_pending(int *pending) {
     if(busy)return M040_BUSY;
     if(!pending)return M040_BAD_ARGUMENT;
     *pending=bool(modern040::regs.spcflags&modern040::SPCFLAG_MMURESTART);return M040_OK;

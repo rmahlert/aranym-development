@@ -2,6 +2,8 @@
 #include "core.hpp"
 #include "restart.hpp"
 #include <limits>
+#include <cstdio>
+#include <cstdlib>
 namespace modern040 {
 State regs;
 Host host;
@@ -25,6 +27,11 @@ bool last_writeaccess_for_exception_3 = false, last_notinstruction_for_exception
 int last_fc_for_exception_3 = 0, last_size_for_exception_3 = 0, last_di_for_exception_3 = 0;
 uae_u16 last_sr_for_exception3 = 0;
 namespace {
+void frame_debug(const char*event,uae_u32 address,unsigned size,std::uint64_t id=0) {
+    static const bool enabled=std::getenv("ARANYM_MODERN040_FRAME_IRQ_DIAGNOSTICS")!=nullptr;
+    static unsigned messages=0;
+    if(enabled&&messages<512){++messages;std::fprintf(stderr,"FRAME_IRQ %s address=%08x size=%u id=%llu count=%u pc=%08x ssw=%04x\n",event,address,size,(unsigned long long)id,host.completed_frame_count,regs.pc,regs.mmu_ssw);}
+}
 [[noreturn]] void stop(Exit exit, int vector, uae_u32 address, unsigned size, const char *detail) {
     throw Stop{{exit, 0, vector, regs.instruction_pc, regs.pc, address, size, detail}};
 }
@@ -62,6 +69,55 @@ bool translation_enabled() {
     for(auto ttr:{regs.itt0,regs.itt1,regs.dtt0,regs.dtt1})if((ttr&0x8004)==0x8004)return true;
     return false;
 }
+FrameStorage frame_storage(const BusRequest&request) {
+    if(!host.frame_storage)return {};
+    auto location=host.frame_storage(host.frame_storage_opaque,request);
+    if(location.kind==FrameStorageClass::Ram&&request.size>std::numeric_limits<std::uint64_t>::max()-location.address)return {};
+    return location;
+}
+void register_completed_frame(uae_u32 stack,uae_u32 pc,uae_u16 ssw) {
+    if(host.completed_frame_irq&&host.completed_write_delivery)frame_debug("register-attempt",stack,60);
+    if(!host.completed_frame_irq||host.completed_frame_overflow||!host.completed_write_delivery||
+       (ssw&~0x67)||(ssw&0x60)==0x60||((ssw&7)!=1&&(ssw&7)!=5))return;
+    const auto storage=frame_storage({AccessKind::Read,stack,60,5});
+    if(storage.kind!=FrameStorageClass::Ram){frame_debug("register-unmapped",stack,60);return;}
+    for(auto&frame:host.completed_frames)if(frame.valid&&frame.storage==storage.address){frame.valid=false;--host.completed_frame_count;}
+    if(host.completed_frame_count==host.completed_frames.size()||host.completed_frame_serial==std::numeric_limits<std::uint64_t>::max()) {
+        invalidate_completed_frames();host.completed_frame_overflow=true;return;
+    }
+    for(auto&frame:host.completed_frames)if(!frame.valid) {
+        frame={true,++host.completed_frame_serial,storage.address,stack,pc,ssw};++host.completed_frame_count;return;
+    }
+}
+void select_rte_completion(uae_u32 stack,uae_u16 format) {
+    host.rte_completion.reset();
+    if(!host.completed_frame_irq||!host.completed_frame_count||format!=0x7008||!host.rte_header_pc)return;
+    const auto storage=frame_storage({AccessKind::Read,stack,60,5});
+    if(storage.kind!=FrameStorageClass::Ram)return;
+    for(const auto&frame:host.completed_frames)if(frame.valid&&frame.storage==storage.address&&frame.pc==*host.rte_header_pc) {
+        frame_debug("rte-match",stack,60,frame.id);
+        host.rte_completion=RteCompletion{frame.id,frame.pc};return;
+    }
+}
+void complete_rte(std::uint64_t frames_before) {
+    if(!host.rte_completion||!host.rte_completion->ssw_loaded||host.exception_count!=frames_before||regs.pc!=host.rte_completion->pc)return;
+    for(auto&frame:host.completed_frames)if(frame.valid&&frame.id==host.rte_completion->id) {
+        // Only successful return of the unchanged genuine RTE body consumes
+        // this construction identity. No match by copied bytes or write SSW.
+        frame.valid=false;--host.completed_frame_count;
+        frame_debug("consume",frame.stack,60,frame.id);
+        host.completed_rte_event=true;
+        // IRQ eligibility is architectural retirement state. Keep the raw
+        // restart flag for the existing native successor/compilation holdoff.
+        host.completed_irq_ready=!regs.t0&&!regs.t1&&!(regs.spcflags&(SPCFLAG_TRACE|SPCFLAG_DOTRACE));
+        return;
+    }
+}
+struct CompletedDelivery {
+    bool previous;
+    explicit CompletedDelivery(bool completed):previous(host.completed_write_delivery){host.completed_write_delivery=completed;}
+    ~CompletedDelivery(){host.completed_write_delivery=previous;}
+};
 void enter_exception(int nr, bool interrupt, unsigned level) {
     if(host.deferred_bitfield)abort_bitfield_tail("bitfield tail attempted another exception; reset required");
     if (host.halted) stop(Exit::DoubleFault,nr,regs.pc,0,"halted until reset");
@@ -132,12 +188,32 @@ void enter_exception(int nr, bool interrupt, unsigned level) {
         if (interrupt) regs.intmask=int(level);
         m68k_setpc(handler);
         complete_exception_trace(nr);
+        if(nr==2&&format==7&&!(saved_sr&0xc000))register_completed_frame(host.last_frame->stack,stacked_pc,regs.mmu_ssw);
     } catch (const Stop &event) {
         if (event.result.exit==Exit::MemoryFault)
             stop(Exit::DoubleFault,event.result.vector,event.result.address,event.result.size,"fault while writing frame or fetching vector");
         throw;
     }
 }
+}
+void invalidate_completed_frames() noexcept {
+    if(host.completed_frame_count)frame_debug("barrier",0,0);
+    for(auto&frame:host.completed_frames)frame.valid=false;
+    host.completed_frame_count=0;host.rte_completion.reset();host.completed_irq_ready=false;
+}
+void observe_frame_write(const BusRequest&request) {
+    if(!host.completed_frame_irq||!host.completed_frame_count)return;
+    const auto storage=frame_storage(request);
+    if(storage.kind==FrameStorageClass::Unknown){frame_debug("write-unknown",request.address,request.size);invalidate_completed_frames();return;}
+    if(storage.kind!=FrameStorageClass::Ram)return;
+    for(auto&frame:host.completed_frames)if(frame.valid&&storage.address<frame.storage+14&&frame.storage+2<storage.address+request.size) {
+        // Saved SR is intentionally outside this identity window: actual
+        // handlers alter IPL/trace there. PC/format/EA/SSW writes invalidate
+        // even if the writer restores identical bytes or later fails.
+        if(host.rte_completion&&host.rte_completion->id==frame.id)host.rte_completion.reset();
+        frame_debug("write-overlap",request.address,request.size,frame.id);
+        frame.valid=false;--host.completed_frame_count;
+    }
 }
 uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     if(host.deferred_bitfield)abort_bitfield_tail("bitfield tail attempted a further read/fetch; reset required");
@@ -164,6 +240,8 @@ uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     if(!host.bus&&!host.precise_bus&&!host.detailed_bus)for (unsigned i = 0; i < size; ++i) value = (value << 8) | host.ram[address + i];
     if(size<4)value&=(uae_u32{1}<<(size*8))-1;
     if (host.log_accesses) host.accesses.push_back({kind, address, size, value, true});
+    if(host.completed_frame_irq&&host.using_restart&&host.in_instruction&&regs.opcode==0x4e73&&
+       kind==AccessKind::Read&&size==4&&address==regs.regs[15]+2)host.rte_header_pc=value;
     // Capability check at the real generated RTE's format-word read. No added
     // read, no modified instruction body and no hidden frame normalization.
     if (host.in_instruction && regs.opcode==0x4e73 && kind==AccessKind::Read && size==2 && address==regs.regs[15]+6) {
@@ -174,12 +252,14 @@ uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
         // bus error here halts (MC68040UM 8.2.1), without another frame. The
         // preceding SR/PC/format reads remain outside this bounded phase.
         host.rte_internal_load=format==7&&host.using_restart;
+        select_rte_completion(regs.regs[15],uae_u16(value));
     }
     if(host.using_restart&&host.in_instruction&&regs.opcode==0x4e73&&kind==AccessKind::Read&&size==2&&address==regs.regs[15]+12) {
         if(value&0xc000)stop(Exit::Unsupported,0,address,2,"RTE FPU continuation requires integrated pending FPU state");
         // The synchronous integer producer never combines a completed CT
         // instruction with unfinished MOVEM execution sharing the EA field.
         if((value&0x3000)==0x3000)stop(Exit::Unsupported,0,address,2,"combined CT/CM continuation is outside the declared physical-bus profile");
+        if(host.rte_completion)for(const auto&frame:host.completed_frames)if(frame.valid&&frame.id==host.rte_completion->id)host.rte_completion->ssw_loaded=value==frame.ssw;
     }
     return value;
 }
@@ -200,10 +280,11 @@ void write(uae_u32 address, unsigned size, uae_u32 value) {
         }
         abort_bitfield_tail("bitfield tail exceeded its proved single unissued write; reset required");
     }
+    observe_frame_write(req);
     const bool detailed_profile=host.detailed_bus!=nullptr;
     // Snapshot the actual producer before calling an external bus adapter.
     // No callback field can claim that the instruction has completed.
-    const bool completed_producer=detailed_profile&&host.in_instruction&&host.using_restart&&!mmu_restart&&
+    const bool completed_producer=(detailed_profile||host.completed_frame_irq)&&host.in_instruction&&host.using_restart&&!mmu_restart&&
         !host.exception_depth&&!host.service_resuming;
     const bool bitfield_tail=host.bitfield_write_exceptions&&host.physical_write_exceptions&&host.deliver_exceptions&&detailed_profile&&
         host.in_instruction&&host.using_restart&&mmu_restart&&!host.exception_depth&&!host.service_resuming&&
@@ -294,13 +375,14 @@ void record_rte_trace(uaecptr pc) noexcept {host.rte_trace_pc=pc;host.rte_trace_
 [[noreturn]] void unsupported_fpu_body() { stop(Exit::Unsupported,0,regs.pc,0,"active-FPU/arithmetic tail outside declared absent-LC040 probe profile"); }
 bool inject_interrupt(int vector, unsigned level) {
     if (vector<0||vector>255||level<1||level>7) throw std::invalid_argument("invalid architectural interrupt request");
-    if (host.halted||host.service||(regs.spcflags&SPCFLAG_MMURESTART)||(level<=unsigned(regs.intmask)&&level!=7)) return false;
+    if (host.halted||host.service||((regs.spcflags&SPCFLAG_MMURESTART)&&!host.completed_irq_ready)||(level<=unsigned(regs.intmask)&&level!=7)) return false;
     enter_exception(vector,true,level);
     return true;
 }
 namespace {
 void private_service(ServiceKind kind) {
     if(host.service_resuming)return;
+    invalidate_completed_frames();
     host.service=Service{kind,regs.opcode,regs.pc,regs.regs[15]+4,regs.s,regs.t1};
     stop(Exit::HostService,0,regs.pc,2,"ARAnyM private instruction awaits external host service");
 }
@@ -344,6 +426,7 @@ State architectural_state() {
 }
 Result run(std::uint64_t budget) {
     std::uint64_t instructions = 0;
+    host.completed_rte_event=false;
     try {
         if (host.halted) return {Exit::DoubleFault,0,0,regs.instruction_pc,regs.pc,0,0,"halted until reset"};
         if (host.capability_latched) return {Exit::Unsupported,0,0,regs.instruction_pc,regs.pc,0,0,"unsupported capability requires reset before continuation"};
@@ -355,9 +438,12 @@ Result run(std::uint64_t budget) {
             // A format7 RTE defers IRQ recognition until the restarted
             // instruction is entered, matching upstream MMURESTART handling.
             regs.spcflags&=~SPCFLAG_MMURESTART;
+            host.completed_irq_ready=false;
             regs.instruction_pc = regs.pc;
             regs.trace_pc = regs.pc;
             host.start_pc=regs.pc;host.bus_fault.reset();host.using_restart=false;
+            host.rte_header_pc.reset();host.rte_completion.reset();
+            host.completed_rte_event=false;
             host.initial_ccr=(unsigned(regs.x)<<4)|(unsigned(regs.n)<<3)|(unsigned(regs.z)<<2)|(unsigned(regs.v)<<1)|unsigned(regs.c);
             host.initial_t1=regs.t1;
             mmu_restart=true;
@@ -385,7 +471,7 @@ Result run(std::uint64_t budget) {
             const auto frames_before=host.exception_count;
             struct Instruction {
                 Instruction() { host.in_instruction=true; }
-                ~Instruction() { host.in_instruction=host.rte_internal_load=false; }
+                ~Instruction() { host.in_instruction=host.rte_internal_load=false;host.rte_completion.reset(); }
             } instruction;
             if(private_handler)private_handler(regs.opcode);
             else handler(regs.opcode);
@@ -415,12 +501,14 @@ Result run(std::uint64_t budget) {
                     Delivery(PhysicalWriteback wb){host.delivering_fault=true;host.physical_writeback=wb;}
                     ~Delivery(){host.physical_writeback.reset();host.delivering_fault=false;}
                 } delivery({uae_u16(0x80|sizebits|req.function_code),physical,lanes,tail.iu_write});
+                CompletedDelivery completed(true); // Actual pinned body returned above.
                 Exception(2);
                 return {Exit::Budget,instructions,2,host.start_pc,regs.pc,req.address,req.size,"delivered completed bitfield tail with physical WB1 and optional unissued IU WB3"};
             }
             host.rte_internal_load=false; // Subsequent trace delivery is outside RTE's payload load.
             if (translation_enabled())
                 stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "paged MMU or protected transparent-region profile enabled by control write");
+            if(host.using_restart&&regs.opcode==0x4e73)complete_rte(frames_before);
             if(host.rte_trace_pending) {
                 const auto traced_pc=host.rte_trace_pc;host.rte_trace_pending=false;
                 // A synchronous RTE fault (e.g. odd return PC) has priority.
@@ -522,6 +610,7 @@ Result run(std::uint64_t budget) {
                     Delivery(PhysicalWriteback wb){host.delivering_fault=true;host.physical_writeback=wb;}
                     ~Delivery(){host.physical_writeback.reset();host.delivering_fault=false;}
                 } delivery({uae_u16(0x80|sizebits|req.function_code),physical,lanes});
+                CompletedDelivery completed(fault.completed_producer);
                 try {
                     Exception(2);
                     return {Exit::Budget,instructions,2,host.start_pc,regs.pc,req.address,req.size,"delivered explicit completed-scalar physical WB1 format7"};
@@ -607,6 +696,7 @@ Result run(std::uint64_t budget) {
                 }
                 cpu_restore_fixup();host.recovery_pc=regs.instruction_pc;
                 struct Delivery {Delivery(){host.delivering_fault=true;}~Delivery(){host.delivering_fault=false;}} delivery;
+                CompletedDelivery completed(writing&&fault.completed_producer&&!(regs.mmu_ssw&0x1000));
                 try {
                     Exception(2);
                     return {Exit::Budget,instructions,2,host.start_pc,regs.pc,req.address,req.size,"delivered precise physical-bus format7 access error"};

@@ -36,6 +36,7 @@
 #include "hardware.h"
 #include "cpu_emulation.h"
 #include "memory-uae.h"
+#include "modern040-frame.h"
 #include "acsifdc.h"
 #include "ncr5380.h"
 #include "parameters.h"
@@ -459,6 +460,7 @@ bool ACSIFDC::read_file(int device, long offset, memptr address, int secsize, in
 	for(int i=0; i<count; i++)
 	{
 		if (::read(device, &buffer[0], secsize) != secsize) return false;
+		modern040_memory_barrier();
 		memcpy(Atari2HostAddr(address), &buffer[0], secsize);
 		address += secsize;
 	}

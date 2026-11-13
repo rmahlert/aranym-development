@@ -1314,7 +1314,7 @@ static void do_trace (void)
 }
 
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-#define MODERN040_IRQ_BLOCKED modern040_restart_pending()
+#define MODERN040_IRQ_BLOCKED modern040_irq_restart_pending()
 #else
 #define MODERN040_IRQ_BLOCKED false
 #endif

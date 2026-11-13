@@ -5,7 +5,7 @@
 .text
 .even
 .globl _nfb_store,_nfb_begin,_nfb_end,_nfb_patch_target,_nfb_next_target
-.globl _nfb_trigger,_nfb_vbr
+.globl _nfb_trigger,_nfb_vbr,_nfb_timer
 _nfb_vbr:
  movec %vbr,%d0
  rts
@@ -79,6 +79,29 @@ nfb_handler:
  clr.w 14(%a2)
  move.l #_nfb_next_target,0x00fec008
  move.l 0x00fec008,_nfb_next_before
+ /* Observe a real TimerC request under IPL7, then admit MFP6 at RTE. */
+ move.l #1000000,%d0
+2:
+ btst #5,0xfffffa0d
+ bne 3f
+ subq.l #1,%d0
+ bne 2b
+ move.l #1,_nfb_timeout
+ bra 4f
+3:
+ move.b 0xfffffa0d,_nfb_pending
+ move.b #0x20,0xfffffa15
+ andi.w #0xf8ff,(%a2)
+ ori.w #0x0500,(%a2)
+4:
  movem.l (%sp)+,%d0-%d7/%a0-%a6
  rte
+_nfb_timer:
+ move.b #0,0xfffffa15
+ addq.l #1,_nfb_irq_count
+ move.l 2(%sp),_nfb_irq_pc
+ move.w (%sp),_nfb_irq_sr
+ move.l _nfb_marker,_nfb_irq_marker
+ move.l _nfb_old_timer,-(%sp)
+ rts
 _nfb_end:
