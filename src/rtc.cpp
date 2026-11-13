@@ -26,6 +26,7 @@
 #include "cpu_emulation.h"
 #include "memory-uae.h"
 #include "rtc.h"
+#include "display_diagnostics.h"
 #include "parameters.h"
 
 #define DEBUG 0
@@ -69,6 +70,7 @@ void RTC::init()
 {
 	// set up the nvram filename
 	getConfFilename(ARANYMNVRAM, nvram_filename, sizeof(nvram_filename));
+    aranym_display_trace("nvram-path %s",nvram_filename);
 
 	load();		// load NVRAM file automatically
 

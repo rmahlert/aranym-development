@@ -34,6 +34,7 @@
 #include "host_surface.h"
 #include "logo.h"
 #include "hostscreen.h"
+#include "display_diagnostics.h"
 #include "version.h"
 #include "parameters.h"	/* bx_options */
 #include "main.h"	/* QuitEmulator */
@@ -344,6 +345,7 @@ void HostScreen::toggleFullScreen(void)
 
 void HostScreen::setVideoMode(int width, int height, int bpp)
 {
+    aranym_display_trace("window-request w=%d h=%d bpp=%d screen=%d fixed=%d autozoom=%d configured=%dx%d",width,height,bpp,numScreen,int(bx_options.autozoom.fixedsize),int(bx_options.autozoom.enabled),bx_options.autozoom.width,bx_options.autozoom.height);
 	if (bx_options.autozoom.fixedsize) {
 		width = bx_options.autozoom.width;
 		height = bx_options.autozoom.height;
@@ -471,6 +473,10 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 		// renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 	}
 	screen = SDL_GetWindowSurface(window);
+    if(aranym_display_diagnostics_enabled()) {
+        int trace_w=0,trace_h=0;SDL_GetWindowSize(window,&trace_w,&trace_h);
+        aranym_display_trace("window-actual w=%d h=%d surface=%dx%d bpp=%d",trace_w,trace_h,screen?screen->w:0,screen?screen->h:0,screen?int(screen->format->BitsPerPixel):0);
+    }
 	// texture = SDL_CreateTextureFromSurface(renderer, screen);
 
 #ifdef DEBUG_VIDEO_FORMAT
@@ -1039,6 +1045,7 @@ void HostScreen::refreshSurface(HostSurface *hsurf)
 	int h = (height < 200) ? 200 : height;
 	int bpp = hsurf->getBpp();
 	if ((w!=lastVidelWidth) || (h!=lastVidelHeight) || (bpp!=lastVidelBpp)) {
+        aranym_display_trace("render-source screen=%d w=%d h=%d bpp=%d",numScreen,width,height,bpp);
 		setVideoMode(w, h, bpp);
 		lastVidelWidth = w;
 		lastVidelHeight = h;

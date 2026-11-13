@@ -27,6 +27,7 @@
 #include "fvdidrv_nfapi.h"	// keep in sync with same file in fVDI CVS
 #include "hostscreen.h"
 #include "host.h"
+#include "display_diagnostics.h"
 
 #include "cpu_emulation.h"
 
@@ -249,9 +250,11 @@ int32 VdiDriver::dispatch(uint32 fncode)
 			break;
 		case FVDI_GET_WIDTH:
 			ret = getWidth();
+            aranym_display_trace("nfvdi-get-width value=%d pc=%08x",int(ret),unsigned(m68k_getpc()));
 			break;
 		case FVDI_GET_HEIGHT:
 			ret = getHeight();
+            aranym_display_trace("nfvdi-get-height value=%d pc=%08x",int(ret),unsigned(m68k_getpc()));
 			break;
 		case FVDI_OPENWK:
 			ret = openWorkstation();
@@ -368,6 +371,7 @@ uint32 VdiDriver::applyBlitLogOperation(int logicalOperation,
 
 void VdiDriver::setResolution(int32 width, int32 height, int32 depth)
 {
+    aranym_display_trace("nfvdi-request w=%d h=%d bpp=%d pc=%08x fixed=%d autozoom=%d configured=%dx%d",int(width),int(height),int(depth),unsigned(m68k_getpc()),int(bx_options.autozoom.fixedsize),int(bx_options.autozoom.enabled),bx_options.autozoom.width,bx_options.autozoom.height);
 	if (bx_options.autozoom.fixedsize)
 	{
 		width = bx_options.autozoom.width;
@@ -414,6 +418,7 @@ void VdiDriver::setResolution(int32 width, int32 height, int32 depth)
 	}
 
 	/* TODO: restore palette ? */
+    aranym_display_trace("nfvdi-surface w=%d h=%d bpp=%d",surface?surface->getWidth():0,surface?surface->getHeight():0,surface?surface->getBpp():0);
 }
 
 int32 VdiDriver::getWidth(void)
@@ -438,6 +443,7 @@ int32 VdiDriver::getHeight(void)
 
 int32 VdiDriver::openWorkstation(void)
 {
+    aranym_display_trace("nfvdi-open w=%d h=%d bpp=%d pc=%08x",surface?surface->getWidth():0,surface?surface->getHeight():0,surface?surface->getBpp():0,unsigned(m68k_getpc()));
 	host->video->setVidelRendering(false);
 	return 1;
 }

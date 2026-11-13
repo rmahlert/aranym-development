@@ -19,6 +19,7 @@
 */
 
 #include "sysdeps.h"
+#include "display_diagnostics.h"
 #include "SDL_compat.h"
 
 #include "sysdeps.h"
@@ -269,6 +270,8 @@ HostSurface *VIDEL::getSurface(void)
 	if (height<64) {
 		height = 64;
 	}
+	if(width!=prevVidelWidth||height!=prevVidelHeight||bpp!=prevVidelBpp)
+        aranym_display_trace("videl-mode w=%d h=%d bpp=%d",width,height,videlBpp);
 
 	if (surface) {
 		if (prevVidelBpp == bpp) {
