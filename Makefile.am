@@ -332,6 +332,7 @@ EXTRA_DIST += tools/build-modern040-library.py \
  tests/cpu-core-upgrade/runner/trace-fault-test.cpp \
  tests/cpu-core-upgrade/runner/irq-restart-test.cpp \
  tests/cpu-core-upgrade/runner/write-producer-test.cpp \
+ tests/cpu-core-upgrade/runner/multiwrite-producer-test.cpp \
  tests/cpu-core-upgrade/runner/moves-trace-test.cpp \
  tests/cpu-core-upgrade/runner/rte-load-test.cpp \
  src/modern040/RTE-LOAD-POLICY.json \
