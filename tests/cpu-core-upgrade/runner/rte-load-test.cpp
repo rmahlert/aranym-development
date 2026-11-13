@@ -65,6 +65,8 @@ void unchanged_halt(Bus& b){
   need(negative_irq?accepted:!accepted,"halt rejects IRQ/NMI until external reset");
   need(regs==state&&b.requests.size()==n,"halted IRQ must not alter registers or memory");
  }
+ bool halted=false;try{Exception(4);}catch(const Stop& event){halted=event.result.exit==Exit::DoubleFault;}
+ need(halted&&regs==state&&b.requests.size()==n,"explicit exception entry cannot alter a halted CPU");
 }
 void loads(){
  for(auto completion:{BusCompletion::FaultBeforeTransfer,BusCompletion::UnknownFault})
@@ -128,6 +130,7 @@ void public_api(){
  for(unsigned level=1;level<=7;++level){int accepted=99;need(m040_interrupt(24+level,level,&accepted,&result)==M040_OK&&accepted==0,"C ABI halted IRQ/NMI rejected");}
  need(m040_get_state(&after)==M040_OK&&before.pc==after.pc&&before.sr==after.sr&&before.regs[15]==after.regs[15]&&b.requests.size()==count,"C ABI halted context and bus stable");
  need(m040_run(1,&result)==M040_OK&&result.exit==M040_DOUBLE_FAULT&&result.instructions==0,"C ABI halt prevents resume");
+ need(m040_exception(4,&result)==M040_OK&&result.exit==M040_DOUBLE_FAULT&&b.requests.size()==count,"C ABI explicit exception preserves halt without bus traffic");
  need(m040_set_state(&before)==M040_OK&&m040_run(1,&result)==M040_OK&&result.exit==M040_DOUBLE_FAULT,"state import cannot unlock halt");
  need(m040_reset(&options)==M040_OK&&m040_set_precise_bus(Bus::api,&b)==M040_OK,"C ABI external reset");
  state={};need(m040_get_state(&state)==M040_OK,"C ABI reset context");state.regs[15]=state.isp=0x9000;state.sr=0x2700;

@@ -90,7 +90,7 @@ struct Frame {
     bool interrupt;
 };
 struct CacheOperation { int cache,scope;uae_u32 address;bool push,invalidate; };
-struct BusFault { BusRequest request;uae_u16 opcode;bool in_instruction;BusCompletion completion;uae_u32 data=0; };
+struct BusFault { BusRequest request;uae_u16 opcode;bool in_instruction;BusCompletion completion;uae_u32 data=0;bool rte_internal_load=false; };
 struct Host {
     std::array<uae_u8, 65536> ram{};
     std::vector<Access> accesses;
@@ -98,7 +98,7 @@ struct Host {
     std::uint64_t irq_checks = 0, stop_cycles = 0, cache_controls = 0;
     bool log_accesses = true;
     bool deliver_exceptions = false;
-    bool in_instruction = false, access_fault_latched = false, halted = false;
+    bool in_instruction = false, rte_internal_load = false, access_fault_latched = false, halted = false;
     bool lc040_probes = false, capability_latched = false;
     BusAccess bus = nullptr;
     PreciseBusAccess precise_bus = nullptr;

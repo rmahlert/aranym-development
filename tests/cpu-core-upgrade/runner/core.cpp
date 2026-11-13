@@ -54,6 +54,7 @@ bool translation_enabled() {
     return false;
 }
 void enter_exception(int nr, bool interrupt, unsigned level) {
+    if (host.halted) stop(Exit::DoubleFault,nr,regs.pc,0,"halted until reset");
     if (!host.deliver_exceptions) {
         stop(Exit::GuestException,nr,nr==3?last_fault_for_exception_3:regs.pc,nr==3?2:0,"terminal guest exception; frame delivery disabled");
     }
@@ -140,7 +141,7 @@ uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     else if(ok&&host.bus)completion=host.bus(host.bus_opaque,request(kind,address,size),value)?BusCompletion::Completed:BusCompletion::UnknownFault;
     ok=completion==BusCompletion::Completed;
     if (!ok) {
-        host.bus_fault=BusFault{request(kind,address,size),regs.opcode,host.in_instruction,completion};
+        host.bus_fault=BusFault{request(kind,address,size),regs.opcode,host.in_instruction,completion,0,host.rte_internal_load};
         if (host.log_accesses) host.accesses.push_back({kind, address, size, 0, false});
         stop(Exit::MemoryFault, 2, address, size, "bus read/fetch fault; access-error continuation not integrated");
     }
@@ -153,6 +154,10 @@ uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
         const auto format=value>>12;
         if (format==3||(format==4&&!host.lc040_probes)||(format==7&&!host.using_restart))
             stop(Exit::Unsupported,0,address,2,"RTE FPU/access-error continuation profile not integrated");
+        // The recognized format7 payload reloads internal state. A physical
+        // bus error here halts (MC68040UM 8.2.1), without another frame. The
+        // preceding SR/PC/format reads remain outside this bounded phase.
+        host.rte_internal_load=format==7&&host.using_restart;
     }
     if(host.using_restart&&host.in_instruction&&regs.opcode==0x4e73&&kind==AccessKind::Read&&size==2&&address==regs.regs[15]+12) {
         if(value&0xc000)stop(Exit::Unsupported,0,address,2,"RTE FPU continuation requires integrated pending FPU state");
@@ -244,7 +249,7 @@ void record_rte_trace(uaecptr pc) noexcept {host.rte_trace_pc=pc;host.rte_trace_
 [[noreturn]] void unsupported_fpu_body() { stop(Exit::Unsupported,0,regs.pc,0,"active-FPU/arithmetic tail outside declared absent-LC040 probe profile"); }
 bool inject_interrupt(int vector, unsigned level) {
     if (vector<0||vector>255||level<1||level>7) throw std::invalid_argument("invalid architectural interrupt request");
-    if (host.service||(regs.spcflags&SPCFLAG_MMURESTART)||(level<=unsigned(regs.intmask)&&level!=7)) return false;
+    if (host.halted||host.service||(regs.spcflags&SPCFLAG_MMURESTART)||(level<=unsigned(regs.intmask)&&level!=7)) return false;
     enter_exception(vector,true,level);
     return true;
 }
@@ -335,10 +340,11 @@ Result run(std::uint64_t budget) {
             const auto frames_before=host.exception_count;
             struct Instruction {
                 Instruction() { host.in_instruction=true; }
-                ~Instruction() { host.in_instruction=false; }
+                ~Instruction() { host.in_instruction=host.rte_internal_load=false; }
             } instruction;
             if(private_handler)private_handler(regs.opcode);
             else handler(regs.opcode);
+            host.rte_internal_load=false; // Subsequent trace delivery is outside RTE's payload load.
             if (translation_enabled())
                 stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "paged MMU or protected transparent-region profile enabled by control write");
             if(host.rte_trace_pending) {
@@ -369,6 +375,11 @@ Result run(std::uint64_t budget) {
             if(stopped.result.exit==Exit::Unsupported)host.capability_latched=true;
             auto result=stopped.result;result.instructions=instructions;return result;
         };
+        if(event.result.exit==Exit::MemoryFault&&host.bus_fault&&host.bus_fault->rte_internal_load) {
+            auto halted=event;halted.result.exit=Exit::DoubleFault;
+            halted.result.detail="physical bus error while RTE loads internal state; halted until reset";
+            return terminal(halted);
+        }
         // Narrow firmware probe profile: these genuine pinned read-only bodies
         // perform the operand read before any flags/registers/PC change. There
         // are no pending writes in this synchronous empty-cache interpreter.
