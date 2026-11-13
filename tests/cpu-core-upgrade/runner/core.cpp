@@ -133,6 +133,8 @@ uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     uae_u32 value = 0;
     const auto req=request(kind,address,size);
     const bool detailed_profile=host.detailed_bus!=nullptr;
+    const bool restartable_read=detailed_profile&&mmu_restart&&!host.exception_depth&&!host.service_resuming&&
+        (host.in_instruction?host.using_restart:kind==AccessKind::Fetch);
     bool ok=valid(kind,address,size);
     if(ok) {
         if(!req.transfer_type)(void)mmu_match_ttr(address,bool(req.function_code&4),kind!=AccessKind::Fetch);
@@ -144,7 +146,7 @@ uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     const auto completion=outcome.completion;
     ok=completion==BusCompletion::Completed;
     if (!ok) {
-        host.bus_fault=BusFault{req,regs.opcode,host.in_instruction,completion,0,host.rte_internal_load,detailed_profile,false,outcome.evidence};
+        host.bus_fault=BusFault{req,regs.opcode,host.in_instruction,completion,0,host.rte_internal_load,detailed_profile,false,outcome.evidence,restartable_read};
         if (host.log_accesses) host.accesses.push_back({kind, address, size, 0, false});
         stop(Exit::MemoryFault, 2, address, size, "bus read/fetch fault; access-error continuation not integrated");
     }
@@ -395,6 +397,37 @@ Result run(std::uint64_t budget) {
         }
         if(event.result.exit==Exit::MemoryFault&&host.bus_fault&&host.bus_fault->detailed_profile) {
             const auto fault=*host.bus_fault;const auto&req=fault.request;
+            const bool read_space=(req.kind==AccessKind::Read&&(req.function_code==1||req.function_code==5))||
+                (req.kind==AccessKind::Fetch&&(req.function_code==2||req.function_code==6));
+            if(host.physical_read_exceptions&&host.fault_recovery&&host.deliver_exceptions&&fault.restartable_read&&
+               fault.completion==BusCompletion::FaultBeforeTransfer&&fault.evidence&&
+               fault.evidence->origin==FaultOrigin::ExternalBus&&fault.evidence->whole_scalar_no_commit&&
+               fault.evidence->cpu_physical_address&&read_space&&(req.size==1||req.size==2||req.size==4)&&
+               !req.transfer_type&&!host.physical_writeback&&!host.service_resuming&&!regs.m&&
+               !host.initial_t1&&!regs.t0&&!regs.t1&&!(regs.spcflags&(SPCFLAG_TRACE|SPCFLAG_DOTRACE))) {
+                // Synchronous empty-cache profile: this read has no pending
+                // writebacks. Restore only the genuine restart/fixup state;
+                // the guest handler decides whether to repair and retry.
+                regs.mmu_fault_addr=req.address;regs.mmu_effective_addr=0;
+                regs.mmu_ssw=uae_u16(0x100|(req.size==1?0x20:req.size==2?0x40:0)|req.function_code);
+                regs.wb2_status=regs.wb3_status=0;regs.wb2_address=regs.wb3_data=0;
+                for(auto&word:mmu040_move16)word=0;
+                if(mmu040_movem) {
+                    regs.mmu_ssw|=0x1000;regs.mmu_effective_addr=mmu040_movem_ea;mmu040_movem=0;
+                }
+                const auto ccr=host.initial_ccr;
+                regs.x=ccr&16;regs.n=ccr&8;regs.z=ccr&4;regs.v=ccr&2;regs.c=ccr&1;
+                regs.pc=regs.instruction_pc=host.start_pc;
+                cpu_restore_fixup();host.recovery_pc=regs.instruction_pc;
+                struct Delivery {
+                    Delivery(){host.delivering_fault=true;}
+                    ~Delivery(){host.delivering_fault=false;}
+                } delivery;
+                try {
+                    Exception(2);
+                    return {Exit::Budget,instructions,2,host.start_pc,regs.pc,req.address,req.size,"delivered certified physical read/fetch format7"};
+                } catch(const Stop&nested){return terminal(nested);}
+            }
             if(host.physical_write_exceptions&&host.fault_recovery&&host.deliver_exceptions&&
                fault.in_instruction&&fault.completed_producer&&req.kind==AccessKind::Write&&
                fault.completion==BusCompletion::FaultBeforeTransfer&&fault.evidence&&

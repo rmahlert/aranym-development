@@ -338,12 +338,14 @@ EXTRA_DIST += tools/build-modern040-library.py \
  tests/cpu-core-upgrade/runner/producer-boundary-cases.hpp \
  tests/cpu-core-upgrade/runner/detailed-bus-test.cpp tests/cpu-core-upgrade/runner/detailed-bus-c-test.c \
  tests/cpu-core-upgrade/runner/physical-writeback-test.cpp tools/adapt-modern040-writeback-frame.py \
+ tests/cpu-core-upgrade/runner/physical-read-test.cpp \
  tests/cpu-core-upgrade/runner/moves-trace-test.cpp \
  tests/cpu-core-upgrade/runner/rte-load-test.cpp \
  src/modern040/RTE-LOAD-POLICY.json \
  src/modern040/BITFIELD-WRITE-CONTAINMENT.json \
  src/modern040/DETAILED-BUS-CONTRACT.json \
  src/modern040/PHYSICAL-WRITEBACK-FRAME-CORRECTION.json src/modern040/PHYSICAL-WRITEBACK-POLICY.json \
+ src/modern040/PHYSICAL-READ-POLICY.json \
  tools/adapt-modern040-trace-restart.py src/modern040/TRACE-RESTART-CORRECTION.json \
  src/modern040/MOVES-TRACE-POLICY.json \
  tests/cpu-core-upgrade/runner/movem-fetch-restart-test.cpp \

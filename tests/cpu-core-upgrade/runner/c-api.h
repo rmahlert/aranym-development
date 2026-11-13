@@ -84,6 +84,11 @@ int m040_set_detailed_bus(m040_detailed_bus_callback, void *opaque);
  * only. Unknown/ATC/partial/unfinished/traced/master cases remain terminal.
  * Detailed callback selection alone retains its terminal-failure contract. */
 int m040_physical_write_exceptions(int enabled);
+/* Independent opt-in for certified ExternalBus scalar reads/fetches. The
+ * whole-scalar certificate covers no transfer of any byte of that original
+ * request, including target read side effects; an explicit CPU physical
+ * address is required. ATC/partial/unknown/traced/master remain terminal. */
+int m040_physical_read_exceptions(int enabled);
 /* Genuine 040 restart-aware physical-bus bodies; no paged MMU, FPU/trace
  * continuation, MOVE16 or unknown partial-transfer recovery. */
 int m040_fault_recovery(int enabled);
