@@ -77,9 +77,13 @@ int m040_get_state(struct m040_state *);
 int m040_set_state(const struct m040_state *);
 int m040_set_bus(m040_bus_callback, void *opaque);
 int m040_set_precise_bus(m040_precise_bus_callback, void *opaque);
-/* Detailed failures remain terminal until explicit architectural frame
- * integration is qualified. This call does not enable WB1/WB2 or an MMU. */
+/* Selection alone retains terminal failures and does not enable WB1/WB2
+ * or an MMU. Architectural delivery requires the separate opt-in below. */
 int m040_set_detailed_bus(m040_detailed_bus_callback, void *opaque);
+/* Separate opt-in: explicit ExternalBus, completed whole-scalar final writes
+ * only. Unknown/ATC/partial/unfinished/traced/master cases remain terminal.
+ * Detailed callback selection alone retains its terminal-failure contract. */
+int m040_physical_write_exceptions(int enabled);
 /* Genuine 040 restart-aware physical-bus bodies; no paged MMU, FPU/trace
  * continuation, MOVE16 or unknown partial-transfer recovery. */
 int m040_fault_recovery(int enabled);

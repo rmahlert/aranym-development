@@ -19,6 +19,8 @@ def main():
     source=ROOT/'src/modern040';runner=ROOT/'tests/cpu-core-upgrade/runner'
     pins=json.loads((source/'SOURCE.json').read_text())
     assert sha(source/'integer.cpp')==pins['integer_sha256']
+    frame=json.loads((source/'PHYSICAL-WRITEBACK-FRAME-CORRECTION.json').read_text())
+    assert pins['integer_sha256']==frame['after_sha256']
     restart=json.loads((source/'RESTART-SOURCE.json').read_text())
     assert sha(source/'restart.cpp')==restart['restart_sha256']
     assert sha(source/'include/uae/types.h')==pins['types_sha256']

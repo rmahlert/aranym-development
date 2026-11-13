@@ -1,4 +1,4 @@
-// Mechanically extracted, unmodified pinned WinUAE/UAE generated bodies and helpers.
+// Pinned WinUAE/UAE bodies plus explicit scoped physical-WB1 frame adaptation.
 // Copyright Bernd Schmidt and WinUAE/ARAnyM contributors; retain upstream licenses.
 #include "core.hpp"
 #include <cstdlib>
@@ -1251,11 +1251,11 @@ void Exception_build_stack_frame(uae_u32 oldpc, uae_u32 currpc, uae_u32 ssw, int
 		for (i = 3; i >= 0; i--) {
 			// WB1D/PD0,PD1,PD2,PD3
 			m68k_areg(regs, 7) -= 4;
-			x_put_long(m68k_areg(regs, 7), mmu040_move16[i]);
+			x_put_long(m68k_areg(regs, 7), i==0&&host.physical_writeback?host.physical_writeback->data:mmu040_move16[i]);
 		}
 
 		m68k_areg(regs, 7) -= 4;
-		x_put_long(m68k_areg(regs, 7), 0); // WB1A
+		x_put_long(m68k_areg(regs, 7), host.physical_writeback?host.physical_writeback->address:0); // WB1A
 		m68k_areg(regs, 7) -= 4;
 		x_put_long(m68k_areg(regs, 7), 0); // WB2D
 		m68k_areg(regs, 7) -= 4;
@@ -1269,7 +1269,7 @@ void Exception_build_stack_frame(uae_u32 oldpc, uae_u32 currpc, uae_u32 ssw, int
 		x_put_long(m68k_areg(regs, 7), regs.mmu_fault_addr); // FA
 
 		m68k_areg(regs, 7) -= 2;
-		x_put_word(m68k_areg(regs, 7), 0);
+		x_put_word(m68k_areg(regs, 7), host.physical_writeback?host.physical_writeback->status:0); // WB1S
 		m68k_areg(regs, 7) -= 2;
 		x_put_word(m68k_areg(regs, 7), regs.wb2_status);
 		regs.wb2_status = 0;

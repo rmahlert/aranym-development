@@ -394,9 +394,42 @@ Result run(std::uint64_t budget) {
             return terminal(halted);
         }
         if(event.result.exit==Exit::MemoryFault&&host.bus_fault&&host.bus_fault->detailed_profile) {
+            const auto fault=*host.bus_fault;const auto&req=fault.request;
+            if(host.physical_write_exceptions&&host.fault_recovery&&host.deliver_exceptions&&
+               fault.in_instruction&&fault.completed_producer&&req.kind==AccessKind::Write&&
+               fault.completion==BusCompletion::FaultBeforeTransfer&&fault.evidence&&
+               fault.evidence->origin==FaultOrigin::ExternalBus&&fault.evidence->whole_scalar_no_commit&&
+               fault.evidence->cpu_physical_address&&
+               (req.size==1||req.size==2||req.size==4)&&(req.function_code==1||req.function_code==5)&&
+               !req.transfer_type&&!regs.m&&!mmu040_movem&&!host.initial_t1&&!regs.t0&&!regs.t1&&
+               !(regs.spcflags&(SPCFLAG_TRACE|SPCFLAG_DOTRACE))) {
+                // The pinned completed producers each have one final scalar
+                // write site. Completion is the CPU snapshot before callback,
+                // never a host claim. This is not a multi-entry write queue.
+                const auto physical=*fault.evidence->cpu_physical_address;
+                const auto sizebits=req.size==1?0x20:req.size==2?0x40:0;
+                uae_u32 lanes=0;
+                for(unsigned i=0;i<req.size;++i) {
+                    const auto byte=(fault.data>>(8*(req.size-1-i)))&255;
+                    lanes|=byte<<(24-8*((physical+i)&3));
+                }
+                regs.mmu_fault_addr=req.address;regs.mmu_effective_addr=0;
+                regs.mmu_ssw=uae_u16(sizebits|req.function_code);
+                regs.wb2_status=regs.wb3_status=0;regs.wb2_address=regs.wb3_data=0;
+                for(auto&word:mmu040_move16)word=0;
+                host.recovery_pc=regs.instruction_pc;
+                struct Delivery {
+                    Delivery(PhysicalWriteback wb){host.delivering_fault=true;host.physical_writeback=wb;}
+                    ~Delivery(){host.physical_writeback.reset();host.delivering_fault=false;}
+                } delivery({uae_u16(0x80|sizebits|req.function_code),physical,lanes});
+                try {
+                    Exception(2);
+                    return {Exit::Budget,instructions,2,host.start_pc,regs.pc,req.address,req.size,"delivered explicit completed-scalar physical WB1 format7"};
+                } catch(const Stop&nested){return terminal(nested);}
+            }
             // Per-request origin evidence must never silently fall back to
             // the legacy WB3 profile. Architectural delivery is a separate
-            // integration step; ambiguity and detailed failures stop here.
+            // opt-in above; all other detailed failures stop here.
             auto pending=event;
             pending.result.detail="detailed bus fault recorded; architectural continuation not integrated";
             return terminal(pending);

@@ -109,6 +109,7 @@ struct BusFault {
     bool detailed_profile=false,completed_producer=false;
     std::optional<FaultEvidence> evidence;
 };
+struct PhysicalWriteback { uae_u16 status;uae_u32 address,data; };
 struct Host {
     std::array<uae_u8, 65536> ram{};
     std::vector<Access> accesses;
@@ -121,6 +122,9 @@ struct Host {
     BusAccess bus = nullptr;
     PreciseBusAccess precise_bus = nullptr;
     DetailedBusAccess detailed_bus = nullptr;
+    bool physical_write_exceptions=false;
+    // Present only during the corresponding actual format7 construction.
+    std::optional<PhysicalWriteback> physical_writeback;
     void *bus_opaque = nullptr;
     ResetHardware reset_hardware=nullptr;
     void *reset_opaque=nullptr;

@@ -119,6 +119,11 @@ int m040_set_detailed_bus(m040_detailed_bus_callback function,void *opaque) {
     modern040::host.bus=nullptr;modern040::host.precise_bus=nullptr;
     modern040::host.detailed_bus=function?detailed_bus:nullptr;modern040::host.bus_opaque=nullptr;return M040_OK;
 }
+int m040_physical_write_exceptions(int enabled) {
+    if(busy||modern040::host.service)return M040_BUSY;
+    if(enabled!=0&&enabled!=1)return M040_BAD_ARGUMENT;
+    modern040::host.physical_write_exceptions=enabled;return M040_OK;
+}
 int m040_fault_recovery(int enabled) {
     if(busy||modern040::host.service)return M040_BUSY;
     if(enabled!=0&&enabled!=1)return M040_BAD_ARGUMENT;

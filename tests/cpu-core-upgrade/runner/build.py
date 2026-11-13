@@ -4,6 +4,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -261,13 +262,17 @@ def main():
              'for (const auto &entry : dispatch) { legal[entry.opcode] = true; handlers[entry.opcode] = entry.handler; requires_lc040_probes[entry.opcode]=entry.lc040_probe; legacy_fpu_opcodes[entry.opcode]=entry.legacy_fpu; }',
              'install_private_handlers();',
              '}', f'extern const unsigned supported_opcodes = {count};', '}']
-    (build / "integer.cpp").write_text("\n".join(body) + "\n")
+    spec=importlib.util.spec_from_file_location('physical_wb1',HARNESS.parents[1]/'tools/adapt-modern040-writeback-frame.py')
+    frame_tool=importlib.util.module_from_spec(spec);spec.loader.exec_module(frame_tool)
+    corrected,frame_correction=frame_tool.correct("\n".join(body) + "\n")
+    (build / "integer.cpp").write_text(corrected)
     provenance["runner"] = {"supported_families": len(selected), "supported_opcodes": count,
                             "excluded_families": excluded, "helper_sha256": helper_hashes,
                             "source_sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                                               for p in HERE.iterdir() if p.is_file()},
                             "frame_builder": {"restriction": "exact upstream cases0/1/2/3/4/7 and common writes; other model cases fail closed",
                                               "retained_case_sha256": frame_hashes},
+                            "post_import_frame_correction":frame_correction,
                             "lc040_probes": {"families":len(probe_families),"restriction":"real no-FPU chain; FSAVE/FRESTORE prefixes stop at guard; active arithmetic excluded",
                                              "retained_prefix_sha256":fpu_prefix_hashes},
                             "private_aranym":private_provenance,
