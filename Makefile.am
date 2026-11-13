@@ -313,7 +313,7 @@ EXTRA_DIST = \
 	appimage/functions.sh
 
 # Corresponding source required by the opt-in modern040 build/library tool.
-EXTRA_DIST += tools/build-modern040-library.py \
+EXTRA_DIST += tools/config-locator.cpp tools/build-modern040-library.py \
  src/modern040/native-ea-plan.hpp tests/modern-jit/native-ea-plan-test.cpp \
  tests/modern-jit/native-rmw-plan-test.cpp \
  tests/modern-jit/native-movem-plan-test.cpp \

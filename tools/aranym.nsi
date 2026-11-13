@@ -27,6 +27,9 @@ Var BeforeUninstallProfile
 Var BeforeUninstallApplication
 Var ActiveConfig
 Var HadUserConfig
+Var ActiveShortcut
+Var KeepDesktopShortcut
+Var KeepMenuShortcut
 !ifdef EASY_DRIVES
 Var EasyDataDir
 Var EasyConfigExisted
@@ -167,17 +170,50 @@ Function ".onInit"
     StrCpy $NetworkSave 0
     StrCpy $ActiveConfig "$INSTDIR\aranym\config"
   ${EndIf}
+!ifdef PRESERVE_USER_DATA
+  Call DiscoverActiveConfig
+!endif
   ${MementoSectionRestore}
 FunctionEnd
 
 Function .onVerifyInstDir
+!ifdef PRESERVE_USER_DATA
+  Call DiscoverActiveConfig
+!else
   ${If} $HadUserConfig == 0
   ${AndIf} ${FileExists} "$INSTDIR\aranym\config"
     StrCpy $HadUserConfig 1
     StrCpy $NetworkSave 0
     StrCpy $ActiveConfig "$INSTDIR\aranym\config"
   ${EndIf}
+!endif
 FunctionEnd
+
+!ifdef PRESERVE_USER_DATA
+Function DiscoverActiveConfig
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File /oname=config-locator.exe "config-locator.exe"
+  Delete "$PLUGINSDIR\config-location.ini"
+  ExecWait '$\"$PLUGINSDIR\config-locator.exe$\" $\"$INSTDIR\aranym.exe$\" $\"$PROFILE\aranym\config$\" $\"$DESKTOP$\" $\"$SMPROGRAMS\${NAME}$\" $\"$PLUGINSDIR\config-location.ini$\"' $0
+  ${If} $0 != 0
+    MessageBox MB_ICONSTOP|MB_OK "The existing ARAnyM configuration could not be checked. Installation stopped before changing files." /SD IDOK
+    Abort
+  ${EndIf}
+  ReadINIStr $ActiveConfig "$PLUGINSDIR\config-location.ini" "ARAnyM" "Config"
+  ReadINIStr $ActiveShortcut "$PLUGINSDIR\config-location.ini" "ARAnyM" "Shortcut"
+  ReadINIStr $KeepDesktopShortcut "$PLUGINSDIR\config-location.ini" "ARAnyM" "KeepDesktop"
+  ReadINIStr $KeepMenuShortcut "$PLUGINSDIR\config-location.ini" "ARAnyM" "KeepMenu"
+  ReadINIStr $0 "$PLUGINSDIR\config-location.ini" "ARAnyM" "Existing"
+  StrCpy $HadUserConfig 0
+  StrCpy $NetworkSave 1
+  ${If} $0 == 1
+  ${OrIf} ${FileExists} "$ActiveConfig"
+    StrCpy $HadUserConfig 1
+    StrCpy $NetworkSave 0
+  ${EndIf}
+FunctionEnd
+!endif
 
 Function ".onInstSuccess"
   ${MementoSectionSave}
@@ -231,6 +267,12 @@ Function PageNetwork
   ${If} $HadUserConfig == 0
     SendMessage $NetworkSaveCheck ${BM_SETCHECK} ${BST_CHECKED} 0
   ${EndIf}
+  ${If} $ActiveConfig == ""
+    SendMessage $NetworkSaveCheck ${BM_SETCHECK} ${BST_UNCHECKED} 0
+    EnableWindow $NetworkSaveCheck 0
+    ${NSD_CreateLabel} 0 198u 100% 18u "Your existing shortcuts are kept. Open your usual configuration before changing network settings."
+    Pop $0
+  ${EndIf}
 
   nsDialogs::Show
 FunctionEnd
@@ -258,6 +300,9 @@ FunctionEnd
 ; Defer writes until the default configuration has been installed. Otherwise
 ; a fresh install creates an ETH0-only config and skips all boot settings.
 Function SaveNetworkConfig
+  ${If} $ActiveConfig == ""
+    Return
+  ${EndIf}
   ${If} $NetworkSave != ${BST_CHECKED}
     Return
   ${EndIf}
@@ -272,6 +317,14 @@ Function SaveNetworkConfig
 FunctionEnd
 
 Function LaunchInstalled
+  ${If} $ActiveShortcut != ""
+    ExecShell "open" "$ActiveShortcut"
+    Return
+  ${EndIf}
+  ${If} $ActiveConfig == ""
+    Exec '$\"$INSTDIR\aranym.exe$\"'
+    Return
+  ${EndIf}
   ; Both fresh installs and upgrades use the same normal user config.
   ; Selecting a bundled system must not silently switch the active profile.
   SetOutPath "$INSTDIR"
@@ -725,7 +778,9 @@ ${MementoSection} "Start Menu Shortcuts" SecMenuShortcuts
   SectionIn 1 2
   StrCpy $0 "$SMPROGRAMS\${NAME}"
   ${CreateDirectory} "$0"
-  ${CreateShortcut} "$0\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" '-c $\"$ActiveConfig$\"' "" "" "${NAME}"
+  ${If} $KeepMenuShortcut != 1
+    ${CreateShortcut} "$0\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" '-c $\"$ActiveConfig$\"' "" "" "${NAME}"
+  ${EndIf}
 !ifdef TAP_SETUP
   ${CreateShortcut} "$0\Network adapter setup.lnk" "$INSTDIR\aranym\network\Atari-TAP-Setup.cmd" "" "" "" "Standalone signed TAP setup; no OpenVPN application"
 !endif
@@ -743,7 +798,9 @@ ${MementoSection} "Desktop Shortcuts" SecDesktopShortcuts
   SetOutPath "$INSTDIR"
   DetailPrint "Installing Desktop Shortcuts..."
   SectionIn 1 2
-  ${CreateShortcut} "$DESKTOP\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" '-c $\"$ActiveConfig$\"' "" "" "${NAME}"
+  ${If} $KeepDesktopShortcut != 1
+    ${CreateShortcut} "$DESKTOP\${NAME}${NAMESUFFIX}.lnk" "$INSTDIR\aranym.exe" '-c $\"$ActiveConfig$\"' "" "" "${NAME}"
+  ${EndIf}
 ${MementoSectionEnd}
 !endif
 
