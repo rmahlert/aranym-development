@@ -330,6 +330,7 @@ EXTRA_DIST += tools/build-modern040-library.py \
  tests/cpu-core-upgrade/runner/trace-fault-test.cpp \
  tests/cpu-core-upgrade/runner/irq-restart-test.cpp \
  tests/cpu-core-upgrade/runner/write-producer-test.cpp \
+ tests/cpu-core-upgrade/runner/moves-trace-test.cpp \
  tools/adapt-modern040-trace-restart.py src/modern040/TRACE-RESTART-CORRECTION.json \
  tests/cpu-core-upgrade/runner/movem-fetch-restart-test.cpp \
  tests/cpu-core-upgrade/runner/movem-restart-test.cpp \
