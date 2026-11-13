@@ -329,6 +329,7 @@ EXTRA_DIST += tools/build-modern040-library.py \
  tests/modern-jit/guest/irq-boundary.c tests/modern-jit/guest/irq-boundary.S \
  tests/modern-jit/guest/moves-probe.c tests/modern-jit/guest/moves-probe.S \
  tests/modern-jit/guest/rte-boundary.c tests/modern-jit/guest/rte-boundary.S \
+ tests/modern-jit/guest/bitfield-containment.c tests/modern-jit/guest/bitfield-containment.S \
  tests/cpu-core-upgrade/runner/trace-fault-test.cpp \
  tests/cpu-core-upgrade/runner/irq-restart-test.cpp \
  tests/cpu-core-upgrade/runner/write-producer-test.cpp \
@@ -336,6 +337,7 @@ EXTRA_DIST += tools/build-modern040-library.py \
  tests/cpu-core-upgrade/runner/moves-trace-test.cpp \
  tests/cpu-core-upgrade/runner/rte-load-test.cpp \
  src/modern040/RTE-LOAD-POLICY.json \
+ src/modern040/BITFIELD-WRITE-CONTAINMENT.json \
  tools/adapt-modern040-trace-restart.py src/modern040/TRACE-RESTART-CORRECTION.json \
  src/modern040/MOVES-TRACE-POLICY.json \
  tests/cpu-core-upgrade/runner/movem-fetch-restart-test.cpp \

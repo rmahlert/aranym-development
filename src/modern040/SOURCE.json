@@ -4,7 +4,7 @@
   "integer_sha256": "e4268caf87aca6841be8ff5573cf814b4cdf6dfe5ee9b89c2ea249eb1c719023",
   "types_sha256": "929c3b03e0c58b9cb3c7ec2c13570eb0d9e10d923eaa3a887bd4d85a22ba65a9",
   "runner_inputs": {
-    "tests/cpu-core-upgrade/runner/core.cpp": "b7c1133277920eccb21a4392af9cec53bb5d40d963fe930323622768c364a196",
+    "tests/cpu-core-upgrade/runner/core.cpp": "ec2f07afbe1c6fb2bc9a276338da4bca85bd389f19e9dc5344b6f7c721105254",
     "tests/cpu-core-upgrade/runner/c-api.cpp": "fb4fb9f4885910d8591b7b15ba276f08172334d735abe2df4b21023a9e623f1a",
     "tests/cpu-core-upgrade/runner/core.hpp": "d2307f0e98a4e56b4d6bc72c52ec142b53681bfa81aaa6ac9355f94b9dc0b272",
     "tests/cpu-core-upgrade/runner/c-api.h": "f641c4b77f61fd47d7167fbf352c84fe09174bb28f15d7a84d8cde98bfd798ea",
@@ -130,5 +130,6 @@
   "physical_fault_trace_policies": [
     "MOVES-TRACE-POLICY.json"
   ],
-  "rte_internal_load_policy": "RTE-LOAD-POLICY.json"
+  "rte_internal_load_policy": "RTE-LOAD-POLICY.json",
+  "bitfield_write_containment_policy": "BITFIELD-WRITE-CONTAINMENT.json"
 }

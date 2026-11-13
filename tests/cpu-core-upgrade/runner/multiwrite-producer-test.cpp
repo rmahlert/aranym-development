@@ -8,15 +8,15 @@
 #include <string_view>
 using namespace modern040;
 namespace {
-unsigned checks=0;bool audit=false,controls=false,bad_count=false,bad_pointer=false,bad_data=false,bad_protocol=false;
+unsigned checks=0,contained=0,read_cases=0;bool audit=false,controls=false,containment=false,read_controls=false,bad_terminal=false,bad_count=false,bad_pointer=false,bad_data=false,bad_protocol=false;
 void need(bool ok,const char*why){++checks;if(!ok)throw std::runtime_error(why);}
 struct Event {BusRequest q;uae_u32 value;BusCompletion status;};
 struct Bus {
- std::array<uae_u8,65536> ram{};std::vector<Event> events;unsigned deny=0,attempts=0;
+ std::array<uae_u8,65536> ram{};std::vector<Event> events;unsigned deny=0,attempts=0,failed_events=0;AccessKind deny_kind=AccessKind::Write;State at_fault{};
  void put(unsigned a,unsigned n,unsigned v){for(unsigned i=n;i;--i){ram.at(a+i-1)=uae_u8(v);v>>=8;}}
  unsigned get(unsigned a,unsigned n)const{unsigned v=0;for(unsigned i=0;i<n;++i)v=(v<<8)|ram.at(a+i);return v;}
  static BusCompletion access(void*o,const BusRequest&q,uae_u32&v){auto&b=*static_cast<Bus*>(o);auto status=BusCompletion::Completed;
-  if(q.kind==AccessKind::Write&&q.address>=0x5000&&q.address<0x5010&&++b.attempts==b.deny)status=BusCompletion::FaultBeforeTransfer;
+  if(q.kind==b.deny_kind&&q.address>=0x5000&&q.address<0x5010&&++b.attempts==b.deny){status=BusCompletion::FaultBeforeTransfer;b.at_fault=regs;b.failed_events=b.events.size()+1;}
   else if(q.kind==AccessKind::Write)b.put(q.address,q.size,v);else v=b.get(q.address,q.size);
   b.events.push_back({q,v,status});return status;
  }
@@ -71,9 +71,32 @@ void one(const Form&f,unsigned mode,unsigned ccr){
   need(e.q.kind==(writing?AccessKind::Write:AccessKind::Read)&&e.q.address==0x5000+offset&&e.q.size==size&&e.q.function_code==1&&!e.q.alternate_function_code&&!e.q.transfer_type&&e.value==value&&e.status==BusCompletion::Completed,"independent request order/address/width/FC/value protocol");
  }
  if(controls)return;
+ if(read_controls){
+  for(unsigned index=0;index<reads;++index){
+   Bus b;setup(b,f,mode,ccr);b.deny_kind=AccessKind::Read;b.deny=index+1;
+   const auto fault=run(1);need(fault.exit==Exit::Budget&&fault.vector==2&&regs.pc==0x200&&b.get(0x8fc4+14,2)==0,"bitfield read fault retains genuine format7 without pending write");
+   for(const auto&e:b.events)need(!(e.q.kind==AccessKind::Write&&e.q.address>=0x5000&&e.q.address<0x5010),"no write precedes bitfield read fault");
+   b.put(0x200,2,0x4e73);b.deny=0;
+   need(run(1).exit==Exit::Budget&&regs.pc==0x100&&!inject_interrupt(69,6),"read-fault RTE retains unfinished-instruction IRQ holdoff");
+   need(run(1).exit==Exit::Budget&&data_equal(b,expected)&&(architectural_state().sr&31)==flags,"read-fault explicit retry preserves independent data and flags");
+   need(b.operand_reads()==reads+index,"exact read-prefix and explicit read retry count");
+   need(b.count(AccessKind::Read,0x5200)==(f.ea==2?(bad_pointer?1u:2u):0u),"read-recovery indirect pointer count follows guest RTE");
+   for(const auto&e:writes)need(b.count(AccessKind::Write,e.q.address)==1,"read recovery writes each completed operand exactly once");
+   ++read_cases;
+  }
+  return;
+ }
  for(unsigned index=0;index<writes.size();++index){
   Bus b;need(setup(b,f,mode,ccr)==length,"identical before-fault setup");b.deny=index+1;
   const auto fault=run(1);const unsigned sp=0x9000-60;const auto&failed=writes[index];
+  if(containment&&f.kind<4){
+   need(fault.exit==Exit::MemoryFault&&host.access_fault_latched&&fault.vector==(bad_terminal?3:2)&&fault.address==failed.q.address&&fault.size==failed.q.size,"bitfield write is contained before unsafe guest continuation");
+   need(host.exception_count==0&&b.events.size()==b.failed_events&&regs==b.at_fault&&b.attempts==index+1,"containment adds no frame/transfer/rollback after the failed access");
+   for(unsigned i=0;i<writes.size();++i)need(b.count(AccessKind::Write,writes[i].q.address)==unsigned(i<index),"containment preserves only the already successful prefix");
+   const auto snapshot=regs;const auto requests=b.events.size();
+   for(unsigned budget:{0u,1u,17u}){const auto stopped=run(budget);need(stopped.exit==Exit::Unsupported&&stopped.instructions==0&&regs==snapshot&&b.events.size()==requests,"terminal access-fault latch prevents further instruction execution");}
+   ++contained;continue;
+  }
   need(fault.exit==Exit::Budget&&fault.vector==2&&regs.pc==0x200,"write producer reaches genuine vector2 handler");
   need(b.attempts==index+1&&b.operand_reads()==reads,"no later operand access follows the failed transfer before handler");
   need(b.get(sp,2)==(mode|0x500|ccr)&&b.get(sp+2,4)==0x100&&b.get(sp+6,2)==0x7008,"unfinished producer restores original CCR/PC in format7");
@@ -96,7 +119,7 @@ void one(const Form&f,unsigned mode,unsigned ccr){
 }
 }
 int main(int argc,char**argv){try{
- for(int i=1;i<argc;++i){std::string_view a=argv[i];if(a=="--audit-replay")audit=true;else if(a=="--only-controls")controls=true;else if(a=="--negative-count")bad_count=true;else if(a=="--negative-pointer")bad_pointer=true;else if(a=="--negative-data")bad_data=true;else if(a=="--negative-protocol")bad_protocol=true;else throw std::runtime_error("bad argument");}
+ for(int i=1;i<argc;++i){std::string_view a=argv[i];if(a=="--audit-replay")audit=true;else if(a=="--only-controls")controls=true;else if(a=="--containment")containment=true;else if(a=="--control-read")read_controls=true;else if(a=="--negative-terminal")bad_terminal=true;else if(a=="--negative-count")bad_count=true;else if(a=="--negative-pointer")bad_pointer=true;else if(a=="--negative-data")bad_data=true;else if(a=="--negative-protocol")bad_protocol=true;else throw std::runtime_error("bad argument");}
  install_handlers();install_restart_handlers();
  for(unsigned kind=0;kind<5;++kind)for(unsigned ea=0;ea<(kind==4?1u:5u);++ea)
  for(auto layout:std::array<std::array<unsigned,2>,9>{{{0,1},{0,8},{7,2},{0,16},{7,17},{0,24},{7,25},{0,32},{7,32}}}){
@@ -105,5 +128,8 @@ int main(int argc,char**argv){try{
  }
  for(unsigned i=0;i<5;++i){const auto&st=stats[i];std::cout<<names[i]<<" cases="<<st.cases<<" data-only="<<st.data_only<<" flags-only="<<st.flags_only<<" both="<<st.both<<" duplicated-writes="<<st.duplicate<<" replayed-reads="<<st.reads<<'\n';}
  if(audit&&!controls)need(stats[0].cases&&stats[0].data_only+stats[0].both==stats[0].cases,"before audit exposes BFCHG data corruption in every injected case");
+ if(containment)need(contained==23040,"containment covers every selected bitfield write failure");
+ if(read_controls)need(read_cases==23040,"read controls cover every selected bitfield read failure");
+ std::cout<<"contained="<<contained<<" read-controls="<<read_cases<<'\n';
  std::cout<<"PASS: "<<checks<<" multiwrite producer audit assertions (owned RAM, not hardware qualification)\n";
 }catch(const std::exception&e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}}

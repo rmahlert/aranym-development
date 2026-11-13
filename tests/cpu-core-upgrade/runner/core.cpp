@@ -407,6 +407,19 @@ Result run(std::uint64_t budget) {
         }
         if(event.result.exit==Exit::MemoryFault&&host.fault_recovery&&host.deliver_exceptions&&host.bus_fault) {
             const auto fault=*host.bus_fault;const auto &req=fault.request;
+            const auto family=fault.opcode&0xffc0,ea=fault.opcode&0x3f;
+            const bool bitfield_writer=(family==0xeac0||family==0xecc0||family==0xeec0||family==0xefc0)&&
+                ((ea>=0x10&&ea<=0x17)||(ea>=0x28&&ea<=0x39));
+            if(fault.in_instruction&&host.using_restart&&req.kind==AccessKind::Write&&
+               fault.completion==BusCompletion::FaultBeforeTransfer&&bitfield_writer) {
+                // These imported helpers can write a prefix before failure.
+                // Generic WB3 + original-PC retry can apply a bit operation
+                // twice. Stop until full write completion is integrated; do
+                // not invent another writeback or touch the failed operand.
+                auto contained=event;
+                contained.result.detail="bitfield write continuation is unsupported; unsafe WB3/retry withheld";
+                return terminal(contained);
+            }
             // The old bool callback, partial transfers and unintegrated bodies
             // retain the terminal contract. Never silently re-execute a bus op.
             if(fault.completion==BusCompletion::FaultBeforeTransfer&&
