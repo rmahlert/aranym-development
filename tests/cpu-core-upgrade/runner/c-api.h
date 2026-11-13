@@ -38,6 +38,24 @@ enum m040_bus_completion { M040_BUS_UNKNOWN_FAULT=0, M040_BUS_COMPLETED=1, M040_
 /* BEFORE_TRANSFER certifies no part of THIS transfer reached the target.
  * Earlier accesses in the instruction may have completed. Never retry here. */
 typedef int (*m040_precise_bus_callback)(void *, const struct m040_bus_request *, uint32_t *);
+/* Additive opt-in contract; existing request/options/state layouts stay ABI1.
+ * Return1 for a valid reply,0 for an unknown failure. The library initializes
+ * this reply separately for every request. Metadata describes the current
+ * failed request only; it never certifies CPU instruction completion.
+ */
+#define M040_BUS_DETAIL_VERSION 1u
+enum m040_fault_origin { M040_ORIGIN_UNSPECIFIED=0, M040_ORIGIN_EXTERNAL_BUS=0x40,
+    M040_ORIGIN_ATC_TRANSLATION=0x41 };
+struct m040_bus_detail {
+    uint32_t abi_version, completion, origin;
+    uint32_t whole_scalar_no_commit, has_cpu_physical_address, cpu_physical_address;
+};
+/* whole_scalar_no_commit covers every byte of the original scalar request,
+ * not one failed beat following a completed prefix. CPU physical address is
+ * distinct from a backend's device-decode index. On COMPLETED, fault-only
+ * metadata is ignored. Ambiguous/unknown evidence never implies a stage.
+ */
+typedef int (*m040_detailed_bus_callback)(void *, const struct m040_bus_request *, uint32_t *, struct m040_bus_detail *);
 typedef int (*m040_reset_callback)(void *);
 struct m040_result {
     uint32_t abi_version, exit, vector, instruction_pc, current_pc, address, size;
@@ -59,6 +77,9 @@ int m040_get_state(struct m040_state *);
 int m040_set_state(const struct m040_state *);
 int m040_set_bus(m040_bus_callback, void *opaque);
 int m040_set_precise_bus(m040_precise_bus_callback, void *opaque);
+/* Detailed failures remain terminal until explicit architectural frame
+ * integration is qualified. This call does not enable WB1/WB2 or an MMU. */
+int m040_set_detailed_bus(m040_detailed_bus_callback, void *opaque);
 /* Genuine 040 restart-aware physical-bus bodies; no paged MMU, FPU/trace
  * continuation, MOVE16 or unknown partial-transfer recovery. */
 int m040_fault_recovery(int enabled);

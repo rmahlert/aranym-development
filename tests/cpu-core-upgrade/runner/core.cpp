@@ -29,7 +29,7 @@ namespace {
     throw Stop{{exit, 0, vector, regs.instruction_pc, regs.pc, address, size, detail}};
 }
 bool valid(AccessKind kind, uae_u32 address, unsigned size) {
-    if (!host.bus&&!host.precise_bus&&(address >= host.ram.size() || size > host.ram.size() - address)) return false;
+    if (!host.bus&&!host.precise_bus&&!host.detailed_bus&&(address >= host.ram.size() || size > host.ram.size() - address)) return false;
     if (host.denied && kind == host.denied->kind) {
         const auto first = host.denied->address;
         const auto end = std::uint64_t(first) + host.denied->size;
@@ -131,21 +131,24 @@ void enter_exception(int nr, bool interrupt, unsigned level) {
 }
 uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     uae_u32 value = 0;
+    const auto req=request(kind,address,size);
+    const bool detailed_profile=host.detailed_bus!=nullptr;
     bool ok=valid(kind,address,size);
     if(ok) {
-        const auto req=request(kind,address,size);
         if(!req.transfer_type)(void)mmu_match_ttr(address,bool(req.function_code&4),kind!=AccessKind::Fetch);
     }
-    auto completion=ok?BusCompletion::Completed:BusCompletion::FaultBeforeTransfer;
-    if(ok&&host.precise_bus)completion=host.precise_bus(host.bus_opaque,request(kind,address,size),value);
-    else if(ok&&host.bus)completion=host.bus(host.bus_opaque,request(kind,address,size),value)?BusCompletion::Completed:BusCompletion::UnknownFault;
+    BusOutcome outcome{ok?BusCompletion::Completed:BusCompletion::FaultBeforeTransfer,{}};
+    if(ok&&host.detailed_bus)outcome=host.detailed_bus(host.bus_opaque,req,value);
+    else if(ok&&host.precise_bus)outcome.completion=host.precise_bus(host.bus_opaque,req,value);
+    else if(ok&&host.bus)outcome.completion=host.bus(host.bus_opaque,req,value)?BusCompletion::Completed:BusCompletion::UnknownFault;
+    const auto completion=outcome.completion;
     ok=completion==BusCompletion::Completed;
     if (!ok) {
-        host.bus_fault=BusFault{request(kind,address,size),regs.opcode,host.in_instruction,completion,0,host.rte_internal_load};
+        host.bus_fault=BusFault{req,regs.opcode,host.in_instruction,completion,0,host.rte_internal_load,detailed_profile,false,outcome.evidence};
         if (host.log_accesses) host.accesses.push_back({kind, address, size, 0, false});
         stop(Exit::MemoryFault, 2, address, size, "bus read/fetch fault; access-error continuation not integrated");
     }
-    if(!host.bus&&!host.precise_bus)for (unsigned i = 0; i < size; ++i) value = (value << 8) | host.ram[address + i];
+    if(!host.bus&&!host.precise_bus&&!host.detailed_bus)for (unsigned i = 0; i < size; ++i) value = (value << 8) | host.ram[address + i];
     if(size<4)value&=(uae_u32{1}<<(size*8))-1;
     if (host.log_accesses) host.accesses.push_back({kind, address, size, value, true});
     // Capability check at the real generated RTE's format-word read. No added
@@ -173,21 +176,31 @@ void poke(uae_u32 address, unsigned size, uae_u32 value) {
 }
 void write(uae_u32 address, unsigned size, uae_u32 value) {
     if (size < 4) value &= (uae_u32{1} << (size * 8)) - 1;
+    const auto req=request(AccessKind::Write,address,size);
+    const bool detailed_profile=host.detailed_bus!=nullptr;
+    // Snapshot the actual producer before calling an external bus adapter.
+    // No callback field can claim that the instruction has completed.
+    const bool completed_producer=detailed_profile&&host.in_instruction&&host.using_restart&&!mmu_restart&&
+        !host.exception_depth&&!host.service_resuming;
     bool ok = valid(AccessKind::Write, address, size);
     if(ok) {
-        const auto req=request(AccessKind::Write,address,size);
         if(!req.transfer_type)(void)mmu_match_ttr(address,bool(req.function_code&4),true);
     }
-    auto completion=ok?BusCompletion::Completed:BusCompletion::FaultBeforeTransfer;
-    if(ok&&host.precise_bus)completion=host.precise_bus(host.bus_opaque,request(AccessKind::Write,address,size),value);
-    else if(ok&&host.bus)completion=host.bus(host.bus_opaque,request(AccessKind::Write,address,size),value)?BusCompletion::Completed:BusCompletion::UnknownFault;
+    BusOutcome outcome{ok?BusCompletion::Completed:BusCompletion::FaultBeforeTransfer,{}};
+    if(ok&&host.detailed_bus){
+        auto supplied=value;
+        outcome=host.detailed_bus(host.bus_opaque,req,supplied);
+    }
+    else if(ok&&host.precise_bus)outcome.completion=host.precise_bus(host.bus_opaque,req,value);
+    else if(ok&&host.bus)outcome.completion=host.bus(host.bus_opaque,req,value)?BusCompletion::Completed:BusCompletion::UnknownFault;
+    const auto completion=outcome.completion;
     ok=completion==BusCompletion::Completed;
     if (host.log_accesses) host.accesses.push_back({AccessKind::Write, address, size, value, ok});
     if (!ok) {
-        host.bus_fault=BusFault{request(AccessKind::Write,address,size),regs.opcode,host.in_instruction,completion,value};
+        host.bus_fault=BusFault{req,regs.opcode,host.in_instruction,completion,value,false,detailed_profile,completed_producer,outcome.evidence};
         stop(Exit::MemoryFault, 2, address, size, "bus write fault; access-error continuation not integrated");
     }
-    if(!host.bus&&!host.precise_bus)poke(address, size, value);
+    if(!host.bus&&!host.precise_bus&&!host.detailed_bus)poke(address, size, value);
 }
 void reset() {
     regs = State{}; host = Host{};
@@ -210,7 +223,7 @@ bool cpuboard_fc_check(uae_u32 address,uae_u32 *,int size,bool writing) {
     // no Amiga CPU board. An attached bus receives every FC explicitly;
     // flat RAM supports ordinary user/supervisor data/program spaces only.
     const auto fc=writing?regs.dfc:regs.sfc;
-    if(!host.bus&&!host.precise_bus&&fc!=1&&fc!=2&&fc!=5&&fc!=6)
+    if(!host.bus&&!host.precise_bus&&!host.detailed_bus&&fc!=1&&fc!=2&&fc!=5&&fc!=6)
         stop(Exit::Unsupported,0,address,1u<<size,"flat RAM has no mapping for this alternate function-code space");
     return false;
 }
@@ -379,6 +392,14 @@ Result run(std::uint64_t budget) {
             auto halted=event;halted.result.exit=Exit::DoubleFault;
             halted.result.detail="physical bus error while RTE loads internal state; halted until reset";
             return terminal(halted);
+        }
+        if(event.result.exit==Exit::MemoryFault&&host.bus_fault&&host.bus_fault->detailed_profile) {
+            // Per-request origin evidence must never silently fall back to
+            // the legacy WB3 profile. Architectural delivery is a separate
+            // integration step; ambiguity and detailed failures stop here.
+            auto pending=event;
+            pending.result.detail="detailed bus fault recorded; architectural continuation not integrated";
+            return terminal(pending);
         }
         // Narrow firmware probe profile: these genuine pinned read-only bodies
         // perform the operand read before any flags/registers/PC change. There

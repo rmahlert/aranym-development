@@ -60,6 +60,19 @@ using BusAccess = bool (*)(void *opaque,const BusRequest &,uae_u32 &value);
 // False from the legacy callback does not certify a side-effect-free fault.
 enum class BusCompletion { UnknownFault=0, Completed=1, FaultBeforeTransfer=2 };
 using PreciseBusAccess = BusCompletion (*)(void *,const BusRequest &,uae_u32 &);
+// Explicit per-request evidence. A completion code is not a pipeline origin.
+enum class FaultOrigin : unsigned { Unspecified=0, ExternalBus=0x40, AtcTranslation=0x41 };
+struct FaultEvidence {
+    FaultOrigin origin=FaultOrigin::Unspecified;
+    bool whole_scalar_no_commit=false;
+    std::optional<uae_u32> cpu_physical_address;
+    bool operator==(const FaultEvidence &) const = default;
+};
+struct BusOutcome {
+    BusCompletion completion=BusCompletion::UnknownFault;
+    std::optional<FaultEvidence> evidence;
+};
+using DetailedBusAccess = BusOutcome (*)(void *,const BusRequest &,uae_u32 &);
 using ResetHardware = bool (*)(void *opaque);
 struct Access {
     AccessKind kind;
@@ -90,7 +103,12 @@ struct Frame {
     bool interrupt;
 };
 struct CacheOperation { int cache,scope;uae_u32 address;bool push,invalidate; };
-struct BusFault { BusRequest request;uae_u16 opcode;bool in_instruction;BusCompletion completion;uae_u32 data=0;bool rte_internal_load=false; };
+struct BusFault {
+    BusRequest request;uae_u16 opcode;bool in_instruction;BusCompletion completion;
+    uae_u32 data=0;bool rte_internal_load=false;
+    bool detailed_profile=false,completed_producer=false;
+    std::optional<FaultEvidence> evidence;
+};
 struct Host {
     std::array<uae_u8, 65536> ram{};
     std::vector<Access> accesses;
@@ -102,6 +120,7 @@ struct Host {
     bool lc040_probes = false, capability_latched = false;
     BusAccess bus = nullptr;
     PreciseBusAccess precise_bus = nullptr;
+    DetailedBusAccess detailed_bus = nullptr;
     void *bus_opaque = nullptr;
     ResetHardware reset_hardware=nullptr;
     void *reset_opaque=nullptr;
