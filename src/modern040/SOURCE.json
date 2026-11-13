@@ -1,13 +1,13 @@
 {
   "upstream_pin": "d82bc2549f27943d11dc59482d5388daf1c0f337",
   "scope": "Mechanically extracted modern040 integer bodies/helpers plus explicit C-ABI core; no full MMU or new FPU engine",
-  "integer_sha256": "9f3ca856de77c942f24a7abefda2bc87b7f9d465b37574c6a8e7d7caf3fd6d97",
+  "integer_sha256": "032d6620c568f60aa74acd140335508b0a0a82b268b7b0940b4ab3c68edb735b",
   "types_sha256": "929c3b03e0c58b9cb3c7ec2c13570eb0d9e10d923eaa3a887bd4d85a22ba65a9",
   "runner_inputs": {
-    "tests/cpu-core-upgrade/runner/core.cpp": "f96e313323a7fba88e6e3e7e74d0434b25d0abc27dbd51446713202a6f491883",
-    "tests/cpu-core-upgrade/runner/c-api.cpp": "f4a9839419659b2f27101f38a4c927d5f0911363da4bb1b410a0f2b8372eedab",
-    "tests/cpu-core-upgrade/runner/core.hpp": "ee16f2bd0b8e46622921472427bd63f86e82c20eede72407d6bfd87810bdcea1",
-    "tests/cpu-core-upgrade/runner/c-api.h": "f193212ea68132f6fc7693427866878351761ce7834c812cbcdd6acb6c33b4a9",
+    "tests/cpu-core-upgrade/runner/core.cpp": "789853d7aa20a536b20fe4c040dc6a145dab29ecc45d4d5c27822ea5baf0e039",
+    "tests/cpu-core-upgrade/runner/c-api.cpp": "fee94e6f343eb64d0b97a9f62bca56eb4eb1be53dbf0b95dbac1a571b1caa071",
+    "tests/cpu-core-upgrade/runner/core.hpp": "29fbb6248b3eae19269d79494e2383c7443f0ab5a921c0697382b93c96fd1fe3",
+    "tests/cpu-core-upgrade/runner/c-api.h": "b40204d69d48a811fbe438e6b23f1a2986a751926f2b81daa63b1343b9dbfcd2",
     "tests/cpu-core-upgrade/runner/restart.hpp": "616500f578cab537a2aa91198eec42adad846807e5188240420c98862f814ae4"
   },
   "original_seed_identity": {
@@ -135,5 +135,7 @@
   "detailed_bus_contract": "DETAILED-BUS-CONTRACT.json",
   "physical_writeback_frame_correction": "PHYSICAL-WRITEBACK-FRAME-CORRECTION.json",
   "physical_writeback_policy": "PHYSICAL-WRITEBACK-POLICY.json",
-  "physical_read_policy": "PHYSICAL-READ-POLICY.json"
+  "physical_read_policy": "PHYSICAL-READ-POLICY.json",
+  "physical_bitfield_frame_correction": "PHYSICAL-BITFIELD-FRAME-CORRECTION.json",
+  "bitfield_writeback_policy": "BITFIELD-WRITEBACK-POLICY.json"
 }

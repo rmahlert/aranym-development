@@ -265,6 +265,9 @@ def main():
     spec=importlib.util.spec_from_file_location('physical_wb1',HARNESS.parents[1]/'tools/adapt-modern040-writeback-frame.py')
     frame_tool=importlib.util.module_from_spec(spec);spec.loader.exec_module(frame_tool)
     corrected,frame_correction=frame_tool.correct("\n".join(body) + "\n")
+    spec=importlib.util.spec_from_file_location('bitfield_frame',HARNESS.parents[1]/'tools/adapt-modern040-bitfield-frame.py')
+    bitfield_tool=importlib.util.module_from_spec(spec);spec.loader.exec_module(bitfield_tool)
+    corrected,bitfield_correction=bitfield_tool.correct(corrected)
     (build / "integer.cpp").write_text(corrected)
     provenance["runner"] = {"supported_families": len(selected), "supported_opcodes": count,
                             "excluded_families": excluded, "helper_sha256": helper_hashes,
@@ -273,6 +276,7 @@ def main():
                             "frame_builder": {"restriction": "exact upstream cases0/1/2/3/4/7 and common writes; other model cases fail closed",
                                               "retained_case_sha256": frame_hashes},
                             "post_import_frame_correction":frame_correction,
+                            "post_import_bitfield_frame_correction":bitfield_correction,
                             "lc040_probes": {"families":len(probe_families),"restriction":"real no-FPU chain; FSAVE/FRESTORE prefixes stop at guard; active arithmetic excluded",
                                              "retained_prefix_sha256":fpu_prefix_hashes},
                             "private_aranym":private_provenance,

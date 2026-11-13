@@ -20,7 +20,9 @@ def main():
     pins=json.loads((source/'SOURCE.json').read_text())
     assert sha(source/'integer.cpp')==pins['integer_sha256']
     frame=json.loads((source/'PHYSICAL-WRITEBACK-FRAME-CORRECTION.json').read_text())
-    assert pins['integer_sha256']==frame['after_sha256']
+    bitfield_frame=json.loads((source/'PHYSICAL-BITFIELD-FRAME-CORRECTION.json').read_text())
+    assert frame['after_sha256']==bitfield_frame['before_sha256']
+    assert pins['integer_sha256']==bitfield_frame['after_sha256']
     restart=json.loads((source/'RESTART-SOURCE.json').read_text())
     assert sha(source/'restart.cpp')==restart['restart_sha256']
     assert sha(source/'include/uae/types.h')==pins['types_sha256']

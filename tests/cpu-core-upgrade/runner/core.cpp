@@ -28,6 +28,15 @@ namespace {
 [[noreturn]] void stop(Exit exit, int vector, uae_u32 address, unsigned size, const char *detail) {
     throw Stop{{exit, 0, vector, regs.instruction_pc, regs.pc, address, size, detail}};
 }
+bool bitfield_memory_writer(uae_u16 opcode) {
+    const auto family=opcode&0xffc0,ea=opcode&0x3f;
+    return (family==0xeac0||family==0xecc0||family==0xeec0||family==0xefc0)&&
+        ((ea>=0x10&&ea<=0x17)||(ea>=0x28&&ea<=0x39));
+}
+[[noreturn]] void abort_bitfield_tail(const char*detail) {
+    const auto&request=host.deferred_bitfield->primary.request;
+    throw Stop{{Exit::MemoryFault,0,2,host.start_pc,regs.pc,request.address,request.size,detail}};
+}
 bool valid(AccessKind kind, uae_u32 address, unsigned size) {
     if (!host.bus&&!host.precise_bus&&!host.detailed_bus&&(address >= host.ram.size() || size > host.ram.size() - address)) return false;
     if (host.denied && kind == host.denied->kind) {
@@ -54,6 +63,7 @@ bool translation_enabled() {
     return false;
 }
 void enter_exception(int nr, bool interrupt, unsigned level) {
+    if(host.deferred_bitfield)abort_bitfield_tail("bitfield tail attempted another exception; reset required");
     if (host.halted) stop(Exit::DoubleFault,nr,regs.pc,0,"halted until reset");
     if (!host.deliver_exceptions) {
         stop(Exit::GuestException,nr,nr==3?last_fault_for_exception_3:regs.pc,nr==3?2:0,"terminal guest exception; frame delivery disabled");
@@ -130,6 +140,7 @@ void enter_exception(int nr, bool interrupt, unsigned level) {
 }
 }
 uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
+    if(host.deferred_bitfield)abort_bitfield_tail("bitfield tail attempted a further read/fetch; reset required");
     uae_u32 value = 0;
     const auto req=request(kind,address,size);
     const bool detailed_profile=host.detailed_bus!=nullptr;
@@ -179,11 +190,24 @@ void poke(uae_u32 address, unsigned size, uae_u32 value) {
 void write(uae_u32 address, unsigned size, uae_u32 value) {
     if (size < 4) value &= (uae_u32{1} << (size * 8)) - 1;
     const auto req=request(AccessKind::Write,address,size);
+    if(host.deferred_bitfield) {
+        auto&tail=*host.deferred_bitfield;
+        if(!tail.iu_write&&host.in_instruction&&host.using_restart&&!host.exception_depth&&!host.service_resuming&&
+           regs.opcode==tail.primary.opcode&&(size==1||size==2||size==4)&&
+           (req.function_code==1||req.function_code==5)&&!req.transfer_type) {
+            // Captured at IU, before TTR/translation or any backend request.
+            tail.iu_write=PendingIuWrite{req,value};return;
+        }
+        abort_bitfield_tail("bitfield tail exceeded its proved single unissued write; reset required");
+    }
     const bool detailed_profile=host.detailed_bus!=nullptr;
     // Snapshot the actual producer before calling an external bus adapter.
     // No callback field can claim that the instruction has completed.
     const bool completed_producer=detailed_profile&&host.in_instruction&&host.using_restart&&!mmu_restart&&
         !host.exception_depth&&!host.service_resuming;
+    const bool bitfield_tail=host.bitfield_write_exceptions&&host.physical_write_exceptions&&host.deliver_exceptions&&detailed_profile&&
+        host.in_instruction&&host.using_restart&&mmu_restart&&!host.exception_depth&&!host.service_resuming&&
+        !mmu040_movem&&!host.physical_writeback&&(regs.s||!regs.m)&&bitfield_memory_writer(regs.opcode);
     bool ok = valid(AccessKind::Write, address, size);
     if(ok) {
         if(!req.transfer_type)(void)mmu_match_ttr(address,bool(req.function_code&4),true);
@@ -200,6 +224,12 @@ void write(uae_u32 address, unsigned size, uae_u32 value) {
     if (host.log_accesses) host.accesses.push_back({AccessKind::Write, address, size, value, ok});
     if (!ok) {
         host.bus_fault=BusFault{req,regs.opcode,host.in_instruction,completion,value,false,detailed_profile,completed_producer,outcome.evidence};
+        if(bitfield_tail&&completion==BusCompletion::FaultBeforeTransfer&&outcome.evidence&&
+           outcome.evidence->origin==FaultOrigin::ExternalBus&&outcome.evidence->whole_scalar_no_commit&&
+           outcome.evidence->cpu_physical_address&&(size==1||size==2||size==4)&&
+           (req.function_code==1||req.function_code==5)&&!req.transfer_type) {
+            host.deferred_bitfield=DeferredBitfieldWrite{*host.bus_fault,{}};return;
+        }
         stop(Exit::MemoryFault, 2, address, size, "bus write fault; access-error continuation not integrated");
     }
     if(!host.bus&&!host.precise_bus&&!host.detailed_bus)poke(address, size, value);
@@ -359,6 +389,35 @@ Result run(std::uint64_t budget) {
             } instruction;
             if(private_handler)private_handler(regs.opcode);
             else handler(regs.opcode);
+            if(host.deferred_bitfield) {
+                // Only actual return from the pinned write-only tail proves
+                // completion. The callback's original producer snapshot is
+                // retained unchanged in bus_fault.
+                const auto tail=*host.deferred_bitfield;host.deferred_bitfield.reset();
+                const auto&fault=tail.primary;const auto&req=fault.request;
+                const auto physical=*fault.evidence->cpu_physical_address;
+                const auto sizebits=req.size==1?0x20:req.size==2?0x40:0;
+                uae_u32 lanes=0;
+                for(unsigned i=0;i<req.size;++i)lanes|=((fault.data>>(8*(req.size-1-i)))&255)<<(24-8*((physical+i)&3));
+                regs.mmu_fault_addr=req.address;regs.mmu_effective_addr=0;regs.mmu_ssw=uae_u16(sizebits|req.function_code);
+                regs.wb2_status=regs.wb3_status=0;regs.wb2_address=regs.wb3_data=0;
+                if(tail.iu_write) {
+                    const auto&pending=*tail.iu_write;const auto&queued=pending.request;
+                    regs.wb3_status=uae_u8(0x80|(queued.size==1?0x20:queued.size==2?0x40:0)|queued.function_code);
+                    regs.wb3_data=pending.data;
+                }
+                if(host.initial_t1||(regs.spcflags&SPCFLAG_DOTRACE)) {
+                    regs.mmu_ssw|=0x2000;regs.mmu_effective_addr=host.start_pc;
+                }
+                for(auto&word:mmu040_move16)word=0;
+                mmu_restart=false;regs.instruction_pc=regs.pc;host.recovery_pc=regs.pc;
+                struct Delivery {
+                    Delivery(PhysicalWriteback wb){host.delivering_fault=true;host.physical_writeback=wb;}
+                    ~Delivery(){host.physical_writeback.reset();host.delivering_fault=false;}
+                } delivery({uae_u16(0x80|sizebits|req.function_code),physical,lanes,tail.iu_write});
+                Exception(2);
+                return {Exit::Budget,instructions,2,host.start_pc,regs.pc,req.address,req.size,"delivered completed bitfield tail with physical WB1 and optional unissued IU WB3"};
+            }
             host.rte_internal_load=false; // Subsequent trace delivery is outside RTE's payload load.
             if (translation_enabled())
                 stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "paged MMU or protected transparent-region profile enabled by control write");
@@ -384,6 +443,14 @@ Result run(std::uint64_t budget) {
         // Real MOVES helpers clear their transient flag only on normal return.
         // A host unwind must never leak alternate FC into the next boundary.
         ismoves_nommu=false;
+        if(host.deferred_bitfield) {
+            // A future/unexpected tail path must not acquire more bus effects
+            // or turn an unfinished instruction into a completed frame.
+            const auto primary=host.deferred_bitfield->primary;host.deferred_bitfield.reset();host.bus_fault=primary;
+            host.service.reset();host.access_fault_latched=true;
+            return {Exit::MemoryFault,instructions,2,host.start_pc,regs.pc,primary.request.address,primary.request.size,
+                "bitfield write tail did not complete within its proved bounds; reset required"};
+        }
         const auto terminal=[&](const Stop &stopped) {
             if(stopped.result.exit==Exit::MemoryFault)host.access_fault_latched=true;
             if(stopped.result.exit==Exit::DoubleFault)host.halted=true;

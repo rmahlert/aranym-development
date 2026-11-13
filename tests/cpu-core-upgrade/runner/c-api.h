@@ -89,6 +89,11 @@ int m040_physical_write_exceptions(int enabled);
  * request, including target read side effects; an explicit CPU physical
  * address is required. ATC/partial/unknown/traced/master remain terminal. */
 int m040_physical_read_exceptions(int enabled);
+/* Separate bounded profile for the pinned bitfield memory writers. Requires
+ * the physical write profile and its explicit whole-scalar ExternalBus
+ * certificate. Only a proved write-only CPU tail and one unissued IU write
+ * can finish; this does not enable a generic queue or unknown/partial retry. */
+int m040_bitfield_write_exceptions(int enabled);
 /* Genuine 040 restart-aware physical-bus bodies; no paged MMU, FPU/trace
  * continuation, MOVE16 or unknown partial-transfer recovery. */
 int m040_fault_recovery(int enabled);

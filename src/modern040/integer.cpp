@@ -1,4 +1,4 @@
-// Pinned WinUAE/UAE bodies plus explicit scoped physical-WB1 frame adaptation.
+// Pinned WinUAE/UAE bodies plus explicit scoped physical writeback frame adaptations.
 // Copyright Bernd Schmidt and WinUAE/ARAnyM contributors; retain upstream licenses.
 #include "core.hpp"
 #include <cstdlib>
@@ -1263,7 +1263,7 @@ void Exception_build_stack_frame(uae_u32 oldpc, uae_u32 currpc, uae_u32 ssw, int
 		m68k_areg(regs, 7) -= 4;
 		x_put_long(m68k_areg(regs, 7), regs.wb3_data); // WB3D
 		m68k_areg(regs, 7) -= 4;
-		x_put_long(m68k_areg(regs, 7), regs.mmu_fault_addr); // WB3A
+		x_put_long(m68k_areg(regs, 7), host.physical_writeback&&host.physical_writeback->iu_write?host.physical_writeback->iu_write->request.address:regs.mmu_fault_addr); // WB3A
 
 		m68k_areg(regs, 7) -= 4;
 		x_put_long(m68k_areg(regs, 7), regs.mmu_fault_addr); // FA

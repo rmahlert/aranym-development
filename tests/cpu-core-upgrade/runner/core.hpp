@@ -110,7 +110,15 @@ struct BusFault {
     std::optional<FaultEvidence> evidence;
     bool restartable_read=false;
 };
-struct PhysicalWriteback { uae_u16 status;uae_u32 address,data; };
+struct PendingIuWrite { BusRequest request;uae_u32 data; };
+struct PhysicalWriteback {
+    uae_u16 status;uae_u32 address,data;
+    std::optional<PendingIuWrite> iu_write{};
+};
+struct DeferredBitfieldWrite {
+    BusFault primary;
+    std::optional<PendingIuWrite> iu_write{};
+};
 struct Host {
     std::array<uae_u8, 65536> ram{};
     std::vector<Access> accesses;
@@ -124,6 +132,8 @@ struct Host {
     PreciseBusAccess precise_bus = nullptr;
     DetailedBusAccess detailed_bus = nullptr;
     bool physical_write_exceptions=false,physical_read_exceptions=false;
+    bool bitfield_write_exceptions=false;
+    std::optional<DeferredBitfieldWrite> deferred_bitfield;
     // Present only during the corresponding actual format7 construction.
     std::optional<PhysicalWriteback> physical_writeback;
     void *bus_opaque = nullptr;
