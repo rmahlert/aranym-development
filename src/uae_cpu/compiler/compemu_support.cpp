@@ -94,6 +94,7 @@
 static void build_comp(void);
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 #include "../../modern040/native-ea-plan.hpp"
+#include "modern040_performance.h"
 extern void REGPARAM2 aranym_upstream_modern_step(uae_u32 opcode);
 extern uae_u32 REGPARAM2 aranym_upstream_ram_move_guard(uae_u32 opcode,uae_u32 extensions);
 extern void aranym_upstream_memory_deopt();
@@ -1297,6 +1298,9 @@ static inline void set_dhtu(blockinfo* bi, cpuop_func *dh)
 
 static inline void invalidate_block(blockinfo* bi)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    aranym_modern_perf_event(3);
+#endif
 	int i;
 
 	bi->optlevel=0;
@@ -4861,6 +4865,9 @@ int check_for_cache_miss(void)
 
 static void recompile_block(void)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    aranym_modern_perf_event(1);
+#endif
 	/* An existing block's countdown code has expired. We need to make
 	   sure that execute_normal doesn't refuse to recompile due to a
 	   perceived cache miss... */
@@ -4874,6 +4881,9 @@ static void recompile_block(void)
 }
 static void cache_miss(void)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    aranym_modern_perf_event(2);
+#endif
 	blockinfo*  bi=get_blockinfo_addr(regs.pc_p);
 #if COMP_DEBUG
 	uae_u32     cl=cacheline(regs.pc_p);
@@ -5644,11 +5654,17 @@ void build_comp(void)
 
 static void flush_icache_none(int v)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    aranym_modern_perf_event(6);
+#endif
 	/* Nothing to do.  */
 }
 
 void flush_icache_hard(int v)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    aranym_modern_perf_event(4);
+#endif
 	blockinfo* bi, *dbi;
 
 #ifndef UAE
@@ -5693,6 +5709,9 @@ void flush_icache_hard(int v)
 
 static inline void flush_icache_lazy(int v)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    aranym_modern_perf_event(5);
+#endif
 	blockinfo* bi;
 	blockinfo* bi2;
 
@@ -5899,6 +5918,9 @@ void compile_block(cpu_history *pc_hist, int blocklen, int totcycles)
 #else
 static void compile_block(cpu_history* pc_hist, int blocklen)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    aranym_modern_perf_event(0);
+#endif
 	if (cache_enabled && compiled_code) {
 #endif
 #ifdef PROFILE_COMPILE_TIME

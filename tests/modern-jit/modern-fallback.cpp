@@ -26,6 +26,7 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include "modern040_performance.h"
 extern uae_u32 aranym_jit_alu_probe_begin,aranym_jit_alu_probe_end;
 extern uae_u32 aranym_upstream_alu_count(unsigned);
 extern uae_u32 aranym_jit_ea_probe_begin,aranym_jit_ea_probe_end;
@@ -39,6 +40,10 @@ bool legacy_fpu=false,service_exception_delivered=false;
 bool frame_irq_profile=false,frame_irq_skip_native_notify=false;
 bool diagnostics=false;uint64_t last_exception=0;unsigned service_messages=0,guest_messages=0,guest_traps=0;
 void checked(int,const char *);
+int profiled_get_state(m040_state *state){if(aranym_modern_perf_enabled())++aranym_modern_perf().get_state;return m040_get_state(state);}
+int profiled_set_state(const m040_state *state){if(aranym_modern_perf_enabled())++aranym_modern_perf().set_state;return m040_set_state(state);}
+int profiled_run(uint64_t budget,m040_result *result){AranymModernPerfScope sample(1);return m040_run(budget,result);}
+
 void diagnostic_exception() {
     if(!diagnostics)return;
     m040_exception_event event;checked(m040_get_exception_event(&event),"read exception event");
@@ -57,7 +62,8 @@ void fail(const char *where,const m040_result *result=0) {
 }
 void checked(int status,const char *where){if(status!=M040_OK)fail(where);}
 void from_old(bool preserve_instruction=false) {
-    m040_state state;checked(m040_get_state(&state),"read modern state");MakeSR();
+    AranymModernPerfScope sample(0);
+    m040_state state;checked(profiled_get_state(&state),"read modern state");MakeSR();
     for(unsigned i=0;i<16;++i)state.regs[i]=regs.regs[i];
     state.pc=m68k_getpc();if(!preserve_instruction)state.instruction_pc=state.pc;state.sr=regs.sr;
     state.usp=regs.usp;state.isp=regs.isp;state.msp=regs.msp;
@@ -65,10 +71,11 @@ void from_old(bool preserve_instruction=false) {
     state.stopped=regs.stopped;state.vbr=regs.vbr;state.sfc=regs.sfc;state.dfc=regs.dfc;
     state.cacr=regs.cacr;state.caar=regs.caar;state.itt0=regs.itt0;state.itt1=regs.itt1;state.dtt0=regs.dtt0;state.dtt1=regs.dtt1;
     state.tcr=regs.tc;state.mmusr=regs.mmusr;state.urp=regs.urp;state.srp=regs.srp;
-    checked(m040_set_state(&state),"import original architectural state");
+    checked(profiled_set_state(&state),"import original architectural state");
 }
 void to_old() {
-    m040_state state;checked(m040_get_state(&state),"export modern architectural state");
+    AranymModernPerfScope sample(2);
+    m040_state state;checked(profiled_get_state(&state),"export modern architectural state");
     for(unsigned i=0;i<16;++i)regs.regs[i]=state.regs[i];
     regs.usp=state.usp;regs.isp=state.isp;regs.msp=state.msp;
     regs.s=bool(state.sr&0x2000);regs.m=bool(state.sr&0x1000);regs.sr=state.sr;
@@ -292,6 +299,8 @@ int frame_storage_identity(void*,const m040_bus_request*request,uint64_t*key) {
     return M040_FRAME_UNKNOWN;
 }
 int memory(void *,const m040_bus_request *request,uint32_t *value) {
+    AranymModernPerfScope sample(3);
+    if(aranym_modern_perf_enabled()&&request->kind<3)++aranym_modern_perf().memory[request->kind];
     const int native=native_pc_fixture(request,value);
     if(native>=0)return native;
     const int ea=ea_fixture(request,value);
@@ -365,7 +374,9 @@ void initialize() {
 }
 bool acceptable(const m040_result &result){return result.exit==M040_BUDGET||result.exit==M040_STOPPED||result.exit==M040_HOST_RETURN;}
 void service(m040_result &result) {
+    AranymModernPerfScope sample(4);
     m040_service call;checked(m040_get_service(&call),"read private instruction metadata");
+    if(aranym_modern_perf_enabled()&&call.kind<6)++aranym_modern_perf().services[call.kind];
     const bool trace_service=diagnostics&&call.kind<=M040_NATFEAT_CALL&&(service_messages++<128||call.pc>=0x01000000);
     if(trace_service)std::fprintf(stderr,"MODERN040_SERVICE begin kind=%u pc=%08x stack=%08x d0=%08x sr=%04x\n",call.kind,call.pc,call.stack,regs.regs[0],regs.sr);
     service_exception_delivered=false;
@@ -390,7 +401,7 @@ void service(m040_result &result) {
         default:fail("unknown private instruction kind");
         }
         if(service_exception_delivered) {
-            m040_state state;checked(m040_get_state(&state),"read external service exception target");
+            m040_state state;checked(profiled_get_state(&state),"read external service exception target");
             if(state.pc!=m68k_getpc())fail("external body changed delivered exception target");
             result={};result.abi_version=M040_ABI_VERSION;result.exit=M040_BUDGET;
             result.current_pc=state.pc;result.instruction_pc=state.instruction_pc;
@@ -407,6 +418,7 @@ void service(m040_result &result) {
 }
 }
 void modern040_memory_barrier() {
+    aranym_modern_perf_event(9);
     // Hardware copies can run inside an existing CPU bus callback. The core
     // barrier touches only same-thread provenance, with no resolver/reentry.
     if(initialized&&frame_irq_profile)checked(m040_frame_barrier(),"invalidate direct hardware RAM write provenance");
@@ -429,7 +441,7 @@ void modern040_external_exception(int vector) {
     m040_service pending;const bool service_pending=m040_get_service(&pending)==M040_OK;
     const bool fpu=service_pending&&pending.kind==M040_LEGACY_FPU;
     from_old(fpu);m040_result result;checked(m040_exception(vector,&result),"external exception");to_old();
-    if(service_pending)service_exception_delivered=true;
+    if(service_pending){service_exception_delivered=true;aranym_modern_perf_event(7);}
     if(!acceptable(result))fail("external exception unsupported",&result);
 }
 void modern040_external_interrupt(int vector,unsigned level) {
@@ -442,12 +454,13 @@ void modern040_execute() {
     struct Depth{Depth(){++depth;}~Depth(){--depth;}}guard;
     initialize();from_old();
     for(;;) {
+        AranymModernPerfStep profile_step(false);
         if(diagnostics&&guest_messages<64&&m68k_getpc()>=FastRAMBase&&m68k_getpc()<FastRAMBase+FastRAMSize) {
             // Bounded own-emulator instruction history in mapped guest RAM,
             // never MMIO and no external debugger/process-memory access.
             std::fprintf(stderr,"MODERN040_GUEST pc=%08x op=%04x d0=%08x a7=%08x sr=%04x\n",unsigned(m68k_getpc()),unsigned(phys_get_word(m68k_getpc())),regs.regs[0],regs.regs[15],regs.sr);++guest_messages;
         }
-        m040_result result;checked(m040_run(1,&result),"bounded modern dispatch");attempted+=result.instructions;to_old();
+        m040_result result;checked(profiled_run(1,&result),"bounded modern dispatch");attempted+=result.instructions;to_old();
         if(result.exit==M040_BUDGET&&result.vector==2)
             std::fprintf(stderr,"MODERN040_ACCESS_ERROR_DELIVERED instruction=%08x fault=%08x handler=%08x\n",result.instruction_pc,result.address,result.current_pc);
         if(result.exit==M040_HOST_SERVICE)service(result);
@@ -455,8 +468,8 @@ void modern040_execute() {
         if(diagnostics&&attempted&&attempted%1000000==0)std::fprintf(stderr,"MODERN040_PROGRESS attempts=%llu pc=%08x sr=%04x a7=%08x\n",attempted,unsigned(m68k_getpc()),regs.sr,regs.regs[15]);
         if(!acceptable(result))fail("modern dispatch unsupported",&result);
         if(result.exit==M040_HOST_RETURN||quit_program>0)return;
-        cpu_check_ticks();regs.fault_pc=m68k_getpc();
-        if(SPCFLAGS_TEST(SPCFLAG_ALL_BUT_EXEC_RETURN)&&m68k_do_specialties())return;
+        {AranymModernPerfScope sample(5);cpu_check_ticks();regs.fault_pc=m68k_getpc();
+        if(SPCFLAGS_TEST(SPCFLAG_ALL_BUT_EXEC_RETURN)&&m68k_do_specialties())return;}
         from_old();
     }
 }
@@ -466,9 +479,14 @@ void modern040_execute() {
 void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
     if(depth)fail("nested JIT fallback guest execution not qualified");
     struct Depth{Depth(){++depth;}~Depth(){--depth;}}guard;
-    initialize();from_old();
+    initialize();
+    unsigned profile_opcode=encoded_opcode;
+#if defined(HAVE_GET_WORD_UNSWAPPED) && !defined(FULLMMU)
+    profile_opcode=do_byteswap_16(profile_opcode);
+#endif
+    AranymModernPerfStep profile_step(true,profile_opcode);from_old();
     const uae_u32 old_cacr=regs.cacr;
-    m040_result result;checked(m040_run(1,&result),"modern JIT fallback");
+    m040_result result;checked(profiled_run(1,&result),"modern JIT fallback");
     attempted+=result.instructions;to_old();
     if(result.exit==M040_HOST_SERVICE)service(result);
     // Compiled fallback blocks may link directly to their successor instead
@@ -477,7 +495,7 @@ void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
     // the genuine restarted body consumes MMURESTART and retains IRQ order.
     int completed_return=0;
     if(frame_irq_profile)checked(m040_completed_rte_event(&completed_return),"read actual completed-RTE native boundary");
-    if(result.vector||regs.t1||regs.t0||modern040_restart_pending()||completed_return)SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
+    if(result.vector||regs.t1||regs.t0||modern040_restart_pending()||completed_return){aranym_modern_perf_event(8);SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);}
     diagnostic_exception();
     if(!acceptable(result))fail("modern JIT fallback unsupported",&result);
     // Core cache helpers have empty synchronous interpreter caches. Propagate
