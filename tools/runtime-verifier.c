@@ -77,44 +77,49 @@ static int preflight(const wchar_t *directory, FILE *report)
     return failures ? 20 : 0;
 }
 
-static int manifest_hash(FILE *manifest, const wchar_t *wide_name, char output[65])
-{
-    char hash[65], name[256], wanted[256];
-    if (wcstombs(wanted, wide_name, sizeof(wanted)) == (size_t)-1) return 0;
-    rewind(manifest);
-    while (fscanf(manifest, "%64s %255s", hash, name) == 2) {
-        if (!_stricmp(name, wanted)) {
-            memcpy(output, hash, 65);
-            return 1;
-        }
-    }
-    return 0;
-}
-
 static int verify(const wchar_t *directory, FILE *report, FILE *manifest)
 {
-    size_t index;
-    int failures = 0;
-    wchar_t path[32768];
-    char actual[65], wanted[65];
+    int failures = 0, checked = 0;
+    wchar_t path[32768], wide_name[256];
+    char actual[65], wanted[65], name[256];
     fprintf(report, "ARAnyM final RC3 runtime verification\r\n");
-    for (index = 0; index < sizeof(expected) / sizeof(expected[0]); ++index) {
-        if (!make_path(path, sizeof(path) / sizeof(path[0]), directory, expected[index].name)) return 90;
-        if (!manifest_hash(manifest, expected[index].name, wanted)) {
-            fprintf(report, "MANIFEST-MISSING    %ls\r\n", expected[index].name);
-            ++failures;
-        } else if (!sha256_file(path, actual)) {
-            fprintf(report, "MISSING/UNREADABLE  %ls  windows-error=%lu\r\n", expected[index].name,
+    SetDllDirectoryW(directory);
+    rewind(manifest);
+    while (fscanf(manifest, "%64s %255s", wanted, name) == 2) {
+        HMODULE module;
+        size_t length;
+        if (mbstowcs(wide_name, name, sizeof(wide_name) / sizeof(wide_name[0])) == (size_t)-1) return 91;
+        if (!make_path(path, sizeof(path) / sizeof(path[0]), directory, wide_name)) return 90;
+        ++checked;
+        if (!sha256_file(path, actual)) {
+            fprintf(report, "MISSING/UNREADABLE  %s  windows-error=%lu\r\n", name,
                      (unsigned long)GetLastError());
             ++failures;
         } else if (_stricmp(actual, wanted) != 0) {
-            fprintf(report, "STALE/WRONG         %ls\r\n", expected[index].name);
+            fprintf(report, "STALE/WRONG         %s\r\n", name);
             fprintf(report, "  expected %s\r\n  actual   %s\r\n", wanted, actual);
             ++failures;
         } else {
-            fprintf(report, "FINAL-RC3           %ls\r\n", expected[index].name);
+            fprintf(report, "HASH-OK              %s\r\n", name);
+        }
+        length = strlen(name);
+        if (length < 4 || _stricmp(name + length - 4, ".dll")) continue;
+        SetLastError(0);
+        module = LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+        if (!module) {
+            DWORD error = GetLastError();
+            char message[512] = { 0 };
+            FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                           NULL, error, 0, message, sizeof(message), NULL);
+            fprintf(report, "LOAD-FAIL            %s  windows-error=%lu  %s\r\n",
+                    name, (unsigned long)error, message);
+            ++failures;
+        } else {
+            fprintf(report, "LOAD-OK              %s\r\n", name);
+            FreeLibrary(module);
         }
     }
+    if (!checked) { fprintf(report, "EMPTY MANIFEST\r\n"); ++failures; }
     fprintf(report, failures ? "VERIFICATION FAIL failures=%d\r\n" : "VERIFICATION PASS\r\n", failures);
     return failures ? 30 : 0;
 }

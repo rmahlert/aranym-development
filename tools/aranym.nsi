@@ -565,6 +565,10 @@ ${MementoSectionEnd}
 
 !ifdef PRESERVE_USER_DATA
 Section -verifyruntime
+  ; The x64 executable statically links the GCC and C++ runtimes. Remove
+  ; stale copies left by older packages so they cannot mask what is running.
+  Delete "$INSTDIR\libstdc++-6.dll"
+  Delete "$INSTDIR\libgcc_s_seh-1.dll"
   Delete "$PLUGINSDIR\runtime-verification.txt"
   ExecWait '$\"$PLUGINSDIR\runtime-verifier.exe$\" verify $\"$INSTDIR$\" $\"$PLUGINSDIR\runtime-verification.txt$\" $\"$PLUGINSDIR\runtime-manifest.txt$\"' $0
   CopyFiles /SILENT "$PLUGINSDIR\runtime-verification.txt" "$INSTDIR\ARAnyM-RC3-runtime-verification.txt"
