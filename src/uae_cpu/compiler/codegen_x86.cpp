@@ -115,12 +115,10 @@
  * registers. Also note that these registers are listed in the freescratch
  * function as well. */
 uae_s8 always_used[] = { ESP_INDEX, R12_INDEX, R_MEMSTART, -1 };
-#elif defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+#else
 // ARAnyM's indirect PC conversion also uses R15 as MEMBaseDiff. It must
 // never be allocated to a guest temporary between native block entries.
 uae_s8 always_used[] = { ESP_INDEX, R_MEMSTART, -1 };
-#else
-uae_s8 always_used[] = { ESP_INDEX, -1 };
 #endif
 uae_s8 can_byte[]={0,1,2,3,5,6,7,8,9,10,11,12,13,14,-1};
 uae_s8 can_word[]={0,1,2,3,5,6,7,8,9,10,11,12,13,14,-1};

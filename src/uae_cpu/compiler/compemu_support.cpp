@@ -821,6 +821,7 @@ static bool aranym_guarded_move_enabled() {
 #endif
 }
 static bool aranym_checked_control_opcode(uae_u32 opcode) {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
     static const unsigned mask=[](){
         const char *p=getenv("ARANYM_UPSTREAM_JIT_CONTROL");if(!p)return 0u;
         if(!strcmp(p,"rts"))return 1u;if(!strcmp(p,"jsr-a0"))return 2u;
@@ -829,6 +830,9 @@ static bool aranym_checked_control_opcode(uae_u32 opcode) {
     }();
     return (opcode==0x4e75&&(mask&1))||(opcode==0x4e90&&(mask&2))||
         (opcode==0x4eb9&&(mask&4))||(opcode==0x4ed0&&(mask&8));
+#else
+    (void)opcode;return false;
+#endif
 }
 static bool aranym_rom_code_enabled() {
     static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_ROM_CODE")!=nullptr;
@@ -4101,7 +4105,7 @@ static void freescratch(void)
 #if defined(UAE) && defined(CPU_x86_64)
 			&& i != R12_INDEX
 #endif
-#if defined(CPU_x86_64) && (defined(UAE) || defined(EXPERIMENTAL_UPSTREAM_MODERN040))
+#if defined(CPU_x86_64)
 			&& i != R_MEMSTART
 #endif
 			)
@@ -5114,7 +5118,7 @@ static inline void create_popalls(void)
 	   Loaded from the global variable (not immediate) so it stays correct
 	   if natmem_offset changes across resets. */
 	raw_mov_q_rm(R_MEMSTART, (uintptr)&natmem_offset);
-#elif X86_TARGET_64BIT && defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+#elif X86_TARGET_64BIT
     // Same dedicated-base invariant as UAE, using ARAnyM's actual mapping.
     // Load at entry so remapping/reset cannot leave a compiled immediate stale.
     raw_mov_q_rm(R_MEMSTART, (uintptr)&MEMBaseDiff);
@@ -6227,6 +6231,7 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                     !((checked_instruction.mnemo==i_MOVE||checked_instruction.mnemo==i_MOVEA)&&
                       checked_instruction.smode<=Ad16&&checked_instruction.dmode<=Ad16);
                 const bool guarded_movem=complex_ea&&(checked_instruction.mnemo==i_MVMEL||checked_instruction.mnemo==i_MVMLE);
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
                 const auto tt_code=modern040::native_ea::code_span(instruction_guest_pc,FastRAMBase,FastRAMSize);
                 const auto rom_code=aranym_rom_code_enabled()?modern040::native_ea::code_span(instruction_guest_pc,ROMBase,ROMSize):modern040::native_ea::CodeSpan{};
                 const auto checked_code=tt_code.words?tt_code:rom_code;
@@ -6234,6 +6239,9 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                 // maximum image must fit before the compiler examines words.
                 const unsigned control_words=cft_map(opcode)==0x4eb9?3:1;
                 const bool checked_move_code_ok=!(checked_move||checked_control)||(tt_code.words&&(tt_code.words>=control_words||!checked_control))||rom_code.words==12;
+#else
+                const bool checked_move_code_ok=!checked_move||(instruction_guest_pc>=FastRAMBase&&uint64(instruction_guest_pc)<uint64(FastRAMBase)+FastRAMSize);
+#endif
                 if (comptbl[opcode] && optlev>1 && !unsafe_control_flow && !unsafe_flags && checked_move_code_ok) {
 					failure=0;
 					if (!was_comp) {
