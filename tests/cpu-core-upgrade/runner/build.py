@@ -288,12 +288,30 @@ def main():
     if args.sanitize: flags += ["-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"]
     cxx = os.environ.get("CXX", "c++")
     provenance['runner']['build']={'sanitized':args.sanitize,'compiler':subprocess.check_output([cxx,'--version'],text=True).splitlines()[0],'flags':flags}
+    softfloat_sources=[upstream/'fpp_softfloat.cpp',upstream/'softfloat/softfloat.cpp',
+                       upstream/'softfloat/softfloat_decimal.cpp',upstream/'softfloat/softfloat_fpsp.cpp']
+    provenance['runner']['softfloat']={
+        'source_pin':PIN,
+        'source_sha256':{str(source.relative_to(upstream)):hashlib.sha256(source.read_bytes()).hexdigest()
+                         for source in softfloat_sources},
+        'scope':'pinned 68040 SoftFloat arithmetic backend behind canonical 96-bit adapter; instruction frontend remains separately gated'
+    }
     (build / "runner-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     objects = []
-    for source in (build / "integer.cpp", HARNESS.parents[1]/"src/modern040/restart.cpp", HERE / "core.cpp", HERE / "c-api.cpp"):
+    for source in (build / "integer.cpp", HARNESS.parents[1]/"src/modern040/restart.cpp", HERE / "core.cpp", HERE / "c-api.cpp",HERE/"softfloat-adapter.cpp",HERE/"fpu-frontend.cpp",HERE/"mmu-walk.cpp"):
         obj = build / (source.stem + ".o")
-        command([cxx, *flags, "-c", source, "-o", obj])
+        source_flags=flags
+        if source.name=='softfloat-adapter.cpp':
+            source_flags=[*flags,'-DWITH_SOFTFLOAT','-DUAE_TARGET_UNIX=1','-I'+str(upstream/'od-unix'),'-I'+str(upstream)]
+        command([cxx, *source_flags, "-c", source, "-o", obj])
         objects.append(obj)
+    softfloat_flags=['-std=gnu++17','-O1' if args.sanitize else '-O2','-g','-DFPUEMU','-DWITH_SOFTFLOAT','-DUAE_TARGET_UNIX=1',
+                     '-Wno-c++11-narrowing','-Wno-narrowing','-Wno-unused-value',
+                     '-I'+str(upstream/'od-unix'),'-I'+str(upstream/'od-unix/include'),'-I'+str(upstream),'-I'+str(upstream/'include')]
+    if args.sanitize:softfloat_flags += ['-fsanitize=address,undefined','-fno-sanitize-recover=all','-fno-omit-frame-pointer']
+    for source in softfloat_sources:
+        obj=build/('winuae-'+source.stem+'.o')
+        command([cxx,*softfloat_flags,'-c',source,'-o',obj]);objects.append(obj)
     command(["ar", "rcs", build / "libmodern040-integer.a", *objects])
     cflags=["-std=c11","-O1" if args.sanitize else "-O2","-g","-Wall","-Wextra","-I"+str(HERE)]
     if args.sanitize:cflags += ["-fsanitize=address,undefined","-fno-sanitize-recover=all","-fno-omit-frame-pointer"]
@@ -305,6 +323,10 @@ def main():
                            ("service-tests", "service-test.cpp"),
                            ("platform-contract-tests", "platform-contract-test.cpp"),
                            ("legacy-fpu-tests", "legacy-fpu-test.cpp"),
+                           ("fpu-frontend-tests", "fpu-frontend-test.cpp"),
+                           ("mmu-walk-tests", "mmu-walk-test.cpp"),
+                           ("mmu-integration-tests", "mmu-integration-test.cpp"),
+                           ("softfloat-tests", "softfloat-test.cpp"),
                            ("ttr-tests", "ttr-test.cpp"),
                            ("cache-tests", "cache-test.cpp"),
                            ("read-probe-tests", "read-probe-test.cpp"),
@@ -333,6 +355,10 @@ def main():
     print("REJECTED deliberate --negative-pc by actual private service checker",flush=True)
     command([build / "platform-contract-tests"])
     command([build / "legacy-fpu-tests"])
+    command([build / "fpu-frontend-tests"])
+    command([build / "mmu-walk-tests"])
+    command([build / "mmu-integration-tests"])
+    command([build / "softfloat-tests"])
     result=subprocess.run([str(build / "legacy-fpu-tests"),"--negative-pc"])
     if result.returncode!=1: raise RuntimeError(f"FPU boundary checker returned {result.returncode}, expected1")
     print("REJECTED deliberate legacy FPU --negative-pc by actual boundary checker",flush=True)

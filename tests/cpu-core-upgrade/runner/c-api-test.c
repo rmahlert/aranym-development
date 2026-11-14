@@ -27,6 +27,37 @@ int main(int argc,char **argv) {
     expect(m040_reset(0)==M040_BAD_ARGUMENT,"null options rejected");
     {struct m040_options wrong=options;wrong.abi_version=99;expect(m040_reset(&wrong)==M040_BAD_ARGUMENT,"unknown ABI rejected");}
     expect(m040_reset(&options)==M040_OK,"reset real library");
+    {struct m040_fpu_state fp,roundtrip;unsigned reg,word_index;
+        expect(m040_get_fpu_state(&fp)==M040_OK&&fp.abi_version==M040_FPU_STATE_VERSION,"export canonical FPU state");
+        for(reg=0;reg<8;++reg)for(word_index=0;word_index<3;++word_index)
+            fp.fp[reg][word_index]=0x80000000u^(reg*0x11111111u)^(word_index*0x01020408u);
+        /* Include explicit infinity, a payload NaN and a minimum denormal. */
+        fp.fp[0][0]=0x7fff0000u;fp.fp[0][1]=0x80000000u;fp.fp[0][2]=0;
+        fp.fp[1][0]=0xffff0000u;fp.fp[1][1]=0xc0001234u;fp.fp[1][2]=0x56789abcu;
+        fp.fp[2][0]=0;fp.fp[2][1]=0;fp.fp[2][2]=1;
+        fp.fpcr=0x0000f0f0u;fp.fpsr=0xf0f000ffu;fp.fpiar=0xdeadbee0u;
+        expect(m040_set_fpu_state(&fp)==M040_OK&&m040_get_fpu_state(&roundtrip)==M040_OK&&
+            memcmp(&fp,&roundtrip,sizeof(fp))==0,"canonical FPU bits preserve infinity NaN denormal and controls");
+        fp.abi_version=99;expect(m040_set_fpu_state(&fp)==M040_BAD_ARGUMENT,"unknown FPU state ABI rejected");
+        expect(m040_get_fpu_state(0)==M040_BAD_ARGUMENT&&m040_set_fpu_state(0)==M040_BAD_ARGUMENT,"null FPU state rejected");
+    }
+    {struct m040_fpu_state fp;
+        expect(m040_get_fpu_state(&fp)==M040_OK,"read FPU state for pinned arithmetic");
+        fp.fp[0][0]=0x3fff0000u;fp.fp[0][1]=0xc0000000u;fp.fp[0][2]=0; /* 1.5 */
+        fp.fp[1][0]=0x40000000u;fp.fp[1][1]=0x90000000u;fp.fp[1][2]=0; /* 2.25 */
+        fp.fp[2][0]=fp.fp[2][1]=fp.fp[2][2]=0;fp.fpcr=fp.fpsr=0;
+        expect(m040_set_fpu_state(&fp)==M040_OK&&m040_fpu_binary(M040_FPU_ADD,0,1)==M040_OK&&
+            m040_get_fpu_state(&fp)==M040_OK,"execute pinned SoftFloat through canonical C state");
+        expect(fp.fp[0][0]==0x40000000u&&fp.fp[0][1]==0xf0000000u&&fp.fp[0][2]==0&&fp.fpsr==0,
+            "canonical FP0 and FPSR contain exact 3.75 result");
+        expect(m040_fpu_binary(M040_FPU_DIV,1,2)==M040_OK&&m040_get_fpu_state(&fp)==M040_OK&&
+            fp.fp[1][0]==0x7fff0000u&&fp.fp[1][1]==0&&fp.fp[1][2]==0&&
+            (fp.fpsr&0x02000410u)==0x02000410u,"divide by zero installs infinity condition status and accrued DZ");
+        expect(m040_fpu_sqrt(3,2)==M040_OK&&m040_get_fpu_state(&fp)==M040_OK&&
+            fp.fp[3][0]==0&&fp.fp[3][1]==0&&fp.fp[3][2]==0&&(fp.fpsr&0x04000000u),"sqrt zero updates destination and zero condition");
+        expect(m040_fpu_binary(99,0,0)==M040_BAD_ARGUMENT&&m040_fpu_binary(M040_FPU_ADD,8,0)==M040_BAD_ARGUMENT&&
+            m040_fpu_sqrt(0,8)==M040_BAD_ARGUMENT,"FPU backend bounds rejected");
+    }
     expect(m040_get_state(&state)==M040_OK&&state.abi_version==M040_ABI_VERSION,"export initial architecture");
     state.regs[15]=state.isp=0x9000;state.usp=0x7000;state.msp=0x8000;
     expect(m040_set_state(&state)==M040_OK,"import canonical architecture");
@@ -67,7 +98,8 @@ int main(int argc,char **argv) {
     expect(m040_run(1,&result)==M040_OK&&result.exit==M040_UNSUPPORTED&&result.instructions==0,"host failure latches unsafe continuation");
     expect(m040_reset(&options)==M040_OK&&m040_get_state(&state)==M040_OK,"reset clears failure latch");
     state.tcr=0x8000;expect(m040_set_state(&state)==M040_OK,"control snapshot can represent enabled translation");
-    expect(m040_run(1,&result)==M040_OK&&result.exit==M040_UNSUPPORTED_MMU&&result.instructions==0,"C ABI cannot silently execute unsupported MMU profile");
+    expect(m040_run(1,&result)==M040_OK&&result.exit==M040_MEMORY_FAULT&&result.instructions==0&&result.address==0x100,
+        "C ABI executes connected MMU walk and reports unmapped logical fetch");
     for(i=0;i<sizeof(result.detail);++i)if(result.detail[i]==0)break;
     expect(i<sizeof(result.detail),"bounded terminated result detail");
     expect(m040_reset(&options)==M040_OK&&m040_private_operations(1)==M040_OK&&m040_get_state(&state)==M040_OK,"C private platform extension opt-in");

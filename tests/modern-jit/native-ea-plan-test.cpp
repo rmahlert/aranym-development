@@ -46,6 +46,11 @@ int main(int argc,char **argv){try{
     {Memory m;m.pointers[0x1ffd4]=m.denied;expect(!modern040::native_ea::allowed(image({0x2030,0x1b21,0xffe2}),r,m),"pointer resolves to denied operand");expect(m.peeks.size()==1,"only checked RAM pointer was peeked");}
     {Memory m;expect(modern040::native_ea::allowed(image({0x41f9,0xdead,0xbeef}),r,m),"LEA to unmapped address is valid");expect(!m.saw(0xdeadbeef,4,false),"LEA does not validate nonexistent operand transfer");}
     {Memory m;m.pointers[0x1ffd4]=0xdeadbeef;expect(modern040::native_ea::allowed(image({0x41f0,0x1b21,0xffe2}),r,m),"indirect LEA");expect(m.peeks.size()==1&&!m.saw(0xdeadbeef,4,false),"LEA peeks pointer only");}
+    {Memory m;std::uint32_t target=0;expect(modern040::native_ea::control_address(image({0x4e93}),r,m,target)&&target==r[11],"JSR address-register target");expect(m.peeks.empty()&&m.permits.size()==1,"JSR register target reads code only");}
+    {Memory m;std::uint32_t target=0;expect(modern040::native_ea::control_address(image({0x4eba,0xfffa}),r,m,target)&&target==0x0ffc,"JSR PC-relative target");expect(m.peeks.empty(),"PC-relative JSR has no operand read");}
+    {Memory m;m.pointers[0x1ffd4]=0x30000;std::uint32_t target=0;expect(modern040::native_ea::control_address(image({0x4ef0,0x1b21,0xffe2}),r,m,target)&&target==0x30000,"JMP full-index target");expect(m.peeks==std::vector<std::uint32_t>{0x1ffd4},"JMP peeks only a permitted indirect pointer");}
+    {Memory m;std::uint32_t target=0;expect(modern040::native_ea::control_address(image({0x4878,0x8000}),r,m,target)&&target==0xffff8000,"PEA absolute-short address");expect(!m.saw(target,4,false),"PEA does not read its resulting address");}
+    {Memory m;std::uint32_t target=0;expect(!modern040::native_ea::control_address(image({0x4e9b}),r,m,target),"updating JSR EA rejected");expect(!modern040::native_ea::control_address(image({0x4efc}),r,m,target),"immediate JMP EA rejected");}
     {Memory m;expect(!modern040::native_ea::allowed(image({0x2039,0x1234}),r,m),"truncated instruction deopts");expect(m.peeks.empty(),"truncated absolute has no pointer read");}
     {Memory m;m.denied=0x1000;expect(!modern040::native_ea::allowed(image({0x2030,0x1b21,0xffe2}),r,m),"code permission denied");expect(m.peeks.empty(),"denied code never peeks pointer");}
     expect(r==original,"preflight leaves every register unchanged");

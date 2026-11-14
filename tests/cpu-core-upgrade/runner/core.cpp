@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "core.hpp"
 #include "restart.hpp"
+#include "mmu-walk.hpp"
 #include <limits>
 #include <cstdio>
 #include <cstdlib>
@@ -27,6 +28,16 @@ bool last_writeaccess_for_exception_3 = false, last_notinstruction_for_exception
 int last_fc_for_exception_3 = 0, last_size_for_exception_3 = 0, last_di_for_exception_3 = 0;
 uae_u16 last_sr_for_exception3 = 0;
 namespace {
+bool mmu_table_accessing=false;
+struct AtcLine {bool valid=false;uae_u32 tag=0,physical=0,status=0;};
+std::array<std::array<std::array<AtcLine,4>,16>,2> mmu_atc{};
+std::array<unsigned,2> mmu_atc_next{};
+void flush_atc() {for(auto&type:mmu_atc)for(auto&slot:type)for(auto&line:slot)line={};mmu_atc_next={};}
+void flush_atc_address(uae_u32 address,bool supervisor,bool include_global) {
+    const bool page8k=regs.tcr&0x4000;const auto tag=((supervisor?0x80000000u:0)|(address>>1))&(page8k?0xffff0000u:0xffff8000u);
+    const unsigned index=page8k?(address&0x1e000)>>13:(address&0xf000)>>12;
+    for(auto&type:mmu_atc)for(auto&line:type[index])if(line.valid&&line.tag==tag&&(include_global||!(line.status&0x400)))line={};
+}
 void frame_debug(const char*event,uae_u32 address,unsigned size,std::uint64_t id=0) {
     static const bool enabled=std::getenv("ARANYM_MODERN040_FRAME_IRQ_DIAGNOSTICS")!=nullptr;
     static unsigned messages=0;
@@ -54,6 +65,7 @@ bool valid(AccessKind kind, uae_u32 address, unsigned size) {
     return true;
 }
 BusRequest request(AccessKind kind,uae_u32 address,unsigned size) {
+    if(mmu_table_accessing)return {kind,address,size,7};
     if(!ismoves_nommu)return {kind,address,size,unsigned((regs.s?4:0)|(kind==AccessKind::Fetch?2:1))};
     const auto selected=unsigned(kind==AccessKind::Write?regs.dfc:regs.sfc)&7;
     // MC68040UM Table3-2 (PDF71): MOVES instruction-space references
@@ -62,12 +74,45 @@ BusRequest request(AccessKind kind,uae_u32 address,unsigned size) {
     const unsigned tt=(selected==0||selected==3||selected==4||selected==7)?2:0;
     return {kind,address,size,effective,selected,tt};
 }
-bool translation_enabled() {
-    // Non-protected transparent regions do not change physical addresses.
-    // Protected-TTR fault/RMW semantics remain explicit unsupported coverage.
-    if(regs.tcr&0x8000)return true;
-    for(auto ttr:{regs.itt0,regs.itt1,regs.dtt0,regs.dtt1})if((ttr&0x8004)==0x8004)return true;
-    return false;
+bool mmu_table_access(void*,uae_u32 address,bool writing,uae_u32&value) {
+    struct Scope {Scope(){mmu_table_accessing=true;}~Scope(){mmu_table_accessing=false;}} scope;
+    try {if(writing)write(address,4,value);else value=read(AccessKind::Read,address,4);return true;}
+    catch(const Stop&){return false;}
+}
+uae_u32 translate_address(const BusRequest&logical,uae_u32 supplied=0) {
+    if(mmu_table_accessing||logical.transfer_type)return logical.address;
+    const bool supervisor=logical.function_code&4,data=logical.kind!=AccessKind::Fetch,writing=logical.kind==AccessKind::Write;
+    const auto transparent=mmu_ttr_enabled?mmu_match_ttr(logical.address,supervisor,data):0;
+    if(transparent==2)return logical.address;
+    if(transparent==1&&writing) {
+        regs.mmu_fault_addr=logical.address;regs.mmusr=4;
+        host.mmu_fault=MmuFault{logical,supplied,4};
+        stop(Exit::MemoryFault,2,logical.address,logical.size,"transparent-region write protection fault");
+    }
+    if(!(regs.tcr&0x8000))return logical.address;
+    const bool page8k=regs.tcr&0x4000;const auto page_mask=page8k?0x1fffu:0xfffu;
+    const auto tag=((supervisor?0x80000000u:0)|(logical.address>>1))&(page8k?0xffff0000u:0xffff8000u);
+    const unsigned type=data?1:0,index=page8k?(logical.address&0x1e000)>>13:(logical.address&0xf000)>>12;
+    auto*replacement=&mmu_atc[type][index][mmu_atc_next[type]++&3];
+    for(auto&line:mmu_atc[type][index])if(line.valid&&line.tag==tag) {
+        if(!(line.status&1)||(!supervisor&&(line.status&0x80))||(writing&&(line.status&4))) {
+            regs.mmu_fault_addr=logical.address;regs.mmusr=line.status;
+            host.mmu_fault=MmuFault{logical,supplied,line.status};
+            stop(Exit::MemoryFault,2,logical.address,logical.size,"68040 ATC protection/invalid fault");
+        }
+        if(!writing||(line.status&16))return line.physical|(logical.address&page_mask);
+        replacement=&line;break; // first write rewalks to install descriptor M.
+    }
+    const auto walked=mmu_walk_040(logical.address,supervisor,writing,bool(regs.tcr&0x4000),regs.urp,regs.srp,mmu_table_access,nullptr);
+    regs.mmusr=walked.status;
+    if(!walked.valid) {
+        *replacement={true,tag,0,walked.status}; // 68040 caches invalid/protection translations too.
+        regs.mmu_fault_addr=logical.address;
+        host.mmu_fault=MmuFault{logical,supplied,walked.status};
+        stop(Exit::MemoryFault,2,logical.address,logical.size,"68040 paged translation fault");
+    }
+    *replacement={true,tag,walked.physical&~page_mask,walked.status};
+    return walked.physical;
 }
 FrameStorage frame_storage(const BusRequest&request) {
     if(!host.frame_storage)return {};
@@ -217,15 +262,18 @@ void observe_frame_write(const BusRequest&request) {
 }
 uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     if(host.deferred_bitfield)abort_bitfield_tail("bitfield tail attempted a further read/fetch; reset required");
+    if(!mmu_table_accessing&&(regs.tcr&0x8000)&&size>1) {
+        const auto page_size=(regs.tcr&0x4000)?8192u:4096u;
+        if((address&(page_size-1))+size>page_size) {
+            uae_u32 joined=0;for(unsigned i=0;i<size;++i)joined=(joined<<8)|read(kind,address+i,1);return joined;
+        }
+    }
     uae_u32 value = 0;
-    const auto req=request(kind,address,size);
+    auto req=request(kind,address,size);req.address=translate_address(req);
     const bool detailed_profile=host.detailed_bus!=nullptr;
     const bool restartable_read=detailed_profile&&mmu_restart&&!host.exception_depth&&!host.service_resuming&&
         (host.in_instruction?host.using_restart:kind==AccessKind::Fetch);
-    bool ok=valid(kind,address,size);
-    if(ok) {
-        if(!req.transfer_type)(void)mmu_match_ttr(address,bool(req.function_code&4),kind!=AccessKind::Fetch);
-    }
+    bool ok=valid(kind,req.address,size);
     BusOutcome outcome{ok?BusCompletion::Completed:BusCompletion::FaultBeforeTransfer,{}};
     if(ok&&host.detailed_bus)outcome=host.detailed_bus(host.bus_opaque,req,value);
     else if(ok&&host.precise_bus)outcome.completion=host.precise_bus(host.bus_opaque,req,value);
@@ -234,12 +282,12 @@ uae_u32 read(AccessKind kind, uae_u32 address, unsigned size) {
     ok=completion==BusCompletion::Completed;
     if (!ok) {
         host.bus_fault=BusFault{req,regs.opcode,host.in_instruction,completion,0,host.rte_internal_load,detailed_profile,false,outcome.evidence,restartable_read};
-        if (host.log_accesses) host.accesses.push_back({kind, address, size, 0, false});
+        if (host.log_accesses) host.accesses.push_back({kind, req.address, size, 0, false});
         stop(Exit::MemoryFault, 2, address, size, "bus read/fetch fault; access-error continuation not integrated");
     }
-    if(!host.bus&&!host.precise_bus&&!host.detailed_bus)for (unsigned i = 0; i < size; ++i) value = (value << 8) | host.ram[address + i];
+    if(!host.bus&&!host.precise_bus&&!host.detailed_bus)for (unsigned i = 0; i < size; ++i) value = (value << 8) | host.ram[req.address + i];
     if(size<4)value&=(uae_u32{1}<<(size*8))-1;
-    if (host.log_accesses) host.accesses.push_back({kind, address, size, value, true});
+    if (host.log_accesses) host.accesses.push_back({kind, req.address, size, value, true});
     if(host.completed_frame_irq&&host.using_restart&&host.in_instruction&&regs.opcode==0x4e73&&
        kind==AccessKind::Read&&size==4&&address==regs.regs[15]+2)host.rte_header_pc=value;
     // Capability check at the real generated RTE's format-word read. No added
@@ -269,7 +317,14 @@ void poke(uae_u32 address, unsigned size, uae_u32 value) {
 }
 void write(uae_u32 address, unsigned size, uae_u32 value) {
     if (size < 4) value &= (uae_u32{1} << (size * 8)) - 1;
-    const auto req=request(AccessKind::Write,address,size);
+    if(!mmu_table_accessing&&(regs.tcr&0x8000)&&size>1) {
+        const auto page_size=(regs.tcr&0x4000)?8192u:4096u;
+        if((address&(page_size-1))+size>page_size) {
+            for(unsigned i=0;i<size;++i)write(address+i,1,(value>>(8*(size-1-i)))&255);
+            return;
+        }
+    }
+    auto req=request(AccessKind::Write,address,size);req.address=translate_address(req,value);
     if(host.deferred_bitfield) {
         auto&tail=*host.deferred_bitfield;
         if(!tail.iu_write&&host.in_instruction&&host.using_restart&&!host.exception_depth&&!host.service_resuming&&
@@ -289,10 +344,7 @@ void write(uae_u32 address, unsigned size, uae_u32 value) {
     const bool bitfield_tail=host.bitfield_write_exceptions&&host.physical_write_exceptions&&host.deliver_exceptions&&detailed_profile&&
         host.in_instruction&&host.using_restart&&mmu_restart&&!host.exception_depth&&!host.service_resuming&&
         !mmu040_movem&&!host.physical_writeback&&(regs.s||!regs.m)&&bitfield_memory_writer(regs.opcode);
-    bool ok = valid(AccessKind::Write, address, size);
-    if(ok) {
-        if(!req.transfer_type)(void)mmu_match_ttr(address,bool(req.function_code&4),true);
-    }
+    bool ok = valid(AccessKind::Write, req.address, size);
     BusOutcome outcome{ok?BusCompletion::Completed:BusCompletion::FaultBeforeTransfer,{}};
     if(ok&&host.detailed_bus){
         auto supplied=value;
@@ -302,7 +354,7 @@ void write(uae_u32 address, unsigned size, uae_u32 value) {
     else if(ok&&host.bus)outcome.completion=host.bus(host.bus_opaque,req,value)?BusCompletion::Completed:BusCompletion::UnknownFault;
     const auto completion=outcome.completion;
     ok=completion==BusCompletion::Completed;
-    if (host.log_accesses) host.accesses.push_back({AccessKind::Write, address, size, value, ok});
+    if (host.log_accesses) host.accesses.push_back({AccessKind::Write, req.address, size, value, ok});
     if (!ok) {
         host.bus_fault=BusFault{req,regs.opcode,host.in_instruction,completion,value,false,detailed_profile,completed_producer,outcome.evidence};
         if(bitfield_tail&&completion==BusCompletion::FaultBeforeTransfer&&outcome.evidence&&
@@ -313,10 +365,11 @@ void write(uae_u32 address, unsigned size, uae_u32 value) {
         }
         stop(Exit::MemoryFault, 2, address, size, "bus write fault; access-error continuation not integrated");
     }
-    if(!host.bus&&!host.precise_bus&&!host.detailed_bus)poke(address, size, value);
+    if(!host.bus&&!host.precise_bus&&!host.detailed_bus)poke(req.address, size, value);
 }
 void reset() {
     regs = State{}; host = Host{};
+    flush_atc();mmu_table_accessing=false;
     mmufixup[0]=mmufixup[1]=MmuFixup{};mmu_restart=true;mmu040_movem=0;mmu040_movem_ea=0;
     ismoves_nommu=false;
     mmu_ttr_enabled=mmu_ttr_enabled_ins=mmu_ttr_enabled_data=false;mmu_cache_state=0;
@@ -331,6 +384,33 @@ void reset() {
         movem_index1[i] = bit; movem_index2[i] = 7 - bit; movem_next[i] = i & ~(1 << bit);
     }
 }
+bool execute_mmu_control(uae_u16 opcode) {
+    if((opcode&0xf000)!=0xf000)return false;
+    if(!regs.s){Exception(8);return true;}
+    if((opcode&0x0fe0)==0x0500) {
+        const bool include_global=opcode&8;
+        if(opcode&16)flush_atc();
+        else flush_atc_address(regs.regs[8+(opcode&7)],bool(regs.dfc&4),include_global);
+        regs.pc=regs.instruction_pc+2;return true;
+    }
+    if((opcode&0x0fd8)==0x0548) {
+        const bool writing=(opcode&32)==0,supervisor=regs.dfc&4,data=(regs.dfc&3)!=2;
+        const auto address=regs.regs[8+(opcode&7)];flush_atc_address(address,supervisor,true);
+        const auto transparent=mmu_ttr_enabled?mmu_match_ttr(address,supervisor,data):0;
+        if(transparent)regs.mmusr=transparent==1&&writing?0x800:3;
+        else {
+            const bool page8k=regs.tcr&0x4000;const auto mask=page8k?0x1fffu:0xfffu;
+            const auto walked=mmu_walk_040(address,supervisor,writing,page8k,regs.urp,regs.srp,mmu_table_access,nullptr);
+            regs.mmusr=(walked.valid?(walked.physical&~mask):0)|walked.status;
+            const auto tag=((supervisor?0x80000000u:0)|(address>>1))&(page8k?0xffff0000u:0xffff8000u);
+            const unsigned type=data?1:0,index=page8k?(address&0x1e000)>>13:(address&0xf000)>>12;
+            auto&line=mmu_atc[type][index][mmu_atc_next[type]++&3];
+            line={true,tag,walked.valid?walked.physical&~mask:0,walked.status};
+        }
+        regs.pc=regs.instruction_pc+2;return true;
+    }
+    return false;
+}
 bool cpuboard_fc_check(uae_u32 address,uae_u32 *,int size,bool writing) {
     // This is the platform seam in the real imported MOVES helpers. There is
     // no Amiga CPU board. An attached bus receives every FC explicitly;
@@ -341,9 +421,9 @@ bool cpuboard_fc_check(uae_u32 address,uae_u32 *,int size,bool writing) {
     return false;
 }
 void checkint() { ++host.irq_checks; }
-void mmu_set_super(bool) { stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "MMU privilege adapter unavailable"); }
+void mmu_set_super(bool) {}
 void set_cpu_caches(bool) { ++host.cache_controls; }
-uae_u32 mmu_set_tc(uae_u32) { stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "MMU translation unavailable"); }
+uae_u32 mmu_set_tc(uae_u32 value) { flush_atc();mmu_flush_cache();return value&0xc000; }
 void flush_icache(int) { ++host.cache_controls; }
 void flush_cpu_caches_040_2(int cache,int scope,uae_u32 address,bool push,bool invalidate) {
     // This direct-fetch, synchronous-write interpreter has no resident lines
@@ -438,7 +518,6 @@ Result run(std::uint64_t budget) {
         if (host.access_fault_latched) return {Exit::Unsupported,0,2,regs.instruction_pc,regs.pc,0,0,"access-fault restart requires reset; continuation not integrated"};
         if(host.service)return {Exit::HostService,0,0,regs.instruction_pc,regs.pc,0,0,"private service must complete before fetching another instruction"};
         if (regs.stopped) return {Exit::Stopped, 0};
-        if (translation_enabled()) stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "paged MMU or protected transparent-region fault profile is unsupported");
         while (instructions < budget) {
             // A format7 RTE defers IRQ recognition until the restarted
             // instruction is entered, matching upstream MMURESTART handling.
@@ -446,7 +525,7 @@ Result run(std::uint64_t budget) {
             host.completed_irq_ready=false;
             regs.instruction_pc = regs.pc;
             regs.trace_pc = regs.pc;
-            host.start_pc=regs.pc;host.bus_fault.reset();host.using_restart=false;
+            host.start_pc=regs.pc;host.bus_fault.reset();host.mmu_fault.reset();host.using_restart=false;
             host.rte_header_pc.reset();host.rte_completion.reset();
             host.completed_rte_event=false;
             host.initial_ccr=(unsigned(regs.x)<<4)|(unsigned(regs.n)<<3)|(unsigned(regs.z)<<2)|(unsigned(regs.v)<<1)|unsigned(regs.c);
@@ -458,17 +537,20 @@ Result run(std::uint64_t budget) {
             }
             regs.opcode = read(AccessKind::Fetch, regs.pc, 2);
             ++instructions;
-            if(host.legacy_fpu_operations&&legacy_fpu_opcodes[regs.opcode]) {
+            const bool modern_fpu=host.modern_fpu_operations&&legacy_fpu_opcodes[regs.opcode];
+            if(!modern_fpu&&host.legacy_fpu_operations&&legacy_fpu_opcodes[regs.opcode]) {
                 if(regs.t0||regs.t1||(regs.spcflags&(SPCFLAG_TRACE|SPCFLAG_DOTRACE)))
                     stop(Exit::Unsupported,0,regs.pc,2,"traced legacy FPU instruction boundary not integrated");
                 private_service(ServiceKind::LegacyFpu);
             }
-            if(requires_lc040_probes[regs.opcode]&&!host.lc040_probes)
+            if(!host.modern_fpu_operations&&requires_lc040_probes[regs.opcode]&&!host.lc040_probes)
                 stop(Exit::Unsupported,0,regs.pc,2,"explicit LC040 probe profile required for recognized FPU opcodes");
             host.using_restart=host.fault_recovery&&restart_handlers[regs.opcode];
             const auto handler = host.using_restart?restart_handlers[regs.opcode]:handlers[regs.opcode];
             const auto private_handler=host.private_operations?private_handlers[regs.opcode]:nullptr;
-            if (!handler&&!private_handler) {
+            const bool mmu_control=(regs.opcode&0xf000)==0xf000&&
+                ((regs.opcode&0x0fe0)==0x0500||(regs.opcode&0x0fd8)==0x0548);
+            if (!modern_fpu&&!mmu_control&&!handler&&!private_handler) {
                 if (!legal[regs.opcode]) { op_illg(regs.opcode); continue; }
                 stop(Exit::Unsupported, 0, regs.pc, 2, "legal instruction excluded by current helper/profile inventory");
             }
@@ -478,7 +560,12 @@ Result run(std::uint64_t budget) {
                 Instruction() { host.in_instruction=true; }
                 ~Instruction() { host.in_instruction=host.rte_internal_load=false;host.rte_completion.reset(); }
             } instruction;
-            if(private_handler)private_handler(regs.opcode);
+            if(modern_fpu) {
+                if(!execute_modern_fpu(regs.opcode))
+                    stop(Exit::Unsupported,0,regs.pc,2,"FPU instruction is outside the connected 68040 hardware subset");
+            } else if(mmu_control) {
+                if(!execute_mmu_control(regs.opcode))stop(Exit::UnsupportedMmu,0,regs.pc,2,"unrecognized 68040 MMU control instruction");
+            } else if(private_handler)private_handler(regs.opcode);
             else handler(regs.opcode);
             if(host.deferred_bitfield) {
                 // Only actual return from the pinned write-only tail proves
@@ -511,8 +598,6 @@ Result run(std::uint64_t budget) {
                 return {Exit::Budget,instructions,2,host.start_pc,regs.pc,req.address,req.size,"delivered completed bitfield tail with physical WB1 and optional unissued IU WB3"};
             }
             host.rte_internal_load=false; // Subsequent trace delivery is outside RTE's payload load.
-            if (translation_enabled())
-                stop(Exit::UnsupportedMmu, 0, regs.pc, 0, "paged MMU or protected transparent-region profile enabled by control write");
             if(host.using_restart&&regs.opcode==0x4e73)complete_rte(frames_before);
             if(host.rte_trace_pending) {
                 const auto traced_pc=host.rte_trace_pc;host.rte_trace_pending=false;
@@ -550,6 +635,22 @@ Result run(std::uint64_t budget) {
             if(stopped.result.exit==Exit::Unsupported)host.capability_latched=true;
             auto result=stopped.result;result.instructions=instructions;return result;
         };
+        if(event.result.exit==Exit::MemoryFault&&host.mmu_fault&&host.fault_recovery&&host.deliver_exceptions) {
+            const auto fault=*host.mmu_fault;host.mmu_fault.reset();const auto&req=fault.request;
+            const auto sizebits=req.size==1?0x20:req.size==2?0x40:req.size==16?0x60:0;
+            regs.mmu_fault_addr=req.address;regs.mmu_effective_addr=0;
+            regs.mmu_ssw=uae_u16(0x400|sizebits|req.function_code|(req.kind==AccessKind::Write?0:0x100));
+            regs.wb2_status=0;regs.wb2_address=0;regs.wb3_status=req.kind==AccessKind::Write?uae_u8(0x80|sizebits|req.function_code):0;
+            regs.wb3_data=fault.data;for(auto&word:mmu040_move16)word=0;
+            if(mmu040_movem){regs.mmu_ssw|=0x1000;regs.mmu_effective_addr=mmu040_movem_ea;mmu040_movem=0;}
+            const auto ccr=host.initial_ccr;regs.x=ccr&16;regs.n=ccr&8;regs.z=ccr&4;regs.v=ccr&2;regs.c=ccr&1;
+            regs.pc=regs.instruction_pc=host.start_pc;if(host.using_restart)cpu_restore_fixup();host.recovery_pc=host.start_pc;
+            struct Delivery {Delivery(){host.delivering_fault=true;}~Delivery(){host.delivering_fault=false;}} delivery;
+            try {
+                Exception(2);
+                return Result{Exit::Budget,instructions,2,host.start_pc,regs.pc,req.address,req.size,"delivered 68040 ATC translation/protection format7"};
+            } catch(const Stop&nested){return terminal(nested);}
+        }
         if(event.result.exit==Exit::MemoryFault&&host.bus_fault&&host.bus_fault->rte_internal_load) {
             auto halted=event;halted.result.exit=Exit::DoubleFault;
             halted.result.detail="physical bus error while RTE loads internal state; halted until reset";

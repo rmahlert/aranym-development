@@ -91,13 +91,14 @@
 #include "fpu/fpu.h"
 #include "fpu/flags.h"
 #include "parameters.h"
+#include "modern040_qualified_jit.h"
 static void build_comp(void);
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 #include "../../modern040/native-ea-plan.hpp"
 #include "modern040_performance.h"
 extern void REGPARAM2 aranym_upstream_modern_step(uae_u32 opcode);
 extern uae_u32 REGPARAM2 aranym_upstream_ram_move_guard(uae_u32 opcode,uae_u32 extensions);
-extern uae_u32 REGPARAM2 aranym_upstream_control_guard(uae_u32 opcode,uae_u32 target);
+extern uae_u32 REGPARAM2 aranym_upstream_control_guard(const void *image);
 extern void aranym_upstream_memory_deopt();
 extern uae_u32 REGPARAM2 aranym_upstream_ram_complex_guard(const void *);
 extern uae_u32 REGPARAM2 aranym_upstream_ram_movem_guard(const void *);
@@ -823,19 +824,29 @@ static bool aranym_guarded_move_enabled() {
 static bool aranym_checked_control_opcode(uae_u32 opcode) {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
     static const unsigned mask=[](){
-        const char *p=getenv("ARANYM_UPSTREAM_JIT_CONTROL");if(!p)return 0u;
+        const char *p=getenv("ARANYM_UPSTREAM_JIT_CONTROL");if(!p)return aranym_qualified_jit_default()?127u:0u;
         if(!strcmp(p,"rts"))return 1u;if(!strcmp(p,"jsr-a0"))return 2u;
         if(!strcmp(p,"jsr-abs"))return 4u;if(!strcmp(p,"jmp-a0"))return 8u;
-        return !strcmp(p,"1")||!strcmp(p,"all")?15u:0u;
+        return !strcmp(p,"1")||!strcmp(p,"all")?127u:0u;
     }();
-    return (opcode==0x4e75&&(mask&1))||(opcode==0x4e90&&(mask&2))||
-        (opcode==0x4eb9&&(mask&4))||(opcode==0x4ed0&&(mask&8));
+    const unsigned mode=(opcode>>3)&7,reg=opcode&7;
+    const bool control_ea=mode==2||mode==5||mode==6||(mode==7&&reg<=3);
+    const bool jsr_an=(opcode&0xfff8)==0x4e90;
+    const bool jmp_an=(opcode&0xfff8)==0x4ed0;
+    const bool jsr_other=(opcode&0xffc0)==0x4e80&&control_ea&&!jsr_an&&opcode!=0x4eb9;
+    const bool jmp_other=(opcode&0xffc0)==0x4ec0&&control_ea&&!jmp_an;
+    const bool pea=(opcode&0xffc0)==0x4840&&control_ea;
+    const bool stack_control=pea||
+        (opcode&0xfff8)==0x4e50||(opcode&0xfff8)==0x4e58;
+    return (opcode==0x4e75&&(mask&1))||(jsr_an&&(mask&2))||
+        (opcode==0x4eb9&&(mask&4))||(jmp_an&&(mask&8))||
+        ((jsr_other||jmp_other)&&(mask&16))||(stack_control&&(mask&32));
 #else
     (void)opcode;return false;
 #endif
 }
 static bool aranym_rom_code_enabled() {
-    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_ROM_CODE")!=nullptr;
+    static const bool enabled=aranym_qualified_jit_gate("ARANYM_UPSTREAM_JIT_ROM_CODE");
     return enabled;
 }
 static bool aranym_absw_move_enabled() {
@@ -845,21 +856,18 @@ static bool aranym_absw_move_enabled() {
     return enabled;
 }
 static bool aranym_extended_ea_enabled() {
-    // Remains an explicit development gate until the connected Windows
-    // instruction/state/device corpus qualifies the new addressing families.
-    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_EXTENDED_EA")!=nullptr;
+    // Qualified defaults apply only to the preserving upgrade profile.
+    static const bool enabled=aranym_qualified_jit_gate("ARANYM_UPSTREAM_JIT_EXTENDED_EA");
     return enabled;
 }
 static bool aranym_rmw_enabled() {
-    // Separate default-off qualification gate; this does not admit locked
-    // RMW, multi-transfer instructions or stack/control flow.
-    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_RMW")!=nullptr;
+    // This does not admit locked RMW or multi-transfer instructions.
+    static const bool enabled=aranym_qualified_jit_gate("ARANYM_UPSTREAM_JIT_RMW");
     return enabled;
 }
 static bool aranym_movem_enabled() {
-    // Qualification-only gate. Empty masks and unsafe spans deopt before
-    // any transfer; no integration default changes with this experiment.
-    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_MOVEM")!=nullptr;
+    // Empty masks and unsafe spans deopt before any transfer.
+    static const bool enabled=aranym_qualified_jit_gate("ARANYM_UPSTREAM_JIT_MOVEM");
     return enabled;
 }
 static bool aranym_checked_move_opcode(uae_u32 canonical) {
@@ -867,6 +875,7 @@ static bool aranym_checked_move_opcode(uae_u32 canonical) {
     if(aranym_guarded_move_enabled()) {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
         if(aranym_rmw_enabled()&&modern040::native_ea::single_memory_policy(canonical).size)return true;
+        if(aranym_rmw_enabled()&&modern040::native_ea::memory_bitfield_opcode(canonical))return true;
         if(aranym_movem_enabled()&&modern040::native_ea::multiple_memory_policy(canonical).size)return true;
 #endif
         if(!aranym_extended_ea_enabled()) {
@@ -6237,7 +6246,9 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                 const auto checked_code=tt_code.words?tt_code:rom_code;
                 // Leave short ROM tails to the genuine interpreter: a complete
                 // maximum image must fit before the compiler examines words.
-                const unsigned control_words=cft_map(opcode)==0x4eb9?3:1;
+                // Control EAs can carry a full-format indexed image. Keeping
+                // twelve words avoids compiling across a short backing tail.
+                const unsigned control_words=checked_control?12u:1u;
                 const bool checked_move_code_ok=!(checked_move||checked_control)||(tt_code.words&&(tt_code.words>=control_words||!checked_control))||rom_code.words==12;
 #else
                 const bool checked_move_code_ok=!checked_move||(instruction_guest_pc>=FastRAMBase&&uint64(instruction_guest_pc)<uint64(FastRAMBase)+FastRAMSize);
@@ -6277,9 +6288,14 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                         raw_mov_q_mi((uintptr)&regs.pc_oldp,native_pc);
                         compemu_raw_mov_l_mi((uintptr)&regs.pc,instruction_guest_pc);
                         compemu_raw_mov_l_mi((uintptr)&regs.fault_pc,instruction_guest_pc);
-                        compemu_raw_mov_l_ri(REG_PAR1,cft_map(opcode));
-                        const uae_u32 target=cft_map(opcode)==0x4eb9?do_get_mem_long((uae_u32*)(pc_hist[i].location+1)):0;
-                        compemu_raw_mov_l_ri(REG_PAR2,target);
+                        modern040::native_ea::Image image;
+                        image.pc=instruction_guest_pc;
+                        image.count=checked_code.words;
+                        for(unsigned w=0;w<image.count;++w)image.words[w]=do_get_mem_word(pc_hist[i].location+w);
+                        emit_byte(0xe9);uae_u32 *literal_skip=(uae_u32*)get_target();skip_long();
+                        const void *literal=get_target();emit_block((const uae_u8*)&image,sizeof image);
+                        *literal_skip=get_target()-(uae_u8*)(literal_skip+1);
+                        raw_mov_q_ri(REG_PAR1,(uintptr)literal);
                         raw_dec_sp(STACK_SHADOW_SPACE);compemu_raw_call((uintptr)aranym_upstream_control_guard);raw_inc_sp(STACK_SHADOW_SPACE);
                         compemu_raw_test_l_rr(REG_RESULT,REG_RESULT);compemu_raw_jcc_l_oponly(NATIVE_CC_NE);
                         uae_u32 *safe_control=(uae_u32*)get_target();skip_long();

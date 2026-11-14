@@ -46,17 +46,35 @@ int main(int argc,char**argv){try{
         {image({0x06b0,0,3,0x1b21,0xffe2}),0x30000,4,true,true,1},
         {image({0x0478,1,0x8000}),0xffff8000,2,true,true,0},   // SUBI.W #1,($8000).W
         {image({0x0c7a,1,0xfffa}),0xffe,2,true,false,0},       // CMPI.W immediate precedes PC extension
-        {image({0x0cbb,0,3,0x1b21,0xffe2}),0x3abc0,4,true,false,1}
+        {image({0x0cbb,0,3,0x1b21,0xffe2}),0x3abc0,4,true,false,1},
+        {image({0xd090}),0x20000,4,true,false,0},               // ADD.L (A0),D0
+        {image({0xd150}),0x20000,2,true,true,0},                // ADD.W D0,(A0)
+        {image({0xb0a8,4}),0x20004,4,true,false,0},             // CMP.L 4(A0),D0
+        {image({0xb190}),0x20000,4,true,true,0},                // EOR.L D0,(A0)
+        {image({0xd1e8,4}),0x20004,4,true,false,0},             // ADDA.L 4(A0),A0
+        {image({0xc0e8,4}),0x20004,2,true,false,0},             // MULU.W 4(A0),D0
+        {image({0x0110}),0x20000,1,true,false,0},               // BTST D0,(A0)
+        {image({0x0850,7}),0x20000,1,true,true,0},              // BCHG #7,(A0)
+        {image({0xe3d0}),0x20000,2,true,true,0},                // LSL.W (A0)
+        {image({0x56d0}),0x20000,1,false,true,0},               // SNE (A0)
+        {image({0xe8d0,0x0008}),0x20000,1,true,false,0},        // BFTST (A0){0:8}
+        {image({0xead0,0x07c0}),0x20003,5,true,true,0},         // BFCHG (A0){31:32}
+        {image({0xefd0,0x0841}),0x1ffff,1,true,true,0}          // BFINS (A0){D1:1}, D1=-7
     };
+    unsigned case_index=0;
     for(const auto &c:cases){
         Memory memory;
-        expect(modern040::native_ea::allowed(c.code,regs,memory),"literal memory opcode preflight");
+        if(!modern040::native_ea::allowed(c.code,regs,memory))
+            throw std::runtime_error("literal memory opcode preflight case "+std::to_string(case_index));
+        ++checks;
         const auto address=mode=="--negative-pc-base"&&c.address==0xffe?0xffcu:c.address;
         expect(memory.saw(address,c.size,false)==c.read,"read permission uses actual operand and extension-word PC base");
         expect(memory.saw(c.address,c.size,true)==c.write,"write permission matches instruction direction");
         expect(memory.peeks.size()==c.pointers,"only indirect RAM pointer reads are performed");
+        ++case_index;
     }
-    for(auto opcode:{0x4ad0u,0x003cu,0x007cu,0x5248u,0x4afcu,0x4890u,0x0ad0u,0x4ed0u})
+    for(auto opcode:{0x4ad0u,0x003cu,0x007cu,0x5248u,0x4afcu,0x4890u,0x0ad0u,0x4ed0u,
+                     0xd188u,0x81c0u,0x08c0u,0xe3c0u,0x56c0u})
         expect(!modern040::native_ea::single_memory_policy(opcode).size,"locked/control/MOVEM/CCR/register forms excluded");
     {Memory m;m.denied_write=0x20000;
         expect(modern040::native_ea::allowed(image({0x4410}),regs,m)==(mode=="--negative-write"),"RMW denied write rejects before operand read");

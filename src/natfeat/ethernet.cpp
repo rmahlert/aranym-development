@@ -61,7 +61,7 @@
  * Configuration zone ends
  **************************/
 
-int ETHERNETDriver::pending_interrupts;
+std::atomic<int> ETHERNETDriver::pending_interrupts(0);
 
 int32 ETHERNETDriver::dispatch(uint32 fncode)
 {
@@ -125,7 +125,7 @@ int32 ETHERNETDriver::dispatch(uint32 fncode)
 				int dev_bit = getParameter(0);
 				if (dev_bit == 0) {
 					// dev_bit = 0 means "tell me what devices want me to serve their interrupts"
-					ret = pending_interrupts;
+					ret = pending_interrupts.load(std::memory_order_acquire);
 				}
 				else {
 					// otherwise the set bit means "I'm acknowledging this device's interrupt"
@@ -155,6 +155,11 @@ int32 ETHERNETDriver::dispatch(uint32 fncode)
 					 */
 					pthread_mutex_lock(&handler->intLock);
 					handler->intAcked = true;
+					/* Retire the acknowledged bit before waking the receiver.
+					 * This lets a batching guest distinguish the old packet from
+					 * a newly queued one without waiting for the host thread to run.
+					 */
+					pending_interrupts.fetch_and(~dev_bit, std::memory_order_release);
 					pthread_cond_signal(&handler->intAck);
 					pthread_mutex_unlock(&handler->intLock);
 					ret = 0;
@@ -408,7 +413,7 @@ void ETHERNETDriver::sendPacket(int ethX, memptr buffer, uint32 len)
  */
 bool ETHERNETDriver::init(void)
 {
-	pending_interrupts = 0;
+	pending_interrupts.store(0, std::memory_order_release);
 
 	for(int i=0; i<MAX_ETH; i++) {
 		Handler *handler;
@@ -598,10 +603,11 @@ void *ETHERNETDriver::receiveFunc(void *arg)
 		/* stopThread() cancels us inside the wait, which reacquires intLock */
 		pthread_cleanup_push(unlockIntLock, handler);
 		handler->intAcked = false;
-		pending_interrupts |= (1 << handler->ethX);
+		pending_interrupts.fetch_or(1 << handler->ethX, std::memory_order_release);
 		triggerInterrupt();
 		// Wait for interrupt acknowledge (m68k network driver read interrupt to finish)
-		D(bug("ETH%d: waiting for int acknowledge with pending irq mask %02x", handler->ethX, pending_interrupts));
+		D(bug("ETH%d: waiting for int acknowledge with pending irq mask %02x", handler->ethX,
+			pending_interrupts.load(std::memory_order_acquire)));
 		bool reported = false;
 		while (!handler->intAcked) {
 			struct timeval now;
@@ -625,9 +631,13 @@ void *ETHERNETDriver::receiveFunc(void *arg)
 			}
 			triggerInterrupt();
 		}
-		pending_interrupts &= ~(1 << handler->ethX);
+		/* XIF_IRQ clears this synchronously.  Keep the operation idempotent
+		 * for shutdown/error paths and older guests.
+		 */
+		pending_interrupts.fetch_and(~(1 << handler->ethX), std::memory_order_release);
 		pthread_cleanup_pop(1);
-		D(bug("ETH%d: int acknowledged, pending irq mask now %02x", handler->ethX, pending_interrupts));
+		D(bug("ETH%d: int acknowledged, pending irq mask now %02x", handler->ethX,
+			pending_interrupts.load(std::memory_order_acquire)));
 	}
 
 	return 0;

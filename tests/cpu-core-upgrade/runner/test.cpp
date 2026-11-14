@@ -66,9 +66,11 @@ void privilege_and_control() {
                "invalid 040 MOVEC register must report illegal vector4");
     }
     reset(); stacks(); word(0x100, 0x4e7b); word(0x102, 3); regs.regs[0] = 0x8000;
-    expect(run(1).exit == Exit::UnsupportedMmu && regs.tcr == 0x8000, "enabling translation must leave explicit unsupported exit");
+    expect(run(1).exit == Exit::Budget && regs.tcr == 0x8000 && regs.pc==0x104, "MOVEC enables the connected paged MMU at its retirement boundary");
     const auto access_count = host.accesses.size();
-    expect(run(1).instructions == 0 && host.accesses.size() == access_count, "unsupported MMU state must prevent resumed instruction fetch");
+    const auto missing_table=run(1);
+    expect(missing_table.exit==Exit::MemoryFault&&missing_table.instructions==0&&missing_table.address==0x104&&host.accesses.size()>access_count,
+           "enabled MMU walks tables and reports the next unmapped logical fetch");
 }
 void bounded_program() {
     reset(); stacks();

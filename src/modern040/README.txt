@@ -4,12 +4,14 @@ This directory supplies the pinned generated integer source and its required
 type header. SOURCE.json binds them to the independently qualified core/API
 sources under tests/cpu-core-upgrade/runner. Bodies/helpers come from WinUAE
 d82bc254. The native frontend selects the corresponding restart-aware 040
-integer bodies over an explicit physical bus. Paged MMU translation is separate.
-Original ARAnyM IEEE FPU service remains the backend.
-This is not an assertion that every modern WinUAE CPU/MMU/FPU feature is ported.
+integer bodies over an explicit physical bus. The same archive owns the 68040
+page-table walker/ATCs and canonical 96-bit FPU state. FPU arithmetic,
+including software completion of 68881 math operations, uses the pinned WinUAE
+SoftFloat backend; enabled arithmetic conditions deliver vectors 48--54.
 
 Build the target library from source, without an Amiga chipset dependency:
-  python3 tools/build-modern040-library.py --output /ABS/modern-core-build
+  python3 tools/build-modern040-library.py --output /ABS/modern-core-build \
+    --upstream /ABS/WinUAE-at-d82bc254
 For Windows supply --cxx x86_64-w64-mingw32-g++ --ar x86_64-w64-mingw32-ar.
 The resulting provenance records exact compiler/commands/source/object hashes.
 
@@ -25,8 +27,10 @@ This option is off by default. Its default profile is
 aranym-modern040-experimental, separate from normal ARAnyM. An alternative
 relative --with-modern040-profile must end in an aranym-modern040- name;
 absolute paths, parent traversal and legacy profile names are refused.
-The normal opt-in build enables the original IEEE FPU service automatically.
-It supports the currently qualified Linux/MinGW x86-64 JIT/no-MMU profile;
+The normal opt-in build selects the modern SoftFloat FPU frontend. Set
+ARANYM_MODERN040_LEGACY_FPU only for an explicit legacy comparison.
+It supports the qualified Linux/MinGW x86-64 JIT profile; legacy ARAnyM
+FULLMMU remains disabled because the modern core owns guest paging;
 unsupported combinations fail at configure time. The limited checked-memory
 helper pilot remains off unless explicitly selected for its separate tests.
 Its qualified scalar EAs are (An) and (d16,An), MOVE B/W/L Dn reads/writes,
@@ -150,12 +154,36 @@ The test-only ordered bus fixture records attempted operand transfers and an
 explicit BEFORE_TRANSFER failure. A partial-store discard test does not certify
 write restart, arbitrary device failure atomicity, paged MMU or FPU continuation.
 
-Native Windows/HighWire acceptance, broader memory
-translation, modern MMU/FPU engines, ARM/macOS and fair benchmarks retain
+Native Windows/HighWire acceptance, ARM/macOS and fair benchmarks retain
 their own gates. Do not replace an installed/default emulator based only on
-the experimental option building successfully.
+the cross-build succeeding.
 
 Windows installer builds may explicitly use --enable-modern040-upgrade to
 reuse the standard aranym profile. This requires modern040-core and rejects
 custom profiles/non-Windows hosts. The normal experimental default remains
 isolated. An upgrade must preserve existing configs, NVRAM and drive data.
+
+RC3 update1 qualifies the existing guarded extended EA, ordinary memory ALU,
+MOVEM, read-only ROM-code and narrow control-flow paths together. The preserving
+Windows upgrade build enables these five families by default; the development
+profile described above keeps its original opt-in defaults. Each environment
+gate accepts an explicit 0 to disable that family for paired/negative tests.
+CONTROL additionally accepts the original individual selectors or all/1.
+Cached-import and the standalone abs.w trial remain off in every build.
+
+The x64 native entry now initializes and reserves R15 with the actual current
+MEMBaseDiff, preserving Win64 callee-save behavior. Four guarded upstream
+control emitters are admitted: RTS, JSR(A0), JSR abs.l and JMP(A0). Stack spans
+must be permitted ordinary RAM and targets even, backed and readable; unsafe
+forms deopt before a stack write. RTE/TRAP retain the interpreter boundary.
+ROM admission uses a checked 64-bit code span; short end-of-ROM images deopt.
+Instruction permissions remain separate from operand permissions, so allowing
+ROM code never permits a device operand or an extra device pointer read.
+
+The qualification record must bind the exact candidate to core/C-ABI checks,
+native/Windows planner controls, full guest state/flags/device/fault/trace/IRQ/
+FPU corpora, both closed MiNT/fVDI/font/shutdown JIT modes, and installer data
+preservation. Windows PE execution under Wine is distinct from native laptop
+acceptance. Paged MMU and the modern FPU are included in the target archive.
+ARM and unknown partial-device continuation remain separate. The native
+display capture remains independent.

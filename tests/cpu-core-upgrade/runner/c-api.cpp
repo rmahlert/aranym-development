@@ -2,6 +2,7 @@
 #include "c-api.h"
 #include "core.hpp"
 #include "restart.hpp"
+#include "softfloat-adapter.hpp"
 #include <cstring>
 namespace {
 bool busy=false;
@@ -85,13 +86,21 @@ int m040_get_state(m040_state *out) {
 #undef EXPORT
         return M040_OK;}catch(...){return failed();}
 }
+int m040_get_fpu_state(m040_fpu_state *out) {
+    if(busy)return M040_BUSY;
+    if(!out)return M040_BAD_ARGUMENT;
+    try{Boundary guard;const auto state=modern040::architectural_state();*out={};out->abi_version=M040_FPU_STATE_VERSION;
+        for(unsigned reg=0;reg<8;++reg)for(unsigned word=0;word<3;++word)out->fp[reg][word]=state.fp[reg][word];
+        out->fpcr=state.fpcr;out->fpsr=state.fpsr;out->fpiar=state.fpiar;return M040_OK;
+    }catch(...){return failed();}
+}
 int m040_set_state(const m040_state *in) {
     if(busy)return M040_BUSY;
     if(!in||in->abi_version!=M040_ABI_VERSION||in->stopped>2||in->sfc>7||in->dfc>7)return M040_BAD_ARGUMENT;
     const auto bank=!(in->sr&0x2000)?in->usp:(in->sr&0x1000)?in->msp:in->isp;
     if(in->regs[15]!=bank)return M040_BAD_ARGUMENT;
     if(modern040::host.service&&modern040::host.service->kind!=modern040::ServiceKind::LegacyFpu&&in->pc!=modern040::host.service->pc)return M040_BAD_ARGUMENT;
-    try{Boundary guard;auto &state=modern040::regs;
+    try{Boundary guard;auto &state=modern040::regs;const auto old_tcr=state.tcr,old_urp=state.urp,old_srp=state.srp;
         // Set both old/new bank selectors before the real SR helper so it does
         // not replace the caller's already canonical active A7 with old state.
         state.s=bool(in->sr&0x2000);state.m=bool(in->sr&0x1000);state.sr=in->sr;
@@ -101,7 +110,49 @@ int m040_set_state(const m040_state *in) {
         IMPORT(vbr);IMPORT(sfc);IMPORT(dfc);IMPORT(cacr);IMPORT(caar);IMPORT(itt0);IMPORT(itt1);IMPORT(dtt0);IMPORT(dtt1);
         IMPORT(tcr);IMPORT(mmusr);IMPORT(urp);IMPORT(srp);IMPORT(buscr);IMPORT(pcr);
 #undef IMPORT
-        modern040::MakeFromSR();modern040::mmu_tt_modified();return M040_OK;}catch(...){return failed();}
+        modern040::MakeFromSR();if(state.tcr!=old_tcr||state.urp!=old_urp||state.srp!=old_srp)state.tcr=modern040::mmu_set_tc(state.tcr);
+        modern040::mmu_tt_modified();return M040_OK;}catch(...){return failed();}
+}
+int m040_set_fpu_state(const m040_fpu_state *in) {
+    if(busy)return M040_BUSY;
+    if(!in||in->abi_version!=M040_FPU_STATE_VERSION)return M040_BAD_ARGUMENT;
+    try{Boundary guard;auto &state=modern040::regs;
+        for(unsigned reg=0;reg<8;++reg)for(unsigned word=0;word<3;++word)state.fp[reg][word]=in->fp[reg][word];
+        state.fpcr=in->fpcr;state.fpsr=in->fpsr;state.fpiar=in->fpiar;return M040_OK;
+    }catch(...){return failed();}
+}
+static void install_fpu_result(unsigned destination,const modern040::FpuValue &value) {
+    auto &state=modern040::regs;
+    state.fp[destination]=value.words;
+    const auto exponent=(value.words[0]>>16)&0x7fff;
+    const auto significand=(std::uint64_t(value.words[1])<<32)|value.words[2];
+    const bool nan=exponent==0x7fff&&(significand<<1)!=0;
+    const bool infinity=exponent==0x7fff&&(significand<<1)==0;
+    const bool zero=exponent==0&&significand==0;
+    const std::uint32_t condition=(value.words[0]&0x80000000?0x08000000u:0)|
+        (zero?0x04000000u:0)|(infinity?0x02000000u:0)|(nan?0x01000000u:0);
+    const auto status=value.status&0x0000ff00u;
+    std::uint32_t accrued=state.fpsr&0xf8u;
+    if(status&0x00006000u)accrued|=0x80; // SNAN/OPERR -> IOP
+    if(status&0x00001000u)accrued|=0x40;
+    if(status&0x00000800u)accrued|=0x20;
+    if(status&0x00000400u)accrued|=0x10;
+    if(status&0x00000300u)accrued|=0x08;
+    state.fpsr=(state.fpsr&0x00ff0000u)|condition|status|accrued;
+}
+int m040_fpu_binary(uint32_t operation,uint32_t destination,uint32_t source) {
+    if(busy)return M040_BUSY;
+    if(operation>M040_FPU_DIV||destination>7||source>7)return M040_BAD_ARGUMENT;
+    try{Boundary guard;
+        const auto value=modern040::softfloat_binary(modern040::FpuBinary(operation),modern040::regs.fp[destination],modern040::regs.fp[source],modern040::regs.fpcr);
+        install_fpu_result(destination,value);return M040_OK;
+    }catch(...){return failed();}
+}
+int m040_fpu_sqrt(uint32_t destination,uint32_t source) {
+    if(busy)return M040_BUSY;
+    if(destination>7||source>7)return M040_BAD_ARGUMENT;
+    try{Boundary guard;install_fpu_result(destination,modern040::softfloat_sqrt(modern040::regs.fp[source],modern040::regs.fpcr));return M040_OK;
+    }catch(...){return failed();}
 }
 int m040_set_bus(m040_bus_callback function,void *opaque) {
     if(busy)return M040_BUSY;
@@ -276,6 +327,13 @@ int m040_get_exception_event(m040_exception_event *out) {
 int m040_legacy_fpu_operations(int enabled) {
     if(busy||modern040::host.service)return M040_BUSY;
     if(enabled!=0&&enabled!=1)return M040_BAD_ARGUMENT;
+    if(enabled&&modern040::host.modern_fpu_operations)return M040_BAD_ARGUMENT;
     modern040::host.legacy_fpu_operations=enabled;return M040_OK;
+}
+int m040_modern_fpu_operations(int enabled) {
+    if(busy||modern040::host.service)return M040_BUSY;
+    if(enabled!=0&&enabled!=1)return M040_BAD_ARGUMENT;
+    if(enabled&&modern040::host.legacy_fpu_operations)return M040_BAD_ARGUMENT;
+    modern040::host.modern_fpu_operations=enabled;return M040_OK;
 }
 }

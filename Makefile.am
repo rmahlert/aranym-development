@@ -314,6 +314,7 @@ EXTRA_DIST = \
 
 # Corresponding source required by the opt-in modern040 build/library tool.
 EXTRA_DIST += src/include/display_diagnostics.h tools/config-locator.cpp tools/build-modern040-library.py \
+ src/include/display_performance.h src/include/modern040_performance.h src/include/modern040_qualified_jit.h \
  src/modern040/native-ea-plan.hpp tests/modern-jit/native-ea-plan-test.cpp \
  tests/modern-jit/native-rmw-plan-test.cpp \
  tests/modern-jit/native-movem-plan-test.cpp \
@@ -373,8 +374,14 @@ EXTRA_DIST += src/include/display_diagnostics.h tools/config-locator.cpp tools/b
  tests/modern-jit/generate-ram-alias.py tests/modern-jit/guest/ram-alias.c \
  tests/modern-jit/guest/ram-alias-probes.h tests/modern-jit/guest/ram-alias-probes.S \
  src/modern040/COPYING.WinUAE src/modern040/SOURCE.json src/modern040/README.txt \
+ src/modern040/softfloat-mingw/sysconfig.h src/modern040/softfloat-mingw/target.h \
  tests/cpu-core-upgrade/runner/core.cpp tests/cpu-core-upgrade/runner/core.hpp \
  tests/cpu-core-upgrade/runner/c-api.cpp tests/cpu-core-upgrade/runner/c-api.h \
+ tests/cpu-core-upgrade/runner/fpu-frontend.cpp tests/cpu-core-upgrade/runner/fpu-frontend-test.cpp \
+ tests/cpu-core-upgrade/runner/softfloat-adapter.cpp tests/cpu-core-upgrade/runner/softfloat-adapter.hpp \
+ tests/cpu-core-upgrade/runner/softfloat-test.cpp \
+ tests/cpu-core-upgrade/runner/mmu-walk.cpp tests/cpu-core-upgrade/runner/mmu-walk.hpp \
+ tests/cpu-core-upgrade/runner/mmu-walk-test.cpp tests/cpu-core-upgrade/runner/mmu-integration-test.cpp \
  tests/cpu-core-upgrade/platform/adapter.h \
  tests/modern-jit/modern-fallback.cpp tests/modern-jit/upstream-compemu.cpp \
  tests/modern-jit/upstream-compstbl.cpp tests/modern-jit/upstream-comptbl.h

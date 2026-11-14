@@ -31,12 +31,17 @@ struct State {
     uae_u32 mmu_fault_addr = 0, mmu_effective_addr = 0, wb2_address = 0, wb3_data = 0;
     uae_u16 mmu_ssw = 0;
     uae_u8 wb2_status = 0, wb3_status = 0;
+    // Canonical external-extended state.  This is intentionally stored as
+    // architectural bits, not host long double, so NaNs and denormals survive
+    // every C boundary and future x86/ARM backend unchanged.
+    std::array<std::array<uae_u32,3>,8> fp{};
+    uae_u32 fpcr = 0, fpsr = 0;
     uae_u32 fp_ea = 0, fp_opword = 0, fp_unimp_pend = 0, fp_exp_pend = 0, fpiar = 0, fpu_state = 0;
     bool fp_unimp_ins = false, fpu_exp_pre = false, fp_exception = false, fp_ea_set = false, fp_branch = false;
     bool operator==(const State &) const = default;
 };
 struct Preferences {
-    const int cpu_model = 68040, mmu_model = 0, fpu_model = 0, cachesize = 0;
+    const int cpu_model = 68040, mmu_model = 68040, fpu_model = 0, cachesize = 0;
     const int fpu_revision = 0;
     const bool compfpu = false, int_no_unimplemented = false;
 };
@@ -110,6 +115,7 @@ struct BusFault {
     std::optional<FaultEvidence> evidence;
     bool restartable_read=false;
 };
+struct MmuFault {BusRequest request;uae_u32 data=0,status=0;};
 struct PendingIuWrite { BusRequest request;uae_u32 data; };
 struct PhysicalWriteback {
     uae_u16 status;uae_u32 address,data;
@@ -161,6 +167,7 @@ struct Host {
     void *reset_opaque=nullptr;
     bool private_operations=false, service_resuming=false;
     bool legacy_fpu_operations=false;
+    bool modern_fpu_operations=false;
     bool read_probe_exceptions=false, delivering_read_probe=false;
     uae_u32 read_probe_next_pc=0;
     bool fault_recovery=false, using_restart=false, delivering_fault=false;
@@ -169,6 +176,7 @@ struct Host {
     bool initial_t1=false,rte_trace_pending=false;
     uae_u32 rte_trace_pc=0;
     std::optional<BusFault> bus_fault;
+    std::optional<MmuFault> mmu_fault;
     std::optional<Service> service;
     unsigned exception_depth = 0;
     std::vector<Frame> frames;
@@ -189,6 +197,8 @@ using PrivateHandler = void (*)(uae_u32);
 extern std::array<PrivateHandler,65536> private_handlers;
 void install_private_handlers();
 Result complete_service();
+bool execute_modern_fpu(uae_u16 opcode);
+bool execute_mmu_control(uae_u16 opcode);
 void m68k_natfeat_id();
 void m68k_natfeat_call();
 void m68k_emulop(uae_u32);

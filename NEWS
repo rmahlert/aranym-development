@@ -1,3 +1,13 @@
+2026/11/14 - version 1.2.0 unofficial RC3 update 1
+==================================================
+
+ * Windows display redraw and high-resolution desktop fixes
+ * Windows SLIRP callback, queue and wakeup fixes; MiNTNet receive draining
+ * pinned WinUAE modern 68040 integer/restart core and x64 JIT integration
+ * 68040 paged-MMU translation, ATCs, PFLUSH/PTEST and format-7 recovery
+ * canonical 96-bit FPU state and pinned WinUAE SoftFloat instruction frontend
+ * data-preserving Windows upgrade installer with network/config discovery
+
  New features:
  -------------
  * action to be taken on middle mouse button press can now be configured

@@ -186,6 +186,17 @@ fi
 		sed -e 's|^./\(.*\)$|${File} "\1"|' | tr '/' '\\' >> aranym.files
 )
 
+# This helper is embedded by the preserving installer and extracted only to
+# NSIS's temporary plugin directory.  Add it after aranym.files is generated
+# so it is not installed beside ARAnyM.
+if test "${PRESERVE_USER_DATA:-0}" = 1; then
+    test -f "$build_dir/config-locator.exe" || {
+        echo "$0: preserving installer requires $build_dir/config-locator.exe" >&2
+        exit 1
+    }
+    cp -a "$build_dir/config-locator.exe" "$stage/config-locator.exe"
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 if test "${INSTALLER_ONLY:-0}" != 1; then

@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * MC68040UM PDF78-79 independent matching oracle. Protected execution remains
- * fail-closed until precise access-fault/RMW/continuation contracts are ready.
+ * MC68040UM PDF78-79 independent matching oracle and protected-write path.
  */
 #include "core.hpp"
 #include <iostream>
@@ -42,8 +41,12 @@ void execution_scope() {
     }
     for(bool instruction:{false,true}) {
         reset();(instruction?regs.itt0:regs.dtt0)=0x00ffc004;mmu_tt_modified();poke(0x100,2,0x4e71);
-        expect(run(1).exit==Exit::UnsupportedMmu&&run(1).instructions==0&&host.accesses.empty(),"protected TTR profile fails before any guest fetch or side-effecting access");
+        expect(run(1).exit==Exit::Budget&&regs.pc==0x102,"TTR write protection does not reject reads or instruction fetches");
     }
+    reset();regs.dtt0=0x00ffc004;mmu_tt_modified();regs.regs[8]=0x1234;regs.regs[0]=0x89abcdef;
+    poke(0x100,2,0x2080);poke(0x1234,4,0x11223344);const auto protected_write=run(1);
+    expect(protected_write.exit==Exit::MemoryFault&&protected_write.address==0x1234&&regs.mmu_fault_addr==0x1234,"protected data TTR rejects an actual guest write at its logical address");
+    expect(get_long(0x1234)==0x11223344,"protected TTR fault reaches no target write");
     reset();expect(!mmu_ttr_enabled&&!mmu_ttr_enabled_ins&&!mmu_ttr_enabled_data,"reset clears derived transparent-region enable state");
 }
 }

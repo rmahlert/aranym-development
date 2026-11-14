@@ -12,6 +12,8 @@
 #include "ethernet_slirp.h"
 #include "debug.h"
 
+#include <utility>
+
 #if defined(OS_mingw)
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -41,7 +43,7 @@ WinSlirpEthernetHandler::~WinSlirpEthernetHandler()
 void WinSlirpEthernetHandler::enqueue(const uint8 *packet, size_t length)
 {
 	if (length <= MAX_PACKET_SIZE)
-		packets.push_back(std::vector<uint8>(packet, packet + length));
+		packets.emplace_back(packet, packet + length);
 }
 
 slirp_ssize_t WinSlirpEthernetHandler::send_packet(const void *packet, size_t length, void *opaque)
@@ -255,6 +257,10 @@ bool WinSlirpEthernetHandler::open()
 	guest_packets.clear();
 	packets.clear();
 	poll_entries.clear();
+	/* A browser normally uses only a handful of sockets.  Keep their poll
+	 * records resident instead of reallocating the vector on every select.
+	 */
+	poll_entries.reserve(64);
 	slirp = slirp_new(&config, &callbacks, this);
 	if (slirp == NULL)
 	{
@@ -303,12 +309,12 @@ int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 		 * libslirp use stale socket state.
 		 */
 		while (slirp != NULL && !guest_packets.empty()) {
-			std::vector<uint8> packet = guest_packets.front();
+			std::vector<uint8> packet = std::move(guest_packets.front());
 			guest_packets.pop_front();
 			slirp_input(slirp, &packet[0], packet.size());
 		}
 		if (!packets.empty()) {
-			std::vector<uint8> packet = packets.front();
+			std::vector<uint8> packet = std::move(packets.front());
 			packets.pop_front();
 			pthread_mutex_unlock(&slirp_lock);
 			int packet_length = MIN((int)packet.size(), length);
@@ -404,8 +410,14 @@ int WinSlirpEthernetHandler::send(const uint8 *buffer, int length)
 		pthread_mutex_unlock(&slirp_lock);
 		return -1;
 	}
-	guest_packets.push_back(std::vector<uint8>(buffer, buffer + length));
+	/* One unread wake byte is enough for every frame already in this queue.
+	 * Coalescing here avoids a Winsock send/recv pair per guest packet while
+	 * retaining immediate delivery of the empty-to-nonempty transition.
+	 */
+	const bool need_wake = guest_packets.empty();
+	guest_packets.emplace_back(buffer, buffer + length);
 	pthread_mutex_unlock(&slirp_lock);
-	wake();
+	if (need_wake)
+		wake();
 	return length;
 }

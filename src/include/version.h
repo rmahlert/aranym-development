@@ -23,7 +23,7 @@
 #define VER_MINOR	2
 #define VER_MICRO	0
 #define BUILD_LABEL	" unofficial-rc3"
-#define RELEASE_DATE "2019/04/14"
+#define RELEASE_DATE "2026/11/14"
 
 
 #define NAME_STRING "ARAnyM"

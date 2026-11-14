@@ -8,6 +8,7 @@
 extern "C" {
 #endif
 #define M040_ABI_VERSION 1u
+#define M040_FPU_STATE_VERSION 1u
 #define M040_OK 0
 #define M040_BAD_ARGUMENT -1
 #define M040_BUSY -2
@@ -17,6 +18,7 @@ enum m040_exit { M040_BUDGET, M040_STOPPED, M040_GUEST_EXCEPTION, M040_MEMORY_FA
     M040_HOST_SERVICE, M040_HOST_RETURN };
 enum m040_access_kind { M040_FETCH, M040_READ, M040_WRITE };
 enum m040_service_kind { M040_NATFEAT_ID=1, M040_NATFEAT_CALL, M040_EMULOP, M040_EMULOP_RETURN, M040_LEGACY_FPU };
+enum m040_fpu_binary_operation { M040_FPU_ADD, M040_FPU_SUB, M040_FPU_MUL, M040_FPU_DIV };
 struct m040_options { uint32_t abi_version; uint32_t deliver_exceptions, lc040_probes, log_accesses; };
 struct m040_state {
     uint32_t abi_version;
@@ -25,6 +27,17 @@ struct m040_state {
     uint32_t tcr, mmusr, urp, srp, buscr, pcr;
     uint16_t sr;
     uint16_t stopped;
+};
+/* Canonical 68881/68882/68040 external 96-bit register image.  Keeping this
+ * additive leaves the established integer ABI layout unchanged while giving
+ * the native FPU frontend an exact, host-format-independent interchange.
+ * words[][0] contains sign/exponent in bits31..16; words[][1..2] contain the
+ * 64-bit significand, all in architectural big-endian word order.
+ */
+struct m040_fpu_state {
+    uint32_t abi_version;
+    uint32_t fp[8][3];
+    uint32_t fpcr, fpsr, fpiar;
 };
 struct m040_bus_request {
     uint32_t abi_version, kind, address, size, function_code;
@@ -71,10 +84,18 @@ struct m040_exception_event {
 };
 int m040_reset(const struct m040_options *);
 int m040_get_state(struct m040_state *);
+int m040_get_fpu_state(struct m040_fpu_state *);
 /* Requires canonical active-bank/A7 consistency. Retains nonarchitectural
  * helper state and any fault/capability latch; reset is required after faults.
  */
 int m040_set_state(const struct m040_state *);
+int m040_set_fpu_state(const struct m040_fpu_state *);
+/* Exact pinned SoftFloat backend operation on canonical FP registers.  This
+ * does not fetch/decode an instruction or touch integer state; the instruction
+ * frontend supplies operand and exception ordering separately.
+ */
+int m040_fpu_binary(uint32_t operation,uint32_t destination,uint32_t source);
+int m040_fpu_sqrt(uint32_t destination,uint32_t source);
 int m040_set_bus(m040_bus_callback, void *opaque);
 int m040_set_precise_bus(m040_precise_bus_callback, void *opaque);
 /* Selection alone retains terminal failures and does not enable WB1/WB2
@@ -156,6 +177,9 @@ int m040_get_exception_event(struct m040_exception_event *);
  * fetch, permits already-executed external advanced PC, and never replays it.
  * No FPU register file/engine is supplied by this C boundary. */
 int m040_legacy_fpu_operations(int enabled);
+/* Native pinned 68040 FPU instruction frontend. Mutually exclusive with the
+ * external legacy service engine and default-off until explicitly selected. */
+int m040_modern_fpu_operations(int enabled);
 #ifdef __cplusplus
 }
 #endif

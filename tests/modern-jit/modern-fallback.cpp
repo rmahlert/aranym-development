@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Derived from cpu-core-upgrade/platform/adapter.cpp (669bb6c0).
  * Modern interpreter fallback for the experimental full native x86 JIT.
- * Physical-bus restart uses the qualified genuine 040 bodies. Paged MMU,
- * modern FPU and broader fault/trace/nested-service boundaries remain separate.
+ * Physical-bus restart uses the qualified genuine 040 bodies. Paged MMU and
+ * the pinned SoftFloat FPU are owned by the modern core; native JIT admission
+ * deoptimizes while paging is active.
  */
 #include "sysdeps.h"
 // Fixed mapping is retained for native JIT PC pointers. This C-ABI bus TU uses
@@ -27,6 +28,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include "modern040_performance.h"
+#include "modern040_qualified_jit.h"
 extern uae_u32 aranym_jit_alu_probe_begin,aranym_jit_alu_probe_end;
 extern uae_u32 aranym_upstream_alu_count(unsigned);
 extern uae_u32 aranym_jit_ea_probe_begin,aranym_jit_ea_probe_end;
@@ -40,7 +42,7 @@ bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
 // instruction_pc. Reuse the last exact export; no guest access is skipped.
 static_assert(sizeof(m040_state)==152,"audit cached import when state ABI changes");
 m040_state import_snapshot{};bool import_snapshot_valid=false;
-bool cached_import_enabled(){static const bool enabled=std::getenv("ARANYM_MODERN040_CACHED_IMPORT")!=nullptr;return enabled;}
+bool cached_import_enabled(){static const bool enabled=aranym_qualified_jit_gate("ARANYM_MODERN040_CACHED_IMPORT");return enabled;}
 bool verify_import_enabled(){static const bool enabled=std::getenv("ARANYM_MODERN040_VERIFY_IMPORT")!=nullptr;return enabled;}
 
 bool legacy_fpu=false,service_exception_delivered=false;
@@ -371,12 +373,8 @@ void initialize() {
 #if defined(FULLMMU) || defined(HW_SIGSEGV) || !defined(EXPERIMENTAL_UPSTREAM_MODERN040)
 #error This derived adapter requires explicit upstream-JIT/modern040 profile without MMU or signal addressing
 #endif
-#ifdef MODERN040_DEFAULT_LEGACY_FPU
-    legacy_fpu=true;
-#else
     legacy_fpu=std::getenv("ARANYM_MODERN040_LEGACY_FPU")!=0;
-#endif
-    const m040_options options={M040_ABI_VERSION,1,uint32_t(!legacy_fpu),0};
+    const m040_options options={M040_ABI_VERSION,1,0,0};
     diagnostics=std::getenv("ARANYM_MODERN040_DIAGNOSTICS")!=0;
     import_snapshot_valid=false;
     if(verify_import_enabled()&&!cached_import_enabled())fail("import verification requires cached import opt-in");
@@ -395,8 +393,9 @@ void initialize() {
     checked(m040_exception_history_limit(0),"retain bounded exception diagnostics without accumulating every guest trap");
     checked(m040_set_reset_handler([](void *){AtariReset();return 1;},0),"attach original Atari RESET hardware/NatFeat/input path");
     checked(m040_legacy_fpu_operations(legacy_fpu),"select explicit original FPU backend");
+    checked(m040_modern_fpu_operations(!legacy_fpu),"select pinned modern FPU frontend");
     checked(m040_private_operations(1),"enable ARAnyM extension decoder");initialized=true;
-    std::fprintf(stderr,"MODERN040_EXPERIMENTAL source=d82bc254 profile=%s noMMU native-JIT-boundary fault-restart=precise-physical-bus\n",legacy_fpu?"modern-integer-original-ieee-fpu":"integer-lc040-probes");
+    std::fprintf(stderr,"MODERN040_EXPERIMENTAL source=d82bc254 profile=%s paged-MMU native-JIT-boundary fault-restart=precise-physical-bus\n",legacy_fpu?"modern-integer-original-ieee-fpu":"modern-integer-pinned-softfloat-fpu");
 }
 bool acceptable(const m040_result &result){return result.exit==M040_BUDGET||result.exit==M040_STOPPED||result.exit==M040_HOST_RETURN;}
 void service(m040_result &result) {
@@ -578,7 +577,7 @@ template<bool Multiple> uae_u32 native_ram_plan(const void *encoded) {
     std::copy(std::begin(regs.regs),std::end(regs.regs),state.begin());
     struct Memory {
         bool code_allowed(std::uint32_t address,unsigned size) {
-            static const bool rom=std::getenv("ARANYM_UPSTREAM_JIT_ROM_CODE")!=nullptr;
+            static const bool rom=aranym_qualified_jit_gate("ARANYM_UPSTREAM_JIT_ROM_CODE");
             const auto end=std::uint64_t(address)+size;
             if(!(regs.tc&0x8000)&&rom&&address>=ROMBase&&end<=std::uint64_t(ROMBase)+ROMSize)return true;
             return allowed(address,size,false);
@@ -598,10 +597,14 @@ template<bool Multiple> uae_u32 native_ram_plan(const void *encoded) {
     else return modern040::native_ea::allowed(image,state,memory)?1:0;
 }
 }
-// Only existing native RTS/JSR/JMP bodies are selected. This guard never
-// calls a device. An RTS target peek occurs only after proving plain RAM.
-uae_u32 REGPARAM2 aranym_upstream_control_guard(uae_u32 opcode,uae_u32 target) {
+// Only existing native control/stack bodies are selected. This guard never
+// calls a device. Stack/indirect peeks occur only after proving plain RAM.
+uae_u32 REGPARAM2 aranym_upstream_control_guard(const void *encoded) {
     if(regs.tc&0x8000)return 0;
+    modern040::native_ea::Image image;
+    std::memcpy(&image,encoded,sizeof image);
+    if(!image.count||image.count>image.words.size())return 0;
+    const uae_u32 opcode=image.words[0];uae_u32 target=0;
     const auto stack_ram=[](uae_u32 address,bool write) {
         const uint64_t end=uint64_t(address)+4;
         const bool backing=end<=STRAM_END||(address>=FastRAMBase&&end<=uint64_t(FastRAMBase)+FastRAMSize);
@@ -610,8 +613,33 @@ uae_u32 REGPARAM2 aranym_upstream_control_guard(uae_u32 opcode,uae_u32 target) {
     if(opcode==0x4e75) {
         if(!stack_ram(regs.regs[15],false))return 0;
         target=phys_get_long(regs.regs[15]);
-    } else if(opcode==0x4e90||opcode==0x4ed0)target=regs.regs[8];
-    else if(opcode!=0x4eb9)return 0;
+    } else if((opcode&0xfff8)==0x4e50) {
+        return image.count>=2&&stack_ram(regs.regs[15]-4,true);
+    } else if((opcode&0xfff8)==0x4e58) {
+        return stack_ram(regs.regs[8+(opcode&7)],false);
+    } else {
+        std::array<std::uint32_t,16> state;
+        std::copy(std::begin(regs.regs),std::end(regs.regs),state.begin());
+        struct Memory {
+            bool code_allowed(std::uint32_t address,unsigned size) {
+                static const bool rom=aranym_qualified_jit_gate("ARANYM_UPSTREAM_JIT_ROM_CODE");
+                const auto end=std::uint64_t(address)+size;
+                if(rom&&address>=ROMBase&&end<=std::uint64_t(ROMBase)+ROMSize)return true;
+                return allowed(address,size,false);
+            }
+            bool allowed(std::uint32_t address,unsigned size,bool write) {
+                const auto physical=address<0xff000000?address:address&0x00ffffff;
+                return (physical&0xfff00000)!=0x00f00000&&test_ram_boundary(physical,size,regs.s,write);
+            }
+            bool peek32(std::uint32_t address,std::uint32_t &value) {
+                value=phys_get_long(address);return true;
+            }
+        } memory;
+        if(!modern040::native_ea::control_address(image,state,memory,target))return 0;
+        if((opcode&0xffc0)==0x4840)
+            return stack_ram(regs.regs[15]-4,true); // PEA
+        if((opcode&0xffc0)==0x4e80&&!stack_ram(regs.regs[15]-4,true))return 0; // JSR
+    }
     // Avoid an odd/unsafe native target or a wrap/mirrored PC. The genuine
     // interpreter preserves the exact fault/stack ordering in those cases.
     const uint64_t target_end=uint64_t(target)+2;
@@ -620,7 +648,6 @@ uae_u32 REGPARAM2 aranym_upstream_control_guard(uae_u32 opcode,uae_u32 target) {
         (target>=ROMBase&&target_end<=uint64_t(ROMBase)+ROMSize);
     if(!target_backed||(target&1)||target>=0xff000000||(target&0xfff00000)==0x00f00000||
        !test_ram_boundary(target,2,regs.s,false))return 0;
-    if((opcode==0x4e90||opcode==0x4eb9)&&!stack_ram(regs.regs[15]-4,true))return 0;
     return 1;
 }
 uae_u32 REGPARAM2 aranym_upstream_ram_complex_guard(const void *encoded) {

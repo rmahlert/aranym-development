@@ -249,6 +249,7 @@ if test "x$MODERN040_UPGRADE" = xyes; then
  fi
  AS_CASE([$host_os], [mingw*], [], [AC_MSG_ERROR([modern040-upgrade is for the Windows installer only])])
  MODERN040_PROFILE=aranym
+ AC_DEFINE([MODERN040_QUALIFIED_JIT_DEFAULTS], [1], [Enable qualified guarded JIT families in the preserving Windows upgrade])
 fi
 if test "x$WANT_MODERN040" = xyes; then
  AS_CASE([$MODERN040_PROFILE], [/*|*\\*|../*|*/../*|*/..|..], [AC_MSG_ERROR([modern040 profile must be a relative path without parent traversal])])
@@ -1524,7 +1525,7 @@ else
 fi
 if test "x$WANT_MODERN040" = xyes; then
  if ! $HAVE_X86_64 || test "x$WANT_JIT" != xyes || test "x$WANT_MMU" != xno || test "x$WANT_JIT_FPU" != xno; then
-  AC_MSG_ERROR([modern040 requires x86-64 JIT, no guest MMU and no JIT-FPU])
+  AC_MSG_ERROR([modern040 requires x86-64 JIT, no legacy FULLMMU and no JIT-FPU; its core owns guest paging and FPU execution])
  fi
  if test "$OS_TYPE" != linux && test "$OS_TYPE" != mingw; then
   AC_MSG_ERROR([modern040 currently supports Linux and MinGW x86-64 only])
@@ -1541,7 +1542,7 @@ if test "x$WANT_MODERN040" = xyes; then
   [], [AC_MSG_ERROR([modern040 library is not compatible with the target C++ toolchain])])
  AC_LANG_POP([C++])
  LIBS=$modern040_save_LIBS
- DEFINES="$DEFINES -DEXPERIMENTAL_UPSTREAM_X86_JIT -DEXPERIMENTAL_UPSTREAM_MODERN040 -DMODERN040_DEFAULT_LEGACY_FPU"
+ DEFINES="$DEFINES -DEXPERIMENTAL_UPSTREAM_X86_JIT -DEXPERIMENTAL_UPSTREAM_MODERN040"
  FPE_CORE_TEST_ORDER=ieee
  if test "$OS_TYPE" = linux; then
   CFLAGS="$CFLAGS -fno-pie"

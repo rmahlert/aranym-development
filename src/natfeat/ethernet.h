@@ -26,6 +26,7 @@
 
 #include "nf_base.h"
 #include "parameters.h"		// defines MAX_ETH
+#include <atomic>
 #include <pthread.h>
 
 #define MAX_PACKET_SIZE	9000
@@ -66,7 +67,7 @@ public:
 private:
 	Handler *handlers[MAX_ETH];
 	Handler *getHandler(int ethX, bool msg);
-	static int pending_interrupts;
+	static std::atomic<int> pending_interrupts;
 
 	int32 readPacketLength(int ethX);
 	void readPacket(int ethX, memptr buffer, uint32 len);
