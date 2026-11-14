@@ -761,6 +761,12 @@ static uae_u32 aranym_jit_executed_memory_insns=0;
 static uae_u32 aranym_jit_executed_extended_ea_insns=0;
 static uae_u32 aranym_jit_executed_rmw_insns=0;
 static uae_u32 aranym_jit_executed_movem_insns=0;
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+void aranym_modern_perf_native_snapshot(Uint64 *out) {
+    out[0]=aranym_jit_executed_translated_insns;out[1]=aranym_jit_executed_memory_insns;out[2]=aranym_jit_executed_extended_ea_insns;
+}
+#endif
+
 uae_u32 aranym_jit_alu_probe_begin=0,aranym_jit_alu_probe_end=0;
 static uae_u32 aranym_jit_alu_executed[7][3]={};
 uae_u32 aranym_upstream_alu_count(unsigned index) { return index<21?aranym_jit_alu_executed[index/3][index%3]:0; }

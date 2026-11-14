@@ -9,18 +9,27 @@
 #include <algorithm>
 #include "display_performance.h"
 inline bool aranym_modern_perf_enabled(){static const bool enabled=[](){const char *p=std::getenv("ARANYM_MODERN040_PERFORMANCE");return p&&std::strcmp(p,"1")==0;}();return enabled;}
+void aranym_modern_perf_native_snapshot(Uint64*);
 struct AranymModernPerf {
     Uint64 calls[6]{},samples[6]{},elapsed[6]{},memory[3]{},services[6]{},events[13]{},opcodes[65536]{};
     Uint64 interpreter=0,fallback=0,get_state=0,set_state=0;
     unsigned random=0x6d2b79f5;bool sampling=false;
     Uint64 phase_origin=aranym_display_perf_clock(),phase_time=phase_origin,phase_ops[65536]{},phase_memory[3]{},phase_get=0,phase_set=0,phase_fallback=0,phase_interpreter=0;
+    Uint64 phase_native[3]{},phase_events[13]{},phase_service[6]{};unsigned phase_reports=0;
     unsigned phase_remaining=1000000;std::map<Uint64,Uint64> phase_sites;
     std::map<Uint64,Uint64> sampled_sites;Uint64 site_drops=0,reject[6]{};unsigned reject_lines=0;
     void phase(unsigned pc,unsigned opcode){
+        if(phase_reports++>=256)return;
         const Uint64 now=aranym_display_perf_clock();
         std::fprintf(stderr,"MODERN040_PERF_PHASE t_us=%llu dt_us=%llu pc=%08x opcode=%04x fallback=%llu interpreter=%llu d_fallback=%llu d_interpreter=%llu get_state=%llu set_state=%llu fetch=%llu read=%llu write=%llu\n",(unsigned long long)(now-phase_origin),(unsigned long long)(now-phase_time),pc,opcode,
             (unsigned long long)fallback,(unsigned long long)interpreter,(unsigned long long)(fallback-phase_fallback),(unsigned long long)(interpreter-phase_interpreter),
             (unsigned long long)(get_state-phase_get),(unsigned long long)(set_state-phase_set),(unsigned long long)(memory[0]-phase_memory[0]),(unsigned long long)(memory[1]-phase_memory[1]),(unsigned long long)(memory[2]-phase_memory[2]));
+        Uint64 native[3]{};aranym_modern_perf_native_snapshot(native);
+        std::fprintf(stderr,"MODERN040_PERF_PHASE_NATIVE t_us=%llu native=%llu memory=%llu extended=%llu compile=%llu recompile=%llu invalidated=%llu flush_hard=%llu nf_calls=%llu fpu=%llu\n",(unsigned long long)(now-phase_origin),
+            (unsigned long long)(native[0]-phase_native[0]),(unsigned long long)(native[1]-phase_native[1]),(unsigned long long)(native[2]-phase_native[2]),
+            (unsigned long long)(events[0]-phase_events[0]),(unsigned long long)(events[1]-phase_events[1]),(unsigned long long)(events[3]-phase_events[3]),(unsigned long long)(events[4]-phase_events[4]),
+            (unsigned long long)(services[2]-phase_service[2]),(unsigned long long)(services[5]-phase_service[5]));
+        for(unsigned i=0;i<3;++i)phase_native[i]=native[i];for(unsigned i=0;i<13;++i)phase_events[i]=events[i];for(unsigned i=0;i<6;++i)phase_service[i]=services[i];
         phase_time=now;phase_fallback=fallback;phase_interpreter=interpreter;phase_get=get_state;phase_set=set_state;
         for(unsigned i=0;i<3;++i)phase_memory[i]=memory[i];
         std::vector<std::pair<Uint64,unsigned>> tops;for(unsigned i=0;i<65536;++i){const auto delta=opcodes[i]-phase_ops[i];if(delta)tops.emplace_back(delta,i);phase_ops[i]=opcodes[i];}
