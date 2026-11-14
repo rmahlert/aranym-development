@@ -577,6 +577,12 @@ template<bool Multiple> uae_u32 native_ram_plan(const void *encoded) {
     std::array<std::uint32_t,16> state;
     std::copy(std::begin(regs.regs),std::end(regs.regs),state.begin());
     struct Memory {
+        bool code_allowed(std::uint32_t address,unsigned size) {
+            static const bool rom=std::getenv("ARANYM_UPSTREAM_JIT_ROM_CODE")!=nullptr;
+            const auto end=std::uint64_t(address)+size;
+            if(!(regs.tc&0x8000)&&rom&&address>=ROMBase&&end<=std::uint64_t(ROMBase)+ROMSize)return true;
+            return allowed(address,size,false);
+        }
         bool allowed(std::uint32_t address,unsigned size,bool write) {
             const auto physical=address<0xff000000?address:address&0x00ffffff;
             return !(regs.tc&0x8000)&&(physical&0xfff00000)!=0x00f00000&&

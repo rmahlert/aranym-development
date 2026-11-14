@@ -12,6 +12,15 @@ struct Image {
     std::array<std::uint16_t,12> words{};
 };
 static_assert(sizeof(Image)==32&&std::is_trivially_copyable_v<Image>);
+struct CodeSpan {std::uint64_t end=0;unsigned words=0;};
+// No wrapping code images and no speculative fetch beyond their backing range.
+constexpr CodeSpan code_span(std::uint32_t pc,std::uint32_t base,std::uint32_t size) {
+    const auto end=std::uint64_t(base)+size;
+    if(!size||end>0x100000000ULL||pc<base||std::uint64_t(pc)+2>end)return {};
+    const auto words=(end-pc)/2;
+    return {end,words<12?unsigned(words):12u};
+}
+
 struct Address { std::uint32_t value=0;bool memory=false,ok=false; };
 struct SingleMemoryPolicy {
     unsigned size=0,immediate_words=0;
@@ -51,8 +60,13 @@ template<class Memory> class Preflight {
     std::array<std::uint32_t,16> registers;
     unsigned cursor=1;
     bool good=true;
+    template<class M> static auto permitted_code(M &m,std::uint32_t address,unsigned size,int)
+        -> decltype(m.code_allowed(address,size)) {return m.code_allowed(address,size);}
+    template<class M> static bool permitted_code(M &m,std::uint32_t address,unsigned size,long)
+        {return m.allowed(address,size,false);}
+    bool code_allowed(std::uint32_t address,unsigned size) {return permitted_code(memory,address,size,0);}
     std::uint16_t word() {
-        if(cursor>=image.count||!memory.allowed(image.pc+cursor*2,2,false)) {
+        if(cursor>=image.count||!code_allowed(image.pc+cursor*2,2)) {
             good=false;return 0;
         }
         return image.words[cursor++];
@@ -109,7 +123,7 @@ template<class Memory> class Preflight {
 public:
     Preflight(const Image &i,const std::array<std::uint32_t,16>&r,Memory &m):image(i),memory(m),registers(r){}
     bool multiple_allowed() {
-        if(image.count<1||image.count>image.words.size()||!memory.allowed(image.pc,2,false))return false;
+        if(image.count<1||image.count>image.words.size()||!code_allowed(image.pc,2))return false;
         const auto opcode=image.words[0];
         const auto multiple=multiple_memory_policy(opcode);
         if(multiple.size) {
@@ -136,7 +150,7 @@ public:
         return false;
     }
     bool allowed() {
-        if(image.count<1||image.count>image.words.size()||!memory.allowed(image.pc,2,false))return false;
+        if(image.count<1||image.count>image.words.size()||!code_allowed(image.pc,2))return false;
         const auto opcode=image.words[0];const unsigned top=opcode>>12;
         if(top>=1&&top<=3) {
             const unsigned size=top==1?1:top==2?4:2;

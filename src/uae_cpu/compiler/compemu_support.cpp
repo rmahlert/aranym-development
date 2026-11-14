@@ -761,6 +761,7 @@ static uae_u32 aranym_jit_executed_memory_insns=0;
 static uae_u32 aranym_jit_executed_extended_ea_insns=0;
 static uae_u32 aranym_jit_executed_rmw_insns=0;
 static uae_u32 aranym_jit_executed_movem_insns=0;
+static uae_u32 aranym_jit_executed_rom_memory_insns=0;
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 void aranym_modern_perf_native_snapshot(Uint64 *out) {
     out[0]=aranym_jit_executed_translated_insns;out[1]=aranym_jit_executed_memory_insns;out[2]=aranym_jit_executed_extended_ea_insns;
@@ -815,6 +816,10 @@ static bool aranym_guarded_move_enabled() {
 #else
     return false;
 #endif
+}
+static bool aranym_rom_code_enabled() {
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_ROM_CODE")!=nullptr;
+    return enabled;
 }
 static bool aranym_absw_move_enabled() {
     // Isolated performance trial: MOVE.L (abs.w),Dn only. It uses the
@@ -3761,8 +3766,8 @@ void compiler_exit(void)
 {
 #ifndef UAE
     if(aranym_jit_diagnostics())
-        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u executed-extended-ea=%u executed-rmw=%u executed-movem=%u\n",
-            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns,aranym_jit_executed_extended_ea_insns,aranym_jit_executed_rmw_insns,aranym_jit_executed_movem_insns);
+        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u executed-extended-ea=%u executed-rmw=%u executed-movem=%u executed-rom-memory=%u\n",
+            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns,aranym_jit_executed_extended_ea_insns,aranym_jit_executed_rmw_insns,aranym_jit_executed_movem_insns,aranym_jit_executed_rom_memory_insns);
     if(aranym_jit_diagnostics() && aranym_jit_alu_probe_begin<aranym_jit_alu_probe_end)
         for(unsigned f=0;f<7;++f)
             fprintf(stderr,"UPSTREAM-ALU family=%s b=%u w=%u l=%u\n",aranym_jit_alu_names[f],
@@ -6197,7 +6202,12 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                     !((checked_instruction.mnemo==i_MOVE||checked_instruction.mnemo==i_MOVEA)&&
                       checked_instruction.smode<=Ad16&&checked_instruction.dmode<=Ad16);
                 const bool guarded_movem=complex_ea&&(checked_instruction.mnemo==i_MVMEL||checked_instruction.mnemo==i_MVMLE);
-                const bool checked_move_code_ok=!checked_move || (instruction_guest_pc>=FastRAMBase && uint64(instruction_guest_pc)<uint64(FastRAMBase)+FastRAMSize);
+                const auto tt_code=modern040::native_ea::code_span(instruction_guest_pc,FastRAMBase,FastRAMSize);
+                const auto rom_code=aranym_rom_code_enabled()?modern040::native_ea::code_span(instruction_guest_pc,ROMBase,ROMSize):modern040::native_ea::CodeSpan{};
+                const auto checked_code=tt_code.words?tt_code:rom_code;
+                // Leave short ROM tails to the genuine interpreter: a complete
+                // maximum image must fit before the compiler examines words.
+                const bool checked_move_code_ok=!checked_move||tt_code.words||rom_code.words==12;
                 if (comptbl[opcode] && optlev>1 && !unsafe_control_flow && !unsafe_flags && checked_move_code_ok) {
 					failure=0;
 					if (!was_comp) {
@@ -6251,8 +6261,7 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                             // could disagree with the compiled instruction.
                             modern040::native_ea::Image image;
                             image.pc=instruction_guest_pc;
-                            const uint64 available=(uint64(FastRAMBase)+FastRAMSize-instruction_guest_pc)/2;
-                            image.count=available<image.words.size()?unsigned(available):unsigned(image.words.size());
+                            image.count=checked_code.words;
                             for(unsigned w=0;w<image.count;++w)image.words[w]=do_get_mem_word(pc_hist[i].location+w);
                             emit_byte(0xe9);uae_u32 *literal_skip=(uae_u32*)get_target();skip_long();
                             const void *literal=get_target();emit_block((const uae_u8*)&image,sizeof image);
@@ -6378,6 +6387,8 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_movem_insns,1);
 #endif
                         const uae_u32 canonical=cft_map(opcode);
+                        if(guest_pc>=ROMBase&&uint64(guest_pc)<uint64(ROMBase)+ROMSize&&aranym_checked_move_opcode(canonical))
+                            compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_rom_memory_insns,1);
                         if(guest_pc>=aranym_jit_native_probe_begin && guest_pc<aranym_jit_native_probe_end) {
                             const unsigned index=(guest_pc-aranym_jit_native_probe_begin)/2;
                             if(index<native_pc_slots) {
