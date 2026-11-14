@@ -810,6 +810,12 @@ static bool aranym_guarded_move_enabled() {
     return false;
 #endif
 }
+static bool aranym_absw_move_enabled() {
+    // Isolated performance trial: MOVE.L (abs.w),Dn only. It uses the
+    // existing full-instruction RAM preflight and ordinary deoptimization.
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_ABSW_MOVE")!=nullptr;
+    return enabled;
+}
 static bool aranym_extended_ea_enabled() {
     // Remains an explicit development gate until the connected Windows
     // instruction/state/device corpus qualifies the new addressing families.
@@ -836,6 +842,7 @@ static bool aranym_checked_move_opcode(uae_u32 canonical) {
         if(aranym_movem_enabled()&&modern040::native_ea::multiple_memory_policy(canonical).size)return true;
 #endif
         if(!aranym_extended_ea_enabled()) {
+            if(aranym_absw_move_enabled()&&(canonical&0xf1ff)==0x2038)return true;
             const bool src=in.smode==Aind||in.smode==Aipi||in.smode==Apdi||in.smode==Ad16;
             const bool dst=in.dmode==Aind||in.dmode==Aipi||in.dmode==Apdi||in.dmode==Ad16;
             return (in.mnemo==i_MOVE&&((src&&(dst||in.dmode==Dreg))||
