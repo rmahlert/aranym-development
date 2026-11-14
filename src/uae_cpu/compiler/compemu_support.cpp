@@ -764,6 +764,7 @@ static uae_u32 aranym_jit_executed_rmw_insns=0;
 static uae_u32 aranym_jit_executed_movem_insns=0;
 static uae_u32 aranym_jit_executed_rom_memory_insns=0;
 static uae_u32 aranym_jit_executed_control_insns=0;
+static uintptr aranym_jit_observed_memstart=0;
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 void aranym_modern_perf_native_snapshot(Uint64 *out) {
     out[0]=aranym_jit_executed_translated_insns;out[1]=aranym_jit_executed_memory_insns;out[2]=aranym_jit_executed_extended_ea_insns;
@@ -3780,6 +3781,9 @@ void compiler_exit(void)
     if(aranym_jit_diagnostics())
         fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u executed-extended-ea=%u executed-rmw=%u executed-movem=%u executed-rom-memory=%u executed-control=%u\n",
             aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns,aranym_jit_executed_extended_ea_insns,aranym_jit_executed_rmw_insns,aranym_jit_executed_movem_insns,aranym_jit_executed_rom_memory_insns,aranym_jit_executed_control_insns);
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+    if(aranym_jit_diagnostics())fprintf(stderr,"UPSTREAM-JIT base-observed=%llx base-expected=%llx\n",(unsigned long long)aranym_jit_observed_memstart,(unsigned long long)MEMBaseDiff);
+#endif
     if(aranym_jit_diagnostics() && aranym_jit_alu_probe_begin<aranym_jit_alu_probe_end)
         for(unsigned f=0;f<7;++f)
             fprintf(stderr,"UPSTREAM-ALU family=%s b=%u w=%u l=%u\n",aranym_jit_alu_names[f],
@@ -4096,6 +4100,8 @@ static void freescratch(void)
 		if (live.nat[i].locked && i != ESP_INDEX
 #if defined(UAE) && defined(CPU_x86_64)
 			&& i != R12_INDEX
+#endif
+#if defined(CPU_x86_64) && (defined(UAE) || defined(EXPERIMENTAL_UPSTREAM_MODERN040))
 			&& i != R_MEMSTART
 #endif
 			)
@@ -5108,6 +5114,11 @@ static inline void create_popalls(void)
 	   Loaded from the global variable (not immediate) so it stays correct
 	   if natmem_offset changes across resets. */
 	raw_mov_q_rm(R_MEMSTART, (uintptr)&natmem_offset);
+#elif X86_TARGET_64BIT && defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+    // Same dedicated-base invariant as UAE, using ARAnyM's actual mapping.
+    // Load at entry so remapping/reset cannot leave a compiled immediate stale.
+    raw_mov_q_rm(R_MEMSTART, (uintptr)&MEMBaseDiff);
+    if(aranym_jit_diagnostics())raw_mov_q_mr((uintptr)&aranym_jit_observed_memstart,R_MEMSTART);
 #endif
 	r=REG_PC_TMP;
 	compemu_raw_mov_l_rm(r, uae_p32(&regs.pc_p));
