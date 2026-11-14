@@ -6394,6 +6394,10 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                 }
 #endif
                 if (failure) {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+                    const unsigned reason=!comptbl[opcode]?0:optlev<=1?1:!checked_move_code_ok?2:unsafe_control_flow?3:unsafe_flags?4:5;
+                    aranym_modern_perf_rejection(cft_map(opcode),instruction_guest_pc,reason,checked_instruction.smode,checked_instruction.dmode);
+#endif
 					if (was_comp) {
 						flush(1);
 						was_comp=0;

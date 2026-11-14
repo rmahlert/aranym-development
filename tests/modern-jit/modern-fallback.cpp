@@ -36,6 +36,13 @@ extern uae_u32 aranym_upstream_native_pc_count(uae_u32);
 extern uae_u32 aranym_upstream_native_pc_noflags_count(uae_u32);
 namespace {
 bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
+// ABI1 imports overwrite every field except BUSCR/PCR and, for legacy FPU,
+// instruction_pc. Reuse the last exact export; no guest access is skipped.
+static_assert(sizeof(m040_state)==152,"audit cached import when state ABI changes");
+m040_state import_snapshot{};bool import_snapshot_valid=false;
+bool cached_import_enabled(){static const bool enabled=std::getenv("ARANYM_MODERN040_CACHED_IMPORT")!=nullptr;return enabled;}
+bool verify_import_enabled(){static const bool enabled=std::getenv("ARANYM_MODERN040_VERIFY_IMPORT")!=nullptr;return enabled;}
+
 bool legacy_fpu=false,service_exception_delivered=false;
 bool frame_irq_profile=false,frame_irq_skip_native_notify=false;
 bool diagnostics=false;uint64_t last_exception=0;unsigned service_messages=0,guest_messages=0,guest_traps=0;
@@ -63,7 +70,19 @@ void fail(const char *where,const m040_result *result=0) {
 void checked(int status,const char *where){if(status!=M040_OK)fail(where);}
 void from_old(bool preserve_instruction=false) {
     AranymModernPerfScope sample(0);
-    m040_state state;checked(profiled_get_state(&state),"read modern state");MakeSR();
+    m040_state state;
+    if(cached_import_enabled()&&import_snapshot_valid) {
+        state.abi_version=import_snapshot.abi_version;state.buscr=import_snapshot.buscr;
+        state.pcr=import_snapshot.pcr;state.instruction_pc=import_snapshot.instruction_pc;aranym_modern_perf_event(10);
+        if(verify_import_enabled()) {
+            m040_state actual;checked(profiled_get_state(&actual),"verify cached import source");
+            if(state.abi_version!=actual.abi_version||state.buscr!=actual.buscr||state.pcr!=actual.pcr||
+               (preserve_instruction&&state.instruction_pc!=actual.instruction_pc))
+                fail("cached import preserved fields differ from genuine state export");
+            aranym_modern_perf_event(12);
+        }
+    } else {checked(profiled_get_state(&state),"read modern state");aranym_modern_perf_event(11);}
+    MakeSR();
     for(unsigned i=0;i<16;++i)state.regs[i]=regs.regs[i];
     state.pc=m68k_getpc();if(!preserve_instruction)state.instruction_pc=state.pc;state.sr=regs.sr;
     state.usp=regs.usp;state.isp=regs.isp;state.msp=regs.msp;
@@ -72,10 +91,14 @@ void from_old(bool preserve_instruction=false) {
     state.cacr=regs.cacr;state.caar=regs.caar;state.itt0=regs.itt0;state.itt1=regs.itt1;state.dtt0=regs.dtt0;state.dtt1=regs.dtt1;
     state.tcr=regs.tc;state.mmusr=regs.mmusr;state.urp=regs.urp;state.srp=regs.srp;
     checked(profiled_set_state(&state),"import original architectural state");
+    if(cached_import_enabled()){import_snapshot.abi_version=state.abi_version;import_snapshot.buscr=state.buscr;
+        import_snapshot.pcr=state.pcr;import_snapshot.instruction_pc=state.instruction_pc;import_snapshot_valid=true;}
 }
 void to_old() {
     AranymModernPerfScope sample(2);
     m040_state state;checked(profiled_get_state(&state),"export modern architectural state");
+    if(cached_import_enabled()){import_snapshot.abi_version=state.abi_version;import_snapshot.buscr=state.buscr;
+        import_snapshot.pcr=state.pcr;import_snapshot.instruction_pc=state.instruction_pc;import_snapshot_valid=true;}
     for(unsigned i=0;i<16;++i)regs.regs[i]=state.regs[i];
     regs.usp=state.usp;regs.isp=state.isp;regs.msp=state.msp;
     regs.s=bool(state.sr&0x2000);regs.m=bool(state.sr&0x1000);regs.sr=state.sr;
@@ -355,6 +378,9 @@ void initialize() {
 #endif
     const m040_options options={M040_ABI_VERSION,1,uint32_t(!legacy_fpu),0};
     diagnostics=std::getenv("ARANYM_MODERN040_DIAGNOSTICS")!=0;
+    import_snapshot_valid=false;
+    if(verify_import_enabled()&&!cached_import_enabled())fail("import verification requires cached import opt-in");
+    if(cached_import_enabled())std::fprintf(stderr,"MODERN040_IMPORT_CACHE enabled verify=%u\n",unsigned(verify_import_enabled()));
     checked(m040_reset(&options),"reset modern core");checked(m040_set_precise_bus(memory,0),"attach precise Atari physical bus");
     checked(m040_fault_recovery(1),"enable restart-aware physical-bus integer bodies");
     frame_irq_profile=std::getenv("ARANYM_MODERN040_FRAME_IRQ")!=nullptr;
@@ -423,7 +449,7 @@ void modern040_memory_barrier() {
     // barrier touches only same-thread provenance, with no resolver/reentry.
     if(initialized&&frame_irq_profile)checked(m040_frame_barrier(),"invalidate direct hardware RAM write provenance");
 }
-void modern040_reset_requested(){initialized=false;}
+void modern040_reset_requested(){initialized=false;import_snapshot_valid=false;}
 bool modern040_restart_pending() {
     if(!initialized)return false;
     int pending=0;checked(m040_native_restart_pending(&pending),"read native restart boundary");return pending;
@@ -484,7 +510,7 @@ void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
 #if defined(HAVE_GET_WORD_UNSWAPPED) && !defined(FULLMMU)
     profile_opcode=do_byteswap_16(profile_opcode);
 #endif
-    AranymModernPerfStep profile_step(true,profile_opcode);from_old();
+    AranymModernPerfStep profile_step(true,profile_opcode,m68k_getpc());from_old();
     const uae_u32 old_cacr=regs.cacr;
     m040_result result;checked(profiled_run(1,&result),"modern JIT fallback");
     attempted+=result.instructions;to_old();
