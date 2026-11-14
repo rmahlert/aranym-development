@@ -820,8 +820,14 @@ static bool aranym_guarded_move_enabled() {
 #endif
 }
 static bool aranym_checked_control_opcode(uae_u32 opcode) {
-    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_CONTROL")!=nullptr;
-    return enabled&&(opcode==0x4e75||opcode==0x4e90||opcode==0x4eb9||opcode==0x4ed0);
+    static const unsigned mask=[](){
+        const char *p=getenv("ARANYM_UPSTREAM_JIT_CONTROL");if(!p)return 0u;
+        if(!strcmp(p,"rts"))return 1u;if(!strcmp(p,"jsr-a0"))return 2u;
+        if(!strcmp(p,"jsr-abs"))return 4u;if(!strcmp(p,"jmp-a0"))return 8u;
+        return !strcmp(p,"1")||!strcmp(p,"all")?15u:0u;
+    }();
+    return (opcode==0x4e75&&(mask&1))||(opcode==0x4e90&&(mask&2))||
+        (opcode==0x4eb9&&(mask&4))||(opcode==0x4ed0&&(mask&8));
 }
 static bool aranym_rom_code_enabled() {
     static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_ROM_CODE")!=nullptr;

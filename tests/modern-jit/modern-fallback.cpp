@@ -614,7 +614,11 @@ uae_u32 REGPARAM2 aranym_upstream_control_guard(uae_u32 opcode,uae_u32 target) {
     else if(opcode!=0x4eb9)return 0;
     // Avoid an odd/unsafe native target or a wrap/mirrored PC. The genuine
     // interpreter preserves the exact fault/stack ordering in those cases.
-    if((target&1)||target>=0xff000000||(target&0xfff00000)==0x00f00000||
+    const uint64_t target_end=uint64_t(target)+2;
+    const bool target_backed=target_end<=STRAM_END||
+        (target>=FastRAMBase&&target_end<=uint64_t(FastRAMBase)+FastRAMSize)||
+        (target>=ROMBase&&target_end<=uint64_t(ROMBase)+ROMSize);
+    if(!target_backed||(target&1)||target>=0xff000000||(target&0xfff00000)==0x00f00000||
        !test_ram_boundary(target,2,regs.s,false))return 0;
     if((opcode==0x4e90||opcode==0x4eb9)&&!stack_ram(regs.regs[15]-4,true))return 0;
     return 1;
