@@ -97,6 +97,7 @@ static void build_comp(void);
 #include "modern040_performance.h"
 extern void REGPARAM2 aranym_upstream_modern_step(uae_u32 opcode);
 extern uae_u32 REGPARAM2 aranym_upstream_ram_move_guard(uae_u32 opcode,uae_u32 extensions);
+extern uae_u32 REGPARAM2 aranym_upstream_control_guard(uae_u32 opcode,uae_u32 target);
 extern void aranym_upstream_memory_deopt();
 extern uae_u32 REGPARAM2 aranym_upstream_ram_complex_guard(const void *);
 extern uae_u32 REGPARAM2 aranym_upstream_ram_movem_guard(const void *);
@@ -762,6 +763,7 @@ static uae_u32 aranym_jit_executed_extended_ea_insns=0;
 static uae_u32 aranym_jit_executed_rmw_insns=0;
 static uae_u32 aranym_jit_executed_movem_insns=0;
 static uae_u32 aranym_jit_executed_rom_memory_insns=0;
+static uae_u32 aranym_jit_executed_control_insns=0;
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 void aranym_modern_perf_native_snapshot(Uint64 *out) {
     out[0]=aranym_jit_executed_translated_insns;out[1]=aranym_jit_executed_memory_insns;out[2]=aranym_jit_executed_extended_ea_insns;
@@ -816,6 +818,10 @@ static bool aranym_guarded_move_enabled() {
 #else
     return false;
 #endif
+}
+static bool aranym_checked_control_opcode(uae_u32 opcode) {
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_CONTROL")!=nullptr;
+    return enabled&&(opcode==0x4e75||opcode==0x4e90||opcode==0x4eb9||opcode==0x4ed0);
 }
 static bool aranym_rom_code_enabled() {
     static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_ROM_CODE")!=nullptr;
@@ -3766,8 +3772,8 @@ void compiler_exit(void)
 {
 #ifndef UAE
     if(aranym_jit_diagnostics())
-        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u executed-extended-ea=%u executed-rmw=%u executed-movem=%u executed-rom-memory=%u\n",
-            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns,aranym_jit_executed_extended_ea_insns,aranym_jit_executed_rmw_insns,aranym_jit_executed_movem_insns,aranym_jit_executed_rom_memory_insns);
+        fprintf(stderr,"UPSTREAM-JIT compiled-insns=%llu cached-dispatches=%llu executed-translated=%u executed-guest=%u executed-memory=%u executed-extended-ea=%u executed-rmw=%u executed-movem=%u executed-rom-memory=%u executed-control=%u\n",
+            aranym_jit_compiled_insns,aranym_jit_cached_dispatches,aranym_jit_executed_translated_insns,aranym_jit_executed_guest_insns,aranym_jit_executed_memory_insns,aranym_jit_executed_extended_ea_insns,aranym_jit_executed_rmw_insns,aranym_jit_executed_movem_insns,aranym_jit_executed_rom_memory_insns,aranym_jit_executed_control_insns);
     if(aranym_jit_diagnostics() && aranym_jit_alu_probe_begin<aranym_jit_alu_probe_end)
         for(unsigned f=0;f<7;++f)
             fprintf(stderr,"UPSTREAM-ALU family=%s b=%u w=%u l=%u\n",aranym_jit_alu_names[f],
@@ -5617,7 +5623,7 @@ void build_comp(void)
             ||(in.duse&&in.dmode>=Aind&&in.dmode<=PC8r);
         // The pre-instruction guard may leave the native block for an access
         // exception. Preserve the incoming CCR even when MOVE overwrites it.
-        if(aranym_guarded_move_enabled()&&aranym_checked_move_opcode(opcode))
+        if((aranym_guarded_move_enabled()&&aranym_checked_move_opcode(opcode))||aranym_checked_control_opcode(opcode))
             prop[cft_map(opcode)].use_flags|=FLAG_ALL;
         const char *group=getenv("ARANYM_UPSTREAM_JIT_GROUP");
         if(group) {
@@ -5628,7 +5634,8 @@ void build_comp(void)
             else if(!strcmp(group,"nop")) selected=in.mnemo==i_NOP;
             register_family=register_family&&selected;
         }
-        if(!register_family||(memory&&!aranym_checked_move_opcode(opcode))||getenv("ARANYM_UPSTREAM_JIT_FALLBACK_ONLY")) {
+        if(aranym_checked_control_opcode(opcode))register_family=true;
+        if(!register_family||(memory&&!aranym_checked_move_opcode(opcode)&&!aranym_checked_control_opcode(opcode))||getenv("ARANYM_UPSTREAM_JIT_FALLBACK_ONLY")) {
             compfunctbl[cft_map(opcode)]=nullptr;
             nfcompfunctbl[cft_map(opcode)]=nullptr;
         }
@@ -6197,6 +6204,7 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 				prepare_compiled_exception_state((uintptr)pc_hist[i].location, opcode);
 				const uae_u32 instruction_guest_pc=get_virtual_compile_pc((uintptr)pc_hist[i].location);
                 const bool checked_move=aranym_checked_move_opcode(cft_map(opcode));
+                const bool checked_control=aranym_checked_control_opcode(cft_map(opcode));
                 const instr &checked_instruction=table68k[cft_map(opcode)];
                 const bool complex_ea=checked_move&&aranym_guarded_move_enabled()&&
                     !((checked_instruction.mnemo==i_MOVE||checked_instruction.mnemo==i_MOVEA)&&
@@ -6207,7 +6215,8 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                 const auto checked_code=tt_code.words?tt_code:rom_code;
                 // Leave short ROM tails to the genuine interpreter: a complete
                 // maximum image must fit before the compiler examines words.
-                const bool checked_move_code_ok=!checked_move||tt_code.words||rom_code.words==12;
+                const unsigned control_words=cft_map(opcode)==0x4eb9?3:1;
+                const bool checked_move_code_ok=!(checked_move||checked_control)||(tt_code.words&&(tt_code.words>=control_words||!checked_control))||rom_code.words==12;
                 if (comptbl[opcode] && optlev>1 && !unsafe_control_flow && !unsafe_flags && checked_move_code_ok) {
 					failure=0;
 					if (!was_comp) {
@@ -6235,6 +6244,23 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 
                     const uae_u8 *owned_emit_begin=get_target();
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+                    if(checked_control) {
+                        // Publish pre-instruction state. Unsafe stack/target
+                        // cases execute the genuine body once, before a store.
+                        flush(1);const uintptr native_pc=(uintptr)pc_hist[i].location;
+                        raw_mov_q_mi((uintptr)&regs.pc_p,native_pc);
+                        raw_mov_q_mi((uintptr)&regs.pc_oldp,native_pc);
+                        compemu_raw_mov_l_mi((uintptr)&regs.pc,instruction_guest_pc);
+                        compemu_raw_mov_l_mi((uintptr)&regs.fault_pc,instruction_guest_pc);
+                        compemu_raw_mov_l_ri(REG_PAR1,cft_map(opcode));
+                        const uae_u32 target=cft_map(opcode)==0x4eb9?do_get_mem_long((uae_u32*)(pc_hist[i].location+1)):0;
+                        compemu_raw_mov_l_ri(REG_PAR2,target);
+                        raw_dec_sp(STACK_SHADOW_SPACE);compemu_raw_call((uintptr)aranym_upstream_control_guard);raw_inc_sp(STACK_SHADOW_SPACE);
+                        compemu_raw_test_l_rr(REG_RESULT,REG_RESULT);compemu_raw_jcc_l_oponly(NATIVE_CC_NE);
+                        uae_u32 *safe_control=(uae_u32*)get_target();skip_long();
+                        compemu_raw_jmp((uintptr)popall_memory_deopt);*safe_control=get_target()-(uae_u8*)(safe_control+1);
+                        comp_pc_p=(uae_u8*)pc_hist[i].location;init_comp();
+                    }
                     if(checked_move&&aranym_guarded_move_enabled()) {
                         // Publish ALL state before any part of the memory
                         // instruction. A failed RAM guard uses an ordinary JIT
@@ -6387,6 +6413,7 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_movem_insns,1);
 #endif
                         const uae_u32 canonical=cft_map(opcode);
+                        if(aranym_checked_control_opcode(canonical))compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_control_insns,1);
                         if(guest_pc>=ROMBase&&uint64(guest_pc)<uint64(ROMBase)+ROMSize&&aranym_checked_move_opcode(canonical))
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_rom_memory_insns,1);
                         if(guest_pc>=aranym_jit_native_probe_begin && guest_pc<aranym_jit_native_probe_end) {

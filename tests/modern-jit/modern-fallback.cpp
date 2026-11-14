@@ -598,6 +598,27 @@ template<bool Multiple> uae_u32 native_ram_plan(const void *encoded) {
     else return modern040::native_ea::allowed(image,state,memory)?1:0;
 }
 }
+// Only existing native RTS/JSR/JMP bodies are selected. This guard never
+// calls a device. An RTS target peek occurs only after proving plain RAM.
+uae_u32 REGPARAM2 aranym_upstream_control_guard(uae_u32 opcode,uae_u32 target) {
+    if(regs.tc&0x8000)return 0;
+    const auto stack_ram=[](uae_u32 address,bool write) {
+        const uint64_t end=uint64_t(address)+4;
+        const bool backing=end<=STRAM_END||(address>=FastRAMBase&&end<=uint64_t(FastRAMBase)+FastRAMSize);
+        return backing&&address<0xff000000&&test_ram_boundary(address,4,regs.s,write);
+    };
+    if(opcode==0x4e75) {
+        if(!stack_ram(regs.regs[15],false))return 0;
+        target=phys_get_long(regs.regs[15]);
+    } else if(opcode==0x4e90||opcode==0x4ed0)target=regs.regs[8];
+    else if(opcode!=0x4eb9)return 0;
+    // Avoid an odd/unsafe native target or a wrap/mirrored PC. The genuine
+    // interpreter preserves the exact fault/stack ordering in those cases.
+    if((target&1)||target>=0xff000000||(target&0xfff00000)==0x00f00000||
+       !test_ram_boundary(target,2,regs.s,false))return 0;
+    if((opcode==0x4e90||opcode==0x4eb9)&&!stack_ram(regs.regs[15]-4,true))return 0;
+    return 1;
+}
 uae_u32 REGPARAM2 aranym_upstream_ram_complex_guard(const void *encoded) {
     return native_ram_plan<false>(encoded);
 }
