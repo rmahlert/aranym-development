@@ -50,6 +50,22 @@ inline void aranym_display_perf_milestone(const char *name, int a=0, int b=0)
     std::fprintf(stderr,"DISPLAY_PERF milestone=%s t_us=%llu a=%d b=%d\n",name,
         (unsigned long long)(aranym_display_perf_clock()-s.origin),a,b);
 }
+inline void aranym_display_perf_finish()
+{
+    if (!aranym_display_perf_enabled()) return;
+    AranymDisplayPerfState &s=aranym_display_perf_state();
+    const char *names[]={"frame","videl","compose","present"};
+    for (unsigned i=0;i<4;++i) {
+        const AranymDisplayPerfTotals &t=s.groups[i];
+        std::fprintf(stderr,"DISPLAY_PERF_FINAL group=%s t_us=%llu calls=%llu us=%llu blocks=%llu changed=%llu converted=%llu rects=%llu pixels=%llu update_us=%llu render_us=%llu max_rects=%llu\n",names[i],
+            (unsigned long long)(aranym_display_perf_clock()-s.origin),
+            (unsigned long long)t.calls,(unsigned long long)t.elapsed,
+            (unsigned long long)t.blocks,(unsigned long long)t.changed,
+            (unsigned long long)t.converted,(unsigned long long)t.rects,
+            (unsigned long long)t.pixels,(unsigned long long)t.update,
+            (unsigned long long)t.render,(unsigned long long)t.max_rects);
+    }
+}
 class AranymDisplayPerfScope {
     unsigned group;
     const char *name;

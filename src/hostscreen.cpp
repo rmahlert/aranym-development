@@ -200,6 +200,7 @@ HostScreen::HostScreen(void)
 
 HostScreen::~HostScreen(void)
 {
+	aranym_display_perf_finish();
 	if (logo) {
 		delete logo;
 	}
