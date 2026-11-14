@@ -42,7 +42,7 @@ bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
 // instruction_pc. Reuse the last exact export; no guest access is skipped.
 static_assert(sizeof(m040_state)==152,"audit cached import when state ABI changes");
 m040_state import_snapshot{};bool import_snapshot_valid=false;
-bool cached_import_enabled(){static const bool enabled=aranym_qualified_jit_gate("ARANYM_MODERN040_CACHED_IMPORT");return enabled;}
+bool cached_import_enabled(){static const bool enabled=aranym_jit_opt_in("ARANYM_MODERN040_CACHED_IMPORT");return enabled;}
 bool verify_import_enabled(){static const bool enabled=std::getenv("ARANYM_MODERN040_VERIFY_IMPORT")!=nullptr;return enabled;}
 
 bool legacy_fpu=false,service_exception_delivered=false;

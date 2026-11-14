@@ -824,7 +824,10 @@ static bool aranym_guarded_move_enabled() {
 static bool aranym_checked_control_opcode(uae_u32 opcode) {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
     static const unsigned mask=[](){
-        const char *p=getenv("ARANYM_UPSTREAM_JIT_CONTROL");if(!p)return aranym_qualified_jit_default()?127u:0u;
+        // The preserving profile qualifies exactly RTS, JSR(A0), JSR abs.l
+        // and JMP(A0). Wider EA and stack-control forms remain an explicit
+        // development selection through all/1.
+        const char *p=getenv("ARANYM_UPSTREAM_JIT_CONTROL");if(!p)return aranym_qualified_jit_default()?15u:0u;
         if(!strcmp(p,"rts"))return 1u;if(!strcmp(p,"jsr-a0"))return 2u;
         if(!strcmp(p,"jsr-abs"))return 4u;if(!strcmp(p,"jmp-a0"))return 8u;
         return !strcmp(p,"1")||!strcmp(p,"all")?127u:0u;

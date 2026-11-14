@@ -169,7 +169,10 @@ Windows upgrade build enables these five families by default; the development
 profile described above keeps its original opt-in defaults. Each environment
 gate accepts an explicit 0 to disable that family for paired/negative tests.
 CONTROL additionally accepts the original individual selectors or all/1.
-Cached-import and the standalone abs.w trial remain off in every build.
+Cached-import and the standalone abs.w trial remain explicit opt-ins in every
+build. The preserving profile defaults to exactly RTS, JSR(A0), JSR abs.l and
+JMP(A0); wider control-EA and stack-control forms require the explicit all/1
+development selector.
 
 The x64 native entry now initializes and reserves R15 with the actual current
 MEMBaseDiff, preserving Win64 callee-save behavior. Four guarded upstream

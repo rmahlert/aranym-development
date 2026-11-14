@@ -20,4 +20,12 @@ inline bool aranym_qualified_jit_gate(const char *name) {
     return !std::strcmp(value,"1")||!std::strcmp(value,"on")||
         !std::strcmp(value,"yes")||!std::strcmp(value,"true");
 }
+// Development trials stay off unless explicitly requested, even in the
+// preserving upgrade profile. Do not route these through the qualified
+// default: doing that silently widens the installed execution profile.
+inline bool aranym_jit_opt_in(const char *name) {
+    const char *value=std::getenv(name);
+    return value&&(!std::strcmp(value,"1")||!std::strcmp(value,"on")||
+        !std::strcmp(value,"yes")||!std::strcmp(value,"true"));
+}
 #endif

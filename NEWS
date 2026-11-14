@@ -7,6 +7,8 @@
  * 68040 paged-MMU translation, ATCs, PFLUSH/PTEST and format-7 recovery
  * canonical 96-bit FPU state and pinned WinUAE SoftFloat instruction frontend
  * data-preserving Windows upgrade installer with network/config discovery
+ * corrected RC3 defaults: cached state import and unqualified wider control
+   emitters remain opt-in
 
  New features:
  -------------
