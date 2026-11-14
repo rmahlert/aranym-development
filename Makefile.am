@@ -378,3 +378,5 @@ EXTRA_DIST += src/include/display_diagnostics.h tools/config-locator.cpp tools/b
  tests/cpu-core-upgrade/platform/adapter.h \
  tests/modern-jit/modern-fallback.cpp tests/modern-jit/upstream-compemu.cpp \
  tests/modern-jit/upstream-compstbl.cpp tests/modern-jit/upstream-comptbl.h
+
+EXTRA_DIST += src/include/display_performance.h

@@ -31,6 +31,7 @@
 #include <string>
 
 #include "dirty_rects.h"
+#include "display_performance.h"
 #include "host_surface.h"
 #include "logo.h"
 #include "hostscreen.h"
@@ -650,6 +651,8 @@ void HostScreen::refresh(void)
 	}
 
 	refreshCounter = 0;
+	AranymDisplayPerfScope perf(0,"frame");
+	if (screen) { perf.width=screen->w; perf.height=screen->h; }
 
 	if (force_refresh) {
 		clear_screen = true;
@@ -1079,6 +1082,8 @@ void HostScreen::refreshSurface(HostSurface *hsurf)
 
 void HostScreen::drawSurfaceToScreen(HostSurface *hsurf, int *dst_x, int *dst_y)
 {
+	AranymDisplayPerfScope perf(2,"compose");
+	perf.single=bx_options.video.single_blit_composing;
 	if (!hsurf) {
 		return;
 	}
@@ -1091,6 +1096,7 @@ void HostScreen::drawSurfaceToScreen(HostSurface *hsurf, int *dst_x, int *dst_y)
 
 	int width = hsurf->getWidth();
 	int height = hsurf->getHeight();
+	perf.width=width; perf.height=height;
 
 	SDL_Rect src_rect = {0,0, Uint16(width), Uint16(height)};
 	SDL_Rect dst_rect = {0,0, Uint16(screen->w), Uint16(screen->h)};
@@ -1109,6 +1115,7 @@ void HostScreen::drawSurfaceToScreen(HostSurface *hsurf, int *dst_x, int *dst_y)
 
 	Uint8 *dirtyRects = hsurf->getDirtyRects();
 	if (!dirtyRects) {
+		perf.rectangle(dst_rect.x,dst_rect.y,src_rect.w,src_rect.h);
 		SDL_BlitSurface(sdl_surf, &src_rect, screen, &dst_rect);
 
 		setDirtyRect(dst_rect.x,dst_rect.y,dst_rect.w,dst_rect.h);
@@ -1128,6 +1135,7 @@ void HostScreen::drawSurfaceToScreen(HostSurface *hsurf, int *dst_x, int *dst_y)
 			src.w = src_rect.w +  hsurf->getMaxDirtX()-hsurf->getMinDirtX()+1;
 			src.h = src_rect.h +  hsurf->getMaxDirtY()-hsurf->getMinDirtX()+1;
 			
+			perf.rectangle(dst.x,dst.y,src.w,src.h);
 			SDL_BlitSurface(sdl_surf, &src, screen, &dst);
 			setDirtyRect(dst.x,dst.y,dst.w,dst.h);
 		}
@@ -1179,6 +1187,7 @@ void HostScreen::drawSurfaceToScreen(HostSurface *hsurf, int *dst_x, int *dst_y)
 						dst.w = block_w;
 						dst.h = num_lines;
 						
+						perf.rectangle(dst.x,dst.y,src.w,src.h);
 						SDL_BlitSurface(sdl_surf, &src, screen, &dst);
 						
 						setDirtyRect(dst.x,dst.y,dst.w,dst.h);
@@ -1217,6 +1226,10 @@ void HostScreen::refreshScreen(void)
 	if(!hasDirtyRect()) 
 		return;
 	
+	AranymDisplayPerfScope perf(3,"present");
+	perf.width=screen->w; perf.height=screen->h;
+	perf.single=bx_options.video.single_blit_refresh;
+	Uint64 update_started=0;
 	if(bx_options.video.single_blit_refresh) {
 		/* Only update dirty rect with a single update*/
 		SDL_Rect update_rect;
@@ -1225,9 +1238,15 @@ void HostScreen::refreshScreen(void)
 		update_rect.w=maxDirtX-minDirtX+1;
 		update_rect.h=maxDirtY-minDirtY+1;
 #if SDL_VERSION_ATLEAST(2, 0, 0)
+		perf.rectangle(update_rect.x,update_rect.y,update_rect.w,update_rect.h);
+		if (perf.active) update_started=aranym_display_perf_clock();
 		SDL_UpdateWindowSurfaceRects(window, &update_rect, 1);
-		if (renderer)
+		if (perf.active) perf.update+=aranym_display_perf_clock()-update_started;
+		if (renderer) {
+			if (perf.active) update_started=aranym_display_perf_clock();
 			SDL_RenderPresent(renderer);
+			if (perf.active) perf.render+=aranym_display_perf_clock()-update_started;
+		}
 #else
 		SDL_UpdateRects(screen, 1, &update_rect);
 #endif
@@ -1281,9 +1300,15 @@ void HostScreen::refreshScreen(void)
 		}
 				
 #if SDL_VERSION_ATLEAST(2, 0, 0)
+		for (int n=0; perf.active && n<i; ++n) perf.rectangle(update_rects[n].x,update_rects[n].y,update_rects[n].w,update_rects[n].h);
+		if (perf.active) update_started=aranym_display_perf_clock();
 		SDL_UpdateWindowSurfaceRects(window, &update_rects[0], i);
-		if (renderer)
+		if (perf.active) perf.update+=aranym_display_perf_clock()-update_started;
+		if (renderer) {
+			if (perf.active) update_started=aranym_display_perf_clock();
 			SDL_RenderPresent(renderer);
+			if (perf.active) perf.render+=aranym_display_perf_clock()-update_started;
+		}
 #else
 		SDL_UpdateRects(screen, i, &update_rects[0]);
 #endif
@@ -1319,6 +1344,7 @@ void HostScreen::forceRefreshScreen(void)
 
 void HostScreen::bootDone(void)
 {
+	aranym_display_perf_milestone("boot-done");
 	numScreen = SCREEN_LOGO;
 }
 

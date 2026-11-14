@@ -34,6 +34,7 @@
 #include "hardware.h"
 #include "parameters.h"
 #include "adler32.h"
+#include "display_performance.h"
 
 #define DEBUG 0
 #include "debug.h"
@@ -407,6 +408,8 @@ void VIDEL::refreshScreen(void)
 		return;
 	}
 
+	AranymDisplayPerfScope perf(1,"videl");
+	perf.width=surface->getWidth(); perf.height=surface->getHeight();
 	int dirty_w = surface->getDirtyWidth();
 	int dirty_h = surface->getDirtyHeight();
 
@@ -421,12 +424,16 @@ void VIDEL::refreshScreen(void)
 				num_lines=16;
 			}
 			for (x=0; x<dirty_w; x++) {
+				if (perf.active) ++perf.blocks;
 				Uint32 newCrc = calc_adler((Uint8 *)src_line, 2*16, num_lines, src_pitch<<1);
 				if (newCrc != crcList[y*dirty_w+x]) {
+					if (perf.active) ++perf.changed;
 					crcList[y*dirty_w+x] = newCrc;
 					dirtyRects[y * dirty_w + x] = 1;
 				}
 				if (dirtyRects[y * dirty_w + x]) {
+					if (perf.active) ++perf.converted;
+					perf.rectangle(x<<4,y<<4,16,num_lines);
 					/* Convert 16x16 block */
 					int i,j;
 					Uint16 *src_line1 = src_line;
@@ -459,12 +466,16 @@ void VIDEL::refreshScreen(void)
 				num_lines=16;
 			}
 			for (x=0; x<dirty_w; x++) {
+				if (perf.active) ++perf.blocks;
 				Uint32 newCrc = calc_adler((Uint8 *)src_line, 2*videlBpp, num_lines, src_pitch<<1);
 				if (newCrc != crcList[y*dirty_w+x]) {
+					if (perf.active) ++perf.changed;
 					crcList[y*dirty_w+x] = newCrc;
 					dirtyRects[y * dirty_w + x] = 1;
 				}
 				if (dirtyRects[y * dirty_w + x]) {
+					if (perf.active) ++perf.converted;
+					perf.rectangle(x<<4,y<<4,16,num_lines);
 					/* Convert 16x16 block */
 					int j;
 					Uint16 *src_line1 = src_line;
