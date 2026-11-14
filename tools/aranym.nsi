@@ -530,6 +530,21 @@ Function BackupConfig
   Pop $R9
 FunctionEnd
 
+!ifdef PRESERVE_USER_DATA
+Section -runtimepreflight
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File /oname=runtime-verifier.exe "runtime-verifier.exe"
+  File /oname=runtime-manifest.txt "runtime-manifest.txt"
+  Delete "$PLUGINSDIR\runtime-preflight.txt"
+  ExecWait '$\"$PLUGINSDIR\runtime-verifier.exe$\" preflight $\"$INSTDIR$\" $\"$PLUGINSDIR\runtime-preflight.txt$\" $\"$PLUGINSDIR\runtime-manifest.txt$\"' $0
+  ${If} $0 != 0
+    MessageBox MB_ICONSTOP|MB_OK "ARAnyM or one of its runtime DLLs is still open, or the installation directory cannot be updated.$\r$\n$\r$\nClose ARAnyM and every capture/benchmark window, then run this installer again.$\r$\n$\r$\nNo program files were changed." /SD IDOK
+    Abort
+  ${EndIf}
+SectionEnd
+!endif
+
 Section -backupconfigs
   Push "$ActiveConfig"
   Call BackupConfig
@@ -547,6 +562,19 @@ ${MementoSection} "${NAME} Core Files (required)" SecCore
   !include "aranym.files"
 
 ${MementoSectionEnd}
+
+!ifdef PRESERVE_USER_DATA
+Section -verifyruntime
+  Delete "$PLUGINSDIR\runtime-verification.txt"
+  ExecWait '$\"$PLUGINSDIR\runtime-verifier.exe$\" verify $\"$INSTDIR$\" $\"$PLUGINSDIR\runtime-verification.txt$\" $\"$PLUGINSDIR\runtime-manifest.txt$\"' $0
+  CopyFiles /SILENT "$PLUGINSDIR\runtime-verification.txt" "$INSTDIR\ARAnyM-RC3-runtime-verification.txt"
+  ${If} $0 != 0
+    MessageBox MB_ICONSTOP|MB_OK "The final RC3 executable or runtime DLLs did not verify after installation.$\r$\n$\r$\nInstallation has stopped. See:$\r$\n$INSTDIR\ARAnyM-RC3-runtime-verification.txt$\r$\n$\r$\nDo not launch ARAnyM from this directory until the verification problem is corrected." /SD IDOK
+    Abort
+  ${EndIf}
+  DetailPrint "Final RC3 executable and runtime DLL hashes verified"
+SectionEnd
+!endif
 
 ;
 ; Keep the bundled EmuTOS image out of the generic file list.  On a new

@@ -195,6 +195,18 @@ if test "${PRESERVE_USER_DATA:-0}" = 1; then
         exit 1
     }
     cp -a "$build_dir/config-locator.exe" "$stage/config-locator.exe"
+    test -f "$build_dir/runtime-verifier.exe" || {
+        echo "$0: preserving installer requires $build_dir/runtime-verifier.exe" >&2
+        exit 1
+    }
+    cp -a "$build_dir/runtime-verifier.exe" "$stage/runtime-verifier.exe"
+    (
+        cd "$stage"
+        sha256sum aranym.exe SDL2.dll libstdc++-6.dll libgcc_s_seh-1.dll \
+            libwinpthread-1.dll libslirp-0.dll libglib-2.0-0.dll \
+            libintl-8.dll libiconv-2.dll libpcre2-8-0.dll libjpeg-8.dll \
+            > runtime-manifest.txt
+    )
 fi
 
 mkdir -p "$OUTPUT_DIR"
