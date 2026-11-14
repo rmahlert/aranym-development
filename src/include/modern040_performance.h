@@ -13,7 +13,23 @@ struct AranymModernPerf {
     Uint64 calls[6]{},samples[6]{},elapsed[6]{},memory[3]{},services[6]{},events[13]{},opcodes[65536]{};
     Uint64 interpreter=0,fallback=0,get_state=0,set_state=0;
     unsigned random=0x6d2b79f5;bool sampling=false;
+    Uint64 phase_origin=aranym_display_perf_clock(),phase_time=phase_origin,phase_ops[65536]{},phase_memory[3]{},phase_get=0,phase_set=0,phase_fallback=0,phase_interpreter=0;
+    unsigned phase_remaining=1000000;std::map<Uint64,Uint64> phase_sites;
     std::map<Uint64,Uint64> sampled_sites;Uint64 site_drops=0,reject[6]{};unsigned reject_lines=0;
+    void phase(unsigned pc,unsigned opcode){
+        const Uint64 now=aranym_display_perf_clock();
+        std::fprintf(stderr,"MODERN040_PERF_PHASE t_us=%llu dt_us=%llu pc=%08x opcode=%04x fallback=%llu interpreter=%llu d_fallback=%llu d_interpreter=%llu get_state=%llu set_state=%llu fetch=%llu read=%llu write=%llu\n",(unsigned long long)(now-phase_origin),(unsigned long long)(now-phase_time),pc,opcode,
+            (unsigned long long)fallback,(unsigned long long)interpreter,(unsigned long long)(fallback-phase_fallback),(unsigned long long)(interpreter-phase_interpreter),
+            (unsigned long long)(get_state-phase_get),(unsigned long long)(set_state-phase_set),(unsigned long long)(memory[0]-phase_memory[0]),(unsigned long long)(memory[1]-phase_memory[1]),(unsigned long long)(memory[2]-phase_memory[2]));
+        phase_time=now;phase_fallback=fallback;phase_interpreter=interpreter;phase_get=get_state;phase_set=set_state;
+        for(unsigned i=0;i<3;++i)phase_memory[i]=memory[i];
+        std::vector<std::pair<Uint64,unsigned>> tops;for(unsigned i=0;i<65536;++i){const auto delta=opcodes[i]-phase_ops[i];if(delta)tops.emplace_back(delta,i);phase_ops[i]=opcodes[i];}
+        std::sort(tops.rbegin(),tops.rend());
+        for(unsigned i=0;i<tops.size()&&i<8;++i)std::fprintf(stderr,"MODERN040_PERF_PHASE_OPCODE t_us=%llu opcode=%04x count=%llu\n",(unsigned long long)(now-phase_origin),tops[i].second,(unsigned long long)tops[i].first);
+        std::vector<std::pair<Uint64,Uint64>> locations;for(const auto &entry:phase_sites)locations.emplace_back(entry.second,entry.first);std::sort(locations.rbegin(),locations.rend());
+        for(unsigned i=0;i<locations.size()&&i<4;++i)std::fprintf(stderr,"MODERN040_PERF_PHASE_SITE t_us=%llu opcode=%04x pc=%08x samples=%llu\n",(unsigned long long)(now-phase_origin),unsigned(locations[i].second>>32),unsigned(locations[i].second),(unsigned long long)locations[i].first);
+        phase_sites.clear();
+    }
     ~AranymModernPerf(){
         if(!aranym_modern_perf_enabled())return;
         std::fprintf(stderr,"MODERN040_PERF interpreter=%llu fallback=%llu get_state=%llu set_state=%llu fetch=%llu read=%llu write=%llu\n",(unsigned long long)interpreter,(unsigned long long)fallback,(unsigned long long)get_state,(unsigned long long)set_state,(unsigned long long)memory[0],(unsigned long long)memory[1],(unsigned long long)memory[2]);
@@ -43,7 +59,9 @@ public:
     explicit AranymModernPerfStep(bool jit,unsigned opcode=0,unsigned pc=0):active(aranym_modern_perf_enabled()){
         if(!active)return;auto &p=aranym_modern_perf();previous=p.sampling;
         p.random=p.random*1664525u+1013904223u;p.sampling=(p.random>>20)==0;
-        if(jit){++p.fallback;++p.opcodes[opcode&65535];if(p.sampling){const Uint64 key=(Uint64(opcode&65535)<<32)|pc;if(p.sampled_sites.size()<4096||p.sampled_sites.count(key))++p.sampled_sites[key];else ++p.site_drops;}}else ++p.interpreter;
+        if(jit){++p.fallback;++p.opcodes[opcode&65535];if(p.sampling){const Uint64 key=(Uint64(opcode&65535)<<32)|pc;if(p.sampled_sites.size()<4096||p.sampled_sites.count(key))++p.sampled_sites[key];else ++p.site_drops;
+            if(p.phase_sites.size()<4096||p.phase_sites.count(key))++p.phase_sites[key];}}else ++p.interpreter;
+        if(!--p.phase_remaining){p.phase_remaining=1000000;p.phase(pc,opcode);}
     }
     ~AranymModernPerfStep(){if(active)aranym_modern_perf().sampling=previous;}
 };

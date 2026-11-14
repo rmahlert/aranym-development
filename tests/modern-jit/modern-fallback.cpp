@@ -480,7 +480,7 @@ void modern040_execute() {
     struct Depth{Depth(){++depth;}~Depth(){--depth;}}guard;
     initialize();from_old();
     for(;;) {
-        AranymModernPerfStep profile_step(false);
+        AranymModernPerfStep profile_step(false,0,m68k_getpc());
         if(diagnostics&&guest_messages<64&&m68k_getpc()>=FastRAMBase&&m68k_getpc()<FastRAMBase+FastRAMSize) {
             // Bounded own-emulator instruction history in mapped guest RAM,
             // never MMIO and no external debugger/process-memory access.
