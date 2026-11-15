@@ -54,7 +54,7 @@ jobs:
           ./autogen.sh --disable-opengl --enable-sdl2 --disable-slirp --disable-jit-compiler --enable-addressing=normal
           grep -q -- '-DCPU_aarch64' src/Makefile
           make -j3
-          lipo -verify_arch arm64 src/aranym
+          lipo src/aranym -verify_arch arm64
       - name: Fetch matching official EmuTOS ROM and source
         run: |
           mkdir -p build/emutos

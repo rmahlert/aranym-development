@@ -31,7 +31,7 @@ def main():
         executable = contents / "MacOS/aranym"
         images = [executable] + list((contents / "Frameworks").iterdir())
         for image in images:
-            subprocess.run(["lipo", "-verify_arch", "arm64", str(image)], check=True)
+            subprocess.run(["lipo", str(image), "-verify_arch", "arm64"], check=True)
             subprocess.run(["codesign", "--verify", "--strict", str(image)], check=True)
             loads = subprocess.check_output(["otool", "-L", str(image)], text=True)
             for line in loads.splitlines()[1:]:

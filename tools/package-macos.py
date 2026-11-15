@@ -100,7 +100,7 @@ def main():
     main_rpaths = rpaths(binary)
     while queue:
         original, packaged = queue.pop(0)
-        run("lipo", "-verify_arch", "arm64", str(packaged))
+        run("lipo", str(packaged), "-verify_arch", "arm64")
         search = rpaths(original) + main_rpaths
 
         def expand(name):
