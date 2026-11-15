@@ -129,7 +129,6 @@ char gAranymFilesDirectory[MAXPATHLEN];	 // Path to the "AranymFiles" folder
 	
 	//	 helper to check existence
 	NSFileManager* fileManager = [NSFileManager defaultManager];
-	BOOL isDirectory = NO;
 
 	//	 iterate through all folders and check if they exist
 	NSEnumerator* searchPathEnum = [searchPaths objectEnumerator];
@@ -137,22 +136,35 @@ char gAranymFilesDirectory[MAXPATHLEN];	 // Path to the "AranymFiles" folder
 	while ((currentPath = [searchPathEnum nextObject]) != nil)
 	{
 		currentPath = [[currentPath stringByExpandingTildeInPath] stringByStandardizingPath];
-		[fileManager fileExistsAtPath: currentPath isDirectory: &isDirectory];
-		[currentPath getCString: gAranymFilesDirectory maxLength: MAXPATHLEN encoding: NSUTF8StringEncoding];
+		BOOL isDirectory = NO;
+		BOOL exists = [fileManager fileExistsAtPath: currentPath isDirectory: &isDirectory];
 		
-		if (isDirectory)
+		if (exists && isDirectory)
 			//  it's a valid and existing directory
 			break;
 	}
 	
 	//	 if Preferences folder couldn't be found, take last choice
-	if (currentPath == nil)
+	if (currentPath == nil) {
 		currentPath = [[[searchPaths lastObject] stringByExpandingTildeInPath] stringByStandardizingPath];
+		NSError *error = nil;
+		if (currentPath == nil || ![fileManager createDirectoryAtPath:currentPath
+			withIntermediateDirectories:YES attributes:nil error:&error]) {
+			NSLog(@"Cannot create ARAnyM configuration directory: %@", error);
+			exit(EXIT_FAILURE);
+		}
+	}
 
 	//	 store this path, convert it to a C string and copy into buffer
-	[currentPath getFileSystemRepresentation: gAranymFilesDirectory maxLength: MAXPATHLEN];
+	if (![currentPath getFileSystemRepresentation: gAranymFilesDirectory maxLength: MAXPATHLEN]) {
+		NSLog(@"ARAnyM configuration directory path is too long");
+		exit(EXIT_FAILURE);
+	}
 	char realPath[MAXPATHLEN];	 // Temporary storage for the resolved path
-	realpath(gAranymFilesDirectory, realPath);
+	if (realpath(gAranymFilesDirectory, realPath) == NULL) {
+		NSLog(@"Cannot resolve ARAnyM configuration directory");
+		exit(EXIT_FAILURE);
+	}
 	strncpy(gAranymFilesDirectory, realPath, MAXPATHLEN);
 }
 

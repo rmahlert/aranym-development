@@ -367,6 +367,7 @@ dnl Target CPU type.
 ARCHFLAGS=
 HAVE_I386=false
 HAVE_ARM=false
+HAVE_AARCH64=false
 HAVE_SPARC=false
 HAVE_POWERPC=false
 HAVE_X86_64=false
@@ -401,6 +402,7 @@ case "$host_cpu" in
 	fi
 	;;
   sparc* ) CPU_TYPE=sparc HAVE_SPARC=true;;
+  aarch64* | arm64* ) CPU_TYPE=aarch64 HAVE_AARCH64=true;;
   arm* ) CPU_TYPE=arm HAVE_ARM=true
          CFLAGS="$CFLAGS -ffast-math"
          CXXFLAGS="$CXXFLAGS -ffast-math"          
@@ -423,6 +425,7 @@ AM_CONDITIONAL([CPU_TYPE_x86], test "$CPU_TYPE" = "i386")
 AM_CONDITIONAL([CPU_TYPE_x86_64], test "$CPU_TYPE" = "x86_64")
 AM_CONDITIONAL([CPU_TYPE_sparc], test "$CPU_TYPE" = "sparc")
 AM_CONDITIONAL([CPU_TYPE_arm], test "$CPU_TYPE" = "arm")
+AM_CONDITIONAL([CPU_TYPE_aarch64], test "$CPU_TYPE" = "aarch64")
 AM_CONDITIONAL([CPU_TYPE_powerpc], test "$CPU_TYPE" = "powerpc")
 AM_CONDITIONAL([CPU_TYPE_unknown], test "$CPU_TYPE" = "unknown")
 if test "$CPU_TYPE" = "unknown"; then
@@ -430,6 +433,9 @@ if test "$CPU_TYPE" = "unknown"; then
 fi
 DEFINES="$DEFINES -DCPU_$CPU_TYPE"
 AC_DEFINE_UNQUOTED([CPU_TYPE], "$CPU_TYPE", [Define CPU type])
+if $HAVE_AARCH64 && test "$WANT_JIT" = yes; then
+  AC_MSG_ERROR([The AArch64 emitter is undergoing platform validation; the guest JIT is not connected yet. Use --disable-jit-compiler for the interpreter baseline.])
+fi
 
 dnl Checks for programs.
 AC_PROG_CC
@@ -1844,6 +1850,13 @@ if test "$OS_TYPE" = darwin -a "$WITH_FINK" = no; then
             no_sdl2=no
         fi
     fi
+    dnl Homebrew installs SDL dylibs rather than /Library/Frameworks bundles.
+    if test "$no_sdl" = yes -a "$no_sdl2" = yes; then
+        AM_PATH_SDL(1.2.12)
+        if test "$enable_sdl2" != no; then
+            AM_PATH_SDL2(2.0.3)
+        fi
+    fi
 else
     if test "$sdl_static" = yes; then
         if test "$enable_sdl2" != no && test -d "$srcdir/SDL2"; then
@@ -1921,7 +1934,12 @@ AM_CONDITIONAL([ENABLE_SDL2], test "$enable_sdl2" = yes)
 #
 # SDL2 on macOS needs 10.6 or above
 if test "$enable_sdl2" = yes -a "$OS_TYPE" = darwin; then
-	export MACOSX_DEPLOYMENT_TARGET=10.6
+	if $HAVE_AARCH64; then
+		: ${MACOSX_DEPLOYMENT_TARGET:=11.0}
+	else
+		: ${MACOSX_DEPLOYMENT_TARGET:=10.6}
+	fi
+	export MACOSX_DEPLOYMENT_TARGET
 fi
 
 dnl Check for jpeg library
