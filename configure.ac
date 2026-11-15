@@ -577,6 +577,7 @@ case "$host_os" in
     ;;
   darwin*)
 	AC_DEFINE([HAVE_O_FSYNC], 1)
+	LIBS="$LIBS -framework AppKit -framework CoreFoundation -framework IOKit -framework Security"
 	if test "x$WITH_FINK" = "xyes"; then
 		AC_DEFINE([ARANYMHOME], "aranym")
 	else
