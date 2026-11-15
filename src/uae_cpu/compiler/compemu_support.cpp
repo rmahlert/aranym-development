@@ -952,6 +952,15 @@ op_properties prop[65536];
 #else
 struct op_properties { uae_u8 use_flags,set_flags,is_addx,cflow; };
 static op_properties prop[65536];
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+/* Runtime opcode indices that must cross the modern interpreter boundary.
+ * This is populated once after table68k is built.  Ordinary physical-mode
+ * warm-up must stay as close as possible to ARAnyM's original direct
+ * cpufunctbl dispatch: decoding cft_map/table68k and rechecking all MMU state
+ * after every instruction made one-shot boot code substantially slower than
+ * the classic JIT. */
+static uae_u8 aranym_modern_dispatch[65536];
+#endif
 
 static inline int end_block(uae_u32 opcode)
 {
@@ -5620,6 +5629,34 @@ void build_comp(void)
 		 * don't actually use any flags themselves */
 		if (prop[cft_map(opcode)].cflow & fl_const_jump)
 			prop[cft_map(opcode)].use_flags = 0;
+
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+		/* Store this by runtime opcode index, not canonical table index.  These
+		 * instructions either belong to the imported core or can change the
+		 * translation/trace execution mode.  They are rare; all other physical
+		 * instructions use the original one-call interpreter hot path. */
+		switch (table68k[cft_map(opcode)].mnemo) {
+		case i_MMUOP:
+		case i_EMULOP_RETURN:
+		case i_EMULOP:
+			aranym_modern_dispatch[opcode]=1;
+			break;
+		case i_MOVE2C:
+		case i_ORSR:
+		case i_ANDSR:
+		case i_EORSR:
+		case i_MV2SR:
+		case i_STOP:
+		case i_RTE:
+			/* These retain ARAnyM's established host/frame semantics.  A value
+			 * of two requests the classic handler plus one boundary check. */
+			aranym_modern_dispatch[opcode]=2;
+			break;
+		default:
+			aranym_modern_dispatch[opcode]=0;
+			break;
+		}
+#endif
 	}
 #ifdef NOFLAGS_SUPPORT_GENCOMP
 #ifdef NOFLAGS_SUPPORT_GENCPU
@@ -6899,19 +6936,6 @@ void do_nothing(void)
     /* Different implementation in newcpu.cpp */
 #else
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-static inline bool aranym_modern_only_opcode(uae_u32 opcode)
-{
-    const uae_u32 canonical=cft_map(opcode);
-    const instr &in=table68k[canonical];
-    switch(in.mnemo) {
-    case i_MMUOP:
-    case i_EMULOP_RETURN:case i_EMULOP:
-        return true;
-    default:
-        return false;
-    }
-}
-
 static bool aranym_hybrid_classic_active=false;
 bool aranym_upstream_classic_exception_active()
 {
@@ -6924,11 +6948,15 @@ bool aranym_upstream_classic_exception_active()
 
 void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
 {
-    const bool translated=aranym_modern_translation_active(regs.tc,
-        regs.itt0,regs.itt1,regs.dtt0,regs.dtt1);
-    if(translated||regs.t1||regs.t0||aranym_modern_only_opcode(opcode)) {
+    /* m68k_do_compile_execute owns the MMU/trace/restart mode decision before
+     * entering this physical block.  Only the small predecoded set below can
+     * change that mode, and each such opcode ends the block. */
+    const uae_u8 dispatch=aranym_modern_dispatch[opcode];
+    if(dispatch==1) {
         aranym_upstream_modern_step(opcode);
-        if(translated)SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
+        if(aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,
+           regs.dtt0,regs.dtt1)||regs.t1||regs.t0||modern040_restart_pending())
+            SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
         return;
     }
 
@@ -6939,8 +6967,9 @@ void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
      * state handoff there makes XBoot visibly paint the display.  EmulOp stays
      * modern because its direct privilege/frame contract differs from the old
      * physical handler.
-     * Paging, trace or a pending modern restart still takes the modern path
-     * above, as do MMU instructions. With FPU JIT disabled, physical-mode FPU
+     * Paging, trace or a pending modern restart is transferred by
+     * m68k_do_compile_execute, while MMU and mode-changing instructions use
+     * the predecoded boundary above. With FPU JIT disabled, physical-mode FPU
      * instructions deliberately use ARAnyM's direct IEEE handler: crossing the
      * modern state ABI for every scalar FPU operation made XBoot spend hundreds
      * of thousands of full state import/run/export cycles. A later FPU-JIT arm
@@ -6948,13 +6977,9 @@ void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
     aranym_hybrid_classic_active=true;
     (*cpufunctbl[opcode])(opcode);
     aranym_hybrid_classic_active=false;
-    /* A classic physical instruction cannot create or consume modern restart
-     * state.  A genuine modern operation sets JIT_END_COMPILE before returning,
-     * and m68k_do_compile_execute checks the restart boundary before its next
-     * dispatch.  Do not cross that C ABI twice for every ordinary instruction:
-     * this path is also the interpreter warm-up for one-shot boot code. */
-    if(aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,
-       regs.dtt0,regs.dtt1)||regs.t1||regs.t0)
+    if(dispatch==2&&
+       (aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,
+          regs.dtt0,regs.dtt1)||regs.t1||regs.t0||modern040_restart_pending()))
         SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
 }
 #endif
