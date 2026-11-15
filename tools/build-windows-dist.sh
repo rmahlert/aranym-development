@@ -75,6 +75,14 @@ if ! "$package_objdump" -p "$exe" 2>/dev/null |
 	echo "$0: refusing to package a Windows build whose SLIRP option cannot work" >&2
 	exit 1
 fi
+if test "${PRESERVE_USER_DATA:-0}" = 1 &&
+   "$package_objdump" -p "$exe" 2>/dev/null |
+   sed -n 's/^[[:space:]]*DLL Name:[[:space:]]*//p' |
+   grep -Eiq '^lib(stdc\+\+|gcc_s_).+\.dll$'; then
+	echo "$0: preserving installer requires statically linked GCC/C++ runtimes" >&2
+	echo "$0: refusing a payload whose required DLLs the installer removes" >&2
+	exit 1
+fi
 package_strip=${STRIP:-${MINGW_TOOL_PREFIX:-x86_64-w64-mingw32}-strip}
 if ! type "$package_strip" > /dev/null 2>&1; then
 	echo "$0: $package_strip not found; cannot prepare release binaries" >&2

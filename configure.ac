@@ -438,6 +438,12 @@ AC_PROG_OBJC
 AC_PROG_CPP
 AC_PROG_CXX
 AC_PROG_CXXCPP
+if test "x$MODERN040_UPGRADE" = xyes; then
+  dnl The preserving installer removes stale shared GCC runtimes after
+  dnl installing. Make that contract part of every clean upgrade build
+  dnl instead of relying on one build directory's command-line flags.
+  LDFLAGS="$LDFLAGS -static-libgcc -static-libstdc++"
+fi
 AX_PROG_CC_FOR_BUILD
 AX_PROG_CXX_FOR_BUILD
 AC_PROG_MAKE_SET
