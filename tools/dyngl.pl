@@ -268,7 +268,9 @@ my %printf_formats = (
 #
 sub print_header()
 {
-	my $files = join(' ', @ARGV);
+	# The checked-in GL tables must stay identical in an out-of-tree build.
+	# Only normalize the project header's location in the generated comment.
+	my $files = join(' ', map { m{(?:^|/)tools/glfuncs\.h$} ? './tools/glfuncs.h' : $_ } @ARGV);
 	$files = '<stdin>' unless ($files ne "");
 print << "EOF";
 /*

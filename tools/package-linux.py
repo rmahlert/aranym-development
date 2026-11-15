@@ -37,7 +37,10 @@ def main():
     if sys.platform != "linux" or os.uname().machine != "x86_64":
         parser.error("this packaging profile requires native Linux x86-64")
     commit = run("git", "-C", str(ROOT), "rev-parse", "HEAD")
-    if run("git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"):
+    changed = run("git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no")
+    if changed:
+        print(changed, file=sys.stderr)
+        print(run("git", "-C", str(ROOT), "diff", "--stat"), file=sys.stderr)
         parser.error("commit source changes before packaging")
     build = args.build_dir.resolve(strict=True)
     binary = build / "src/aranym"
