@@ -20,7 +20,8 @@ The remaining acceptance gates are in
 
 Development artifacts identify their source commit and carry an exact source
 archive, license notices and runtime dependency metadata. The bundled official
-EmuTOS 1.4 image is paired with its matching source archive. Preserve those
+EmuTOS snapshot image is paired with its exact upstream source archive and build
+recipe in `data/emutos-macos.json`. Preserve those
 materials when sharing an artifact. No personal boot disk or installed guest
 applications belong in the public repository or public CI artifacts.
 

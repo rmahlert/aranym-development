@@ -1,0 +1,13 @@
+{
+  "source_repository": "https://github.com/emutos/emutos",
+  "source_commit": "e0f0c2333d39a487e73d8b17f62b70a95441cd32",
+  "source_archive_url": "https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32",
+  "source_archive_sha256": "6c90a6077881f19e6640f69ba04ae4b96fa23b89537c99cd83874ab2e856514c",
+  "image": "emutos-macos-reference.img",
+  "image_sha256": "a1280e4bbbf7ddf0c3676ef6f80223ea01e9e82c5efa0fcdececbe455671f825",
+  "version": "1.4.0.1+ 20260830-e0f0c233",
+  "build_date": "2026-11-15",
+  "build_command": "make -j4 aranym VERSION=20260830-e0f0c233",
+  "compiler": "m68k-atari-mint-gcc (MiNT 20230719) 4.6.4",
+  "configuration": "Upstream aranym defaults; no localconf.h and no source modifications"
+}

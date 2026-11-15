@@ -55,18 +55,20 @@ jobs:
           grep -q -- '-DCPU_aarch64' src/Makefile
           make -j3
           lipo src/aranym -verify_arch arm64
-      - name: Fetch matching official EmuTOS ROM and source
+      - name: Fetch pinned EmuTOS source for the boot-tested firmware
         run: |
           mkdir -p build/emutos
-          curl -L --fail --retry 3 -o build/emutos/emutos-aranym-1.4.zip https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-aranym-1.4.zip
-          curl -L --fail --retry 3 -o build/emutos/emutos-src-1.4.tar.gz https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-src-1.4.tar.gz
+          curl -L --fail --retry 3 -o build/emutos/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
       - name: Package relocated app with runtime dependencies
         run: >-
           python3 tools/package-macos.py --binary src/aranym --output build/macos-package
-          --emutos-binary-archive build/emutos/emutos-aranym-1.4.zip
-          --emutos-source-archive build/emutos/emutos-src-1.4.tar.gz
+          --emutos-source-archive build/emutos/emutos-source.tar.gz
       - name: Check relocated package startup
         run: python3 tools/check-macos-package.py build/macos-package/ARAnyM-Unofficial.app
+      - name: Boot owned Atari guest and require clean host shutdown
+        run: >-
+          python3 tests/macos-boot/run.py --app build/macos-package/ARAnyM-Unofficial.app
+          --output build/macos-package
       - name: Retain build diagnostics
         if: always()
         uses: actions/upload-artifact@v4

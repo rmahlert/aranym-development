@@ -10,7 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
-import zipfile
+import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,7 +37,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--emutos-binary-archive", type=Path, required=True)
     parser.add_argument("--emutos-source-archive", type=Path, required=True)
     args = parser.parse_args()
     if sys.platform != "darwin":
@@ -80,16 +79,20 @@ def main():
                    ROOT / "COPYING", ROOT / "README.md"):
         shutil.copy2(source, resources / source.name)
     shutil.copy2(ROOT / "doc/config", resources / "config.example")
-    rom_archive_hash = hashlib.sha256(args.emutos_binary_archive.read_bytes()).hexdigest()
+    firmware = json.loads((ROOT / "data/emutos-macos.json").read_text())
+    image_path = ROOT / "data" / firmware["image"]
+    image_hash = hashlib.sha256(image_path.read_bytes()).hexdigest()
     source_archive_hash = hashlib.sha256(args.emutos_source_archive.read_bytes()).hexdigest()
-    if rom_archive_hash != "a7b78a8ce8dfe8b6940b8a9556808b24aae5674ff481b9b6e6388bd9bb8ec6b2":
-        raise RuntimeError("EmuTOS binary archive does not match pinned official 1.4 release")
-    if source_archive_hash != "98977ab2593d9ab81d6fcf9629f6781369912e3fe05c224a35147d5665749702":
-        raise RuntimeError("EmuTOS source archive does not match pinned official 1.4 release")
-    with zipfile.ZipFile(args.emutos_binary_archive) as archive:
-        (resources / "emutos-aranym.img").write_bytes(archive.read("emutos-aranym-1.4/emutos-aranym.img"))
-        (resources / "EmuTOS-LICENSE.txt").write_bytes(archive.read("emutos-aranym-1.4/doc/license.txt"))
-    shutil.copy2(args.emutos_source_archive, output / "emutos-src-1.4.tar.gz")
+    if image_hash != firmware["image_sha256"]:
+        raise RuntimeError("EmuTOS image does not match its pinned build provenance")
+    if source_archive_hash != firmware["source_archive_sha256"]:
+        raise RuntimeError("EmuTOS source archive does not match its pinned source")
+    shutil.copy2(image_path, resources / "emutos-aranym.img")
+    shutil.copy2(ROOT / "data/emutos-macos.json", resources / "EmuTOS-BUILD.json")
+    with tarfile.open(args.emutos_source_archive) as archive:
+        license_member = next(m for m in archive.getmembers() if m.name.endswith("/doc/license.txt"))
+        (resources / "EmuTOS-LICENSE.txt").write_bytes(archive.extractfile(license_member).read())
+    shutil.copy2(args.emutos_source_archive, output / "emutos-e0f0c233-source.tar.gz")
 
     # Resolve dependencies before rewriting their load commands. Framework
     # dependencies outside the system SDK are deliberately rejected here.
@@ -166,8 +169,7 @@ def main():
     manifest = {"source_commit": sha, "architecture": "arm64", "guest_jit": False,
                 "slirp": False, "signing": "ad-hoc; not notarized", "libraries": records,
                 "dynamic_libraries": dynamic_libraries,
-                "emutos": {"version": "1.4", "binary_archive_sha256": rom_archive_hash,
-                           "source_archive_sha256": source_archive_hash}}
+                "emutos": firmware}
     (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (output / "homebrew-dependencies.json").write_text(run("brew", "info", "--json=v2", "--installed") + "\n")
     (output / "README.txt").write_text(
@@ -176,7 +178,7 @@ def main():
         "Ad-hoc signed, not notarized. No guest desktop acceptance yet.\n"
         f"Source commit: {sha}\n"
         "Exact ARAnyM source archive accompanies this artifact.\n"
-        "Official EmuTOS 1.4 image; matching emutos-src-1.4.tar.gz accompanies this artifact.\n"
+        "EmuTOS snapshot built from pinned upstream source; matching source archive and build recipe included.\n"
         "Homebrew dependency versions/source URLs are recorded in homebrew-dependencies.json.\n")
     print(app)
 
