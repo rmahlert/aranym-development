@@ -97,7 +97,26 @@ def main():
     copied = {}
     queue = [(binary, executable)]
     records = []
+    dynamic_libraries = []
     main_rpaths = rpaths(binary)
+
+    def stage_library(resolved):
+        resolved = resolved.resolve(strict=True)
+        if not resolved.is_relative_to(brew_prefix) or ".framework" in str(resolved):
+            raise RuntimeError(f"unsupported non-Homebrew dependency: {resolved}")
+        destination = frameworks / resolved.name
+        if destination.name in copied and copied[destination.name] != resolved:
+            raise RuntimeError(f"conflicting library names: {destination.name}")
+        if destination.name not in copied:
+            copied[destination.name] = resolved
+            shutil.copy2(resolved, destination)
+            destination.chmod(destination.stat().st_mode | 0o200)
+            run("install_name_tool", "-id", "@rpath/" + destination.name, str(destination))
+            queue.append((resolved, destination))
+            records.append({"source": str(resolved), "packaged": destination.name,
+                            "source_sha256": hashlib.sha256(resolved.read_bytes()).hexdigest()})
+        return destination
+
     while queue:
         original, packaged = queue.pop(0)
         run("lipo", str(packaged), "-verify_arch", "arm64")
@@ -122,19 +141,15 @@ def main():
             resolved = next((p.resolve() for p in candidates if p.is_file()), None)
             if resolved is None:
                 raise RuntimeError(f"unresolved dependency {name} in {original}")
-            if not resolved.is_relative_to(brew_prefix) or ".framework" in str(resolved):
-                raise RuntimeError(f"unsupported non-Homebrew dependency: {resolved}")
-            destination = frameworks / resolved.name
-            if destination.name in copied and copied[destination.name] != resolved:
-                raise RuntimeError(f"conflicting library names: {destination.name}")
-            if destination.name not in copied:
-                copied[destination.name] = resolved
-                shutil.copy2(resolved, destination)
-                destination.chmod(destination.stat().st_mode | 0o200)
-                run("install_name_tool", "-id", "@rpath/" + destination.name, str(destination))
-                queue.append((resolved, destination))
-                records.append({"source": str(resolved), "packaged": destination.name,
-                                "source_sha256": hashlib.sha256(resolved.read_bytes()).hexdigest()})
+            destination = stage_library(resolved)
+            if "sdl2-compat" in resolved.parts and not dynamic_libraries:
+                # SDL2-compat dlopens @loader_path/libSDL3.dylib before main().
+                # It is absent from otool -L, but is a required runtime input.
+                sdl3 = stage_library(Path(run("brew", "--prefix", "sdl3")) / "lib/libSDL3.dylib")
+                alias = frameworks / "libSDL3.dylib"
+                if alias != sdl3:
+                    alias.symlink_to(sdl3.name)
+                dynamic_libraries.append(alias.name)
             replacement = ("@executable_path/../Frameworks/" if packaged == executable
                            else "@loader_path/") + destination.name
             run("install_name_tool", "-change", name, replacement, str(packaged))
@@ -143,12 +158,14 @@ def main():
             run("install_name_tool", "-delete_rpath", path, str(packaged))
 
     for library in frameworks.iterdir():
-        run("codesign", "--force", "--sign", "-", str(library))
+        if not library.is_symlink():
+            run("codesign", "--force", "--sign", "-", str(library))
     # Interpreter baseline needs no JIT entitlement.
     run("codesign", "--force", "--sign", "-", "--options", "runtime", str(app))
     run("codesign", "--verify", "--deep", "--strict", str(app))
     manifest = {"source_commit": sha, "architecture": "arm64", "guest_jit": False,
                 "slirp": False, "signing": "ad-hoc; not notarized", "libraries": records,
+                "dynamic_libraries": dynamic_libraries,
                 "emutos": {"version": "1.4", "binary_archive_sha256": rom_archive_hash,
                            "source_archive_sha256": source_archive_hash}}
     (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")

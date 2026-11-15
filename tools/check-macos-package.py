@@ -29,7 +29,12 @@ def main():
         shutil.copytree(app, relocated)
         contents = relocated / "Contents"
         executable = contents / "MacOS/aranym"
-        images = [executable] + list((contents / "Frameworks").iterdir())
+        libraries = list((contents / "Frameworks").iterdir())
+        for alias in libraries:
+            if alias.is_symlink() and (not alias.resolve().is_relative_to((contents / "Frameworks").resolve())
+                                       or not alias.resolve().is_file()):
+                raise RuntimeError(f"missing/escaping library alias {alias.name}")
+        images = [executable] + [p for p in libraries if not p.is_symlink()]
         for image in images:
             subprocess.run(["lipo", str(image), "-verify_arch", "arm64"], check=True)
             subprocess.run(["codesign", "--verify", "--strict", str(image)], check=True)
