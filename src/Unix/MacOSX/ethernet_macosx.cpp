@@ -247,7 +247,7 @@ bool BPFEthernetHandler::open()
 	{
 		if (debug)
 		{
-			D(bug("ETH%d: "ETH_HELPER" child running", ethX));
+			D(bug("ETH%d: " ETH_HELPER " child running", ethX));
 		}
 		int result = execl(exe_path, exe_path, NULL);
 		_exit(result);
@@ -255,13 +255,13 @@ bool BPFEthernetHandler::open()
 
 	if (debug)
 	{
-		D(bug("ETH%d: waiting for "ETH_HELPER" (PID %d) to send file descriptor", ethX, pid));
+		D(bug("ETH%d: waiting for " ETH_HELPER " (PID %d) to send file descriptor", ethX, pid));
 	}
 	fd = fd_receive(sockfd, pid);
 	::close(sockfd);
 	if (fd < 0)
 	{
-		panicbug("ETH%d: failed receiving file descriptor from "ETH_HELPER".", ethX);
+		panicbug("ETH%d: failed receiving file descriptor from " ETH_HELPER ".", ethX);
 		return false;
 	}
 	if (debug)
@@ -359,7 +359,7 @@ bool BPFEthernetHandler::open()
 	{
 		// convert and validate MAC address from configuration
 		// default MAC Address is just made up
-		uint8 mac_addr[6] = {'\0','A','E','T','H', '0'+ethX };
+		uint8 mac_addr[6] = {'\0','A','E','T','H', static_cast<uint8>('0' + ethX) };
 
 		// convert user-defined MAC Address from string to 6 bytes array
 		char *mac_text = bx_options.ethernet[ethX].mac_addr;
