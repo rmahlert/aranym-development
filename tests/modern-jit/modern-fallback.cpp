@@ -403,7 +403,7 @@ void initialize() {
     checked(m040_modern_fpu_operations(!legacy_fpu),"select pinned modern FPU frontend");
     checked(m040_private_operations(1),"enable ARAnyM extension decoder");initialized=true;
     std::fprintf(stderr,"MODERN040_EXPERIMENTAL source=d82bc254 profile=%s paged-MMU native-JIT-boundary fault-restart=precise-physical-bus\n",legacy_fpu?"modern-integer-original-ieee-fpu":"modern-integer-pinned-softfloat-fpu");
-    std::fprintf(stderr,"MODERN040_FALLBACK physical=classic natfeat=noMMU-classic modern=FPU/MMU/EmulOp/translation/trace/restart\n");
+    std::fprintf(stderr,"MODERN040_FALLBACK physical=classic natfeat=noMMU-classic fpu=noMMU-classic modern=MMU/EmulOp/translation/trace/restart\n");
 }
 bool acceptable(const m040_result &result){return result.exit==M040_BUDGET||result.exit==M040_STOPPED||result.exit==M040_HOST_RETURN;}
 void service(m040_result &result) {

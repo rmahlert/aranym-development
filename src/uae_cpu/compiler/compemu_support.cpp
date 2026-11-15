@@ -6904,8 +6904,7 @@ static inline bool aranym_modern_only_opcode(uae_u32 opcode)
     const uae_u32 canonical=cft_map(opcode);
     const instr &in=table68k[canonical];
     switch(in.mnemo) {
-    case i_FPP:case i_FDBcc:case i_FScc:case i_FTRAPcc:case i_FBcc:
-    case i_FSAVE:case i_FRESTORE:case i_MMUOP:
+    case i_MMUOP:
     case i_EMULOP_RETURN:case i_EMULOP:
         return true;
     default:
@@ -6941,7 +6940,11 @@ void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
      * modern because its direct privilege/frame contract differs from the old
      * physical handler.
      * Paging, trace or a pending modern restart still takes the modern path
-     * above, as do the modern FPU and MMU instruction families. */
+     * above, as do MMU instructions. With FPU JIT disabled, physical-mode FPU
+     * instructions deliberately use ARAnyM's direct IEEE handler: crossing the
+     * modern state ABI for every scalar FPU operation made XBoot spend hundreds
+     * of thousands of full state import/run/export cycles. A later FPU-JIT arm
+     * translates those instructions instead. */
     aranym_hybrid_classic_active=true;
     (*cpufunctbl[opcode])(opcode);
     aranym_hybrid_classic_active=false;
