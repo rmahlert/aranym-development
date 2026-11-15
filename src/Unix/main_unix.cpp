@@ -699,6 +699,20 @@ int main(int argc, char **argv)
 	if (!decode_switches(argc, argv))
 		exit(EXIT_FAILURE);
 
+#ifdef USE_JIT
+	/* Print the effective post-config values.  The preserving Windows
+	 * installer deliberately keeps the owner's configuration, so a build
+	 * banner alone cannot establish which JIT profile actually ran. */
+	infoprint("JIT runtime: enabled=%s safe=%s fpu=%s cache=%uKB lazy=%u inline=%s update-pc=%s",
+		bx_options.jit.jit ? "yes" : "no",
+		bx_options.jit.jitsafe ? "yes" : "no",
+		bx_options.jit.jitfpu ? "yes" : "no",
+		(unsigned int)bx_options.jit.jitcachesize,
+		(unsigned int)bx_options.jit.jitlazyflush,
+		bx_options.jit.jitinline ? "yes" : "no",
+		bx_options.jit.jit_update_pc ? "yes" : "no");
+#endif
+
 #if DIRECT_ADDRESSING || FIXED_ADDRESSING
 	// Initialize VM system
 	vm_init();
