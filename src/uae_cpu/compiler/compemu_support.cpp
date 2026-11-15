@@ -6944,11 +6944,34 @@ void do_nothing(void)
 static bool aranym_hybrid_classic_active=false;
 bool aranym_upstream_classic_exception_active()
 {
-    const bool active=aranym_hybrid_classic_active;
-    // An exception can leave the original handler through ARAnyM's longjmp
-    // boundary, bypassing the normal clear after cpufunctbl returns.
-    aranym_hybrid_classic_active=false;
-    return active;
+    /* Keep the owner set across the complete classic warm-up loop.  A bus
+     * fault can leave a handler through ARAnyM's longjmp boundary, so the
+     * outer JIT dispatcher resets it before every native/modern entry. */
+    return aranym_hybrid_classic_active;
+}
+
+static inline void aranym_upstream_warmup_step(uae_u32 opcode)
+{
+    /* Warm-up used to enter aranym_upstream_hybrid_step for every instruction.
+     * That added another host call and two global stores to ARAnyM's original
+     * direct cpufunctbl path.  Keep the classic owner around the whole loop and
+     * cross the full hybrid boundary only for the small predecoded set. */
+    const uae_u8 dispatch=aranym_modern_dispatch[opcode];
+    if(dispatch==1||(dispatch==3&&!regs.s)) {
+        aranym_hybrid_classic_active=false;
+        aranym_upstream_modern_step(opcode);
+        aranym_hybrid_classic_active=true;
+        if(aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,
+           regs.dtt0,regs.dtt1)||regs.t1||regs.t0||modern040_restart_pending())
+            SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
+        return;
+    }
+
+    (*cpufunctbl[opcode])(opcode);
+    if(dispatch>=2&&
+       (aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,
+          regs.dtt0,regs.dtt1)||regs.t1||regs.t0||modern040_restart_pending()))
+        SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
 }
 
 void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
@@ -6991,18 +7014,24 @@ void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
 #endif
 void exec_nostats(void)
 {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+	aranym_hybrid_classic_active=true;
+#endif
 	for (;;)  { 
 		uae_u32 opcode = GET_OPCODE;
 #ifdef FLIGHT_RECORDER
 		m68k_record_step(m68k_getpc(), cft_map(opcode));
 #endif
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-        aranym_upstream_hybrid_step(opcode);
+        aranym_upstream_warmup_step(opcode);
 #else
         (*cpufunctbl[opcode])(opcode);
 #endif
 		cpu_check_ticks();
 		if (end_block(opcode) || SPCFLAGS_TEST(SPCFLAG_ALL)) {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+			aranym_hybrid_classic_active=false;
+#endif
 			return; /* We will deal with the spcflags in the caller */
 		}
 	}
@@ -7018,6 +7047,9 @@ void execute_normal(void)
     if(aranym_jit_diagnostics() && trace_count++<32)
         fprintf(stderr,"UPSTREAM-JIT normal pc=%08x a7=%08x\n",m68k_getpc(),regs.regs[15]);
 	if (!check_for_cache_miss()) {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+		aranym_hybrid_classic_active=true;
+#endif
 		cpu_history pc_hist[MAXRUN];
 		int blocklen = 0;
 #if 0 && FIXED_ADDRESSING
@@ -7034,13 +7066,16 @@ void execute_normal(void)
 			m68k_record_step(m68k_getpc(), cft_map(opcode));
 #endif
 	#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-        aranym_upstream_hybrid_step(opcode);
+        aranym_upstream_warmup_step(opcode);
 #else
         (*cpufunctbl[opcode])(opcode);
 #endif
 			cpu_check_ticks();
 			if (end_block(opcode) || SPCFLAGS_TEST(SPCFLAG_ALL) || blocklen>=MAXRUN) {
 				compile_block(pc_hist, blocklen);
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+				aranym_hybrid_classic_active=false;
+#endif
 				return; /* We will deal with the spcflags in the caller */
 			}
 			/* No need to check regs.spcflags, because if they were set,
@@ -7058,6 +7093,11 @@ typedef void (*compiled_handler)(void);
 void m68k_do_compile_execute(void)
 {
 	for (;;) {
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+        /* Native blocks and the modern interpreter must never inherit the
+         * classic owner after a longjmp from a warm-up handler. */
+        aranym_hybrid_classic_active=false;
+#endif
         if(aranym_jit_diagnostics() &&
            cache_tags[cacheline(regs.pc_p)].handler!=(cpuop_func*)popall_execute_normal){
             if(++aranym_jit_cached_dispatches<=32 || aranym_jit_cached_dispatches%1000000==0)
