@@ -56,12 +56,27 @@ def main():
         (root / "Aranym_files").mkdir()
         environment = {key: value for key, value in os.environ.items()
                        if not key.startswith(("DYLD_", "ARANYM_"))}
-        result = subprocess.run([str(executable), "--help"], cwd=root, env=environment,
-                                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                timeout=45)
-        (output / "relocated-startup.txt").write_text(result.stdout)
-        if result.returncode != 0 or "Usage:" not in result.stdout:
-            raise RuntimeError(f"relocated CLI startup failed: status {result.returncode}")
+        log = output / "relocated-startup.txt"
+        with log.open("w") as stream:
+            process = subprocess.Popen([str(executable), "--help"], cwd=root, env=environment,
+                                       text=True, stdout=stream, stderr=subprocess.STDOUT)
+            try:
+                status = process.wait(timeout=45)
+            except subprocess.TimeoutExpired:
+                try:
+                    subprocess.run(["sample", str(process.pid), "2", "-file",
+                                    str(output / "relocated-startup-stack.txt")],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                                   timeout=10, check=False)
+                finally:
+                    process.kill()
+                    process.wait()
+                print(log.read_text(errors="replace")[-6000:])
+                raise RuntimeError("relocated startup timed out; retained output and native stack")
+        text = log.read_text(errors="replace")
+        if status != 0 or "Usage:" not in text:
+            print(text[-6000:])
+            raise RuntimeError(f"relocated CLI startup failed: status {status}")
         report["relocated_cli"] = True
     (output / "package-check.json").write_text(json.dumps(report, indent=2) + "\n")
     print("PASS: native architecture, signatures, bundled dependency closure, relocated CLI startup")
