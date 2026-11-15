@@ -56,6 +56,9 @@
 #  endif
 #endif
 
+#ifdef HAVE_SLIRP
+#include "cygwin/ethernet_slirp.h"
+#endif
 
 /*
  * Configuration zone ends
@@ -535,9 +538,8 @@ void ETHERNETDriver::stopThread(Handler *handler)
 		D(bug("ETH%d: Stop thread", handler->ethX));
 
 		pthread_cancel(handler->handlingThread);
-#ifndef __APPLE__ /* seems to hang :( */
-		pthread_join(handler->handlingThread, NULL);
-#endif
+		if (handler->joinReceiverOnStop())
+			pthread_join(handler->handlingThread, NULL);
 		handler->handlingThread = 0;
 	}
 }

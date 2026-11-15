@@ -13,6 +13,8 @@
 #include "debug.h"
 
 #include <utility>
+#include <cerrno>
+#include <time.h>
 
 #if defined(OS_mingw)
 #include <winsock2.h>
@@ -76,10 +78,17 @@ uint32 WinSlirpEthernetHandler::parse_ipv4(const char *text, uint32 fallback)
 
 int64_t WinSlirpEthernetHandler::clock_get_ns(void *opaque)
 {
+#ifdef OS_darwin
+	struct timespec tv;
+	(void)opaque;
+	clock_gettime(CLOCK_MONOTONIC, &tv);
+	return (int64_t)tv.tv_sec * 1000000000LL + tv.tv_nsec;
+#else
 	struct timeval tv;
 	(void)opaque;
 	gettimeofday(&tv, NULL);
 	return (int64_t)tv.tv_sec * 1000000000LL + (int64_t)tv.tv_usec * 1000LL;
+#endif
 }
 
 /*
@@ -118,9 +127,18 @@ bool WinSlirpEthernetHandler::open_wake_socket()
 	if (wake_socket == SLIRP_INVALID_SOCKET)
 		return false;
 	memset(&addr, 0, sizeof(addr));
+#ifdef OS_darwin
+	addr.sin_len = sizeof(addr);
+#endif
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	addr.sin_port = 0;
+#if !defined(OS_mingw)
+	if (wake_socket >= FD_SETSIZE) {
+		close_wake_socket();
+		return false;
+	}
+#endif
 	/* Connect the socket to itself so wake() can use a plain send(). */
 	if (bind(wake_socket, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
 		getsockname(wake_socket, (struct sockaddr *)&addr, &addr_len) != 0 ||
@@ -268,6 +286,7 @@ bool WinSlirpEthernetHandler::open()
 		return false;
 	}
 
+	bug("ETH%d: SLIRP %s user-mode networking ready", ethX, slirp_version_string());
 	return true;
 }
 
@@ -299,6 +318,11 @@ int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 		 * Service deferred cancellation while no SLIRP lock is held.
 		 */
 		pthread_testcancel();
+		int old_cancel_state;
+		/* POSIX socket calls inside libslirp can cancel the receiver. Never
+		 * let that strand slirp_lock while stopThread() joins and closes us.
+		 */
+		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_cancel_state);
 		pthread_mutex_lock(&slirp_lock);
 
 		/*
@@ -314,11 +338,15 @@ int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 			slirp_input(slirp, &packet[0], packet.size());
 		}
 		if (!packets.empty()) {
-			std::vector<uint8> packet = std::move(packets.front());
-			packets.pop_front();
+			int packet_length;
+			{
+				std::vector<uint8> packet = std::move(packets.front());
+				packets.pop_front();
+				packet_length = MIN((int)packet.size(), length);
+				memcpy(buffer, &packet[0], packet_length);
+			}
 			pthread_mutex_unlock(&slirp_lock);
-			int packet_length = MIN((int)packet.size(), length);
-			memcpy(buffer, &packet[0], packet_length);
+			pthread_setcancelstate(old_cancel_state, NULL);
 			return packet_length;
 		}
 
@@ -367,6 +395,7 @@ int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 #endif
 		}
 		pthread_mutex_unlock(&slirp_lock);
+		pthread_setcancelstate(old_cancel_state, NULL);
 
 		struct timeval wait_time;
 		wait_time.tv_sec = timeout / 1000;
@@ -375,10 +404,13 @@ int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 		int result = select(0, &readfds, &writefds, &exceptfds, &wait_time);
 #else
 		int result = select(maxfd + 1, &readfds, &writefds, &exceptfds, &wait_time);
+		if (result < 0 && errno == EINTR)
+			continue;
 #endif
 		if (result > 0 && FD_ISSET(wake_socket, &readfds))
 			drain_wake_socket();
 
+		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_cancel_state);
 		pthread_mutex_lock(&slirp_lock);
 		for (size_t i = 0; i < poll_entries.size(); ++i) {
 			poll_entries[i].revents = 0;
@@ -395,6 +427,7 @@ int WinSlirpEthernetHandler::recv(uint8 *buffer, int length)
 		if (slirp != NULL)
 			slirp_pollfds_poll(slirp, result < 0, get_revents, this);
 		pthread_mutex_unlock(&slirp_lock);
+		pthread_setcancelstate(old_cancel_state, NULL);
 		if (result < 0)
 			return -1;
 	}

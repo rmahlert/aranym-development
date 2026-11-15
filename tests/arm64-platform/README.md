@@ -15,8 +15,8 @@ It does not use the callback allowlist entitlement, which is incompatible with
 
 This is a prerequisite for integrating the guest compiler. It proves neither
 68k instruction translation nor FreeMiNT/XaAES/GBE compatibility. The initial
-Mac application build remains an interpreter baseline, with JIT and SLIRP
-explicitly disabled. The existing SLIRP integration is Windows-specific.
+Mac application build remains an interpreter baseline, with guest JIT disabled.
+SLIRP networking is compiled in and bundled for macOS as well as Windows.
 
 Before a community JIT beta:
 

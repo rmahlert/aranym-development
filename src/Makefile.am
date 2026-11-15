@@ -272,6 +272,9 @@ if OS_TYPE_irix
 aranym_SOURCES += Unix/parameters_unix.cpp Unix/irix/unaligned.c Unix/host_filesys_unix.cpp
 else
 if OS_TYPE_darwin
+if HAVE_SLIRP
+aranym_SOURCES += Unix/cygwin/ethernet_slirp.cpp Unix/cygwin/ethernet_slirp.h
+endif
 if WITH_FINK
 aranym_SOURCES += \
 	Unix/parameters_unix.cpp \

@@ -173,7 +173,7 @@ Library =
 # Networking (FreeMiNT with aranym.xif)
 # Range: ETH0-ETH3
 [ETH0]
-# Type: ptp, bridge, or slirp (Cygwin/Windows with libslirp)
+# Type: ptp, bridge, or slirp (Windows/macOS with libslirp)
 # SLIRP uses the private network 10.0.2.0/24 and does not use Tunnel.
 Type = ptp
 # host tunnel device name

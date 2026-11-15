@@ -79,6 +79,9 @@ def main():
                    ROOT / "COPYING", ROOT / "README.md"):
         shutil.copy2(source, resources / source.name)
     shutil.copy2(ROOT / "doc/config", resources / "config.example")
+    (resources / "slirp.config.example").write_text(
+        "[ETH0]\nType = slirp\nTunnel =\nHostIP = 10.0.2.2\n"
+        "AtariIP = 10.0.2.15\nNetmask = 255.255.255.0\nMAC = 52:54:00:12:34:56\n")
     firmware = json.loads((ROOT / "data/emutos-macos.json").read_text())
     image_path = ROOT / "data" / firmware["image"]
     image_hash = hashlib.sha256(image_path.read_bytes()).hexdigest()
@@ -163,18 +166,22 @@ def main():
     for library in frameworks.iterdir():
         if not library.is_symlink():
             run("codesign", "--force", "--sign", "-", str(library))
+    if not any(name.startswith("libslirp") for name in copied):
+        raise RuntimeError("Mac networking package requires a linked and bundled libslirp")
     # Interpreter baseline needs no JIT entitlement.
     run("codesign", "--force", "--sign", "-", "--options", "runtime", str(app))
     run("codesign", "--verify", "--deep", "--strict", str(app))
     manifest = {"source_commit": sha, "architecture": "arm64", "guest_jit": False,
-                "slirp": False, "signing": "ad-hoc; not notarized", "libraries": records,
+                "slirp": True, "signing": "ad-hoc; not notarized", "libraries": records,
                 "dynamic_libraries": dynamic_libraries,
                 "emutos": firmware}
     (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (output / "homebrew-dependencies.json").write_text(run("brew", "info", "--json=v2", "--installed") + "\n")
     (output / "README.txt").write_text(
         "Unofficial ARAnyM ARM64 interpreter development artifact.\n"
-        "Guest ARM64 JIT and SLIRP are not connected in this baseline.\n"
+        "Guest ARM64 JIT is not connected in this baseline. SLIRP is included.\n"
+        "Select SLIRP in Network settings or use the bundled slirp.config.example ETH0 settings.\n"
+        "Guest: 10.0.2.15/24, gateway 10.0.2.2, DNS 10.0.2.3; requires the MiNT NatFeat Ethernet driver.\n"
         "Ad-hoc signed, not notarized. No guest desktop acceptance yet.\n"
         f"Source commit: {sha}\n"
         "Exact ARAnyM source archive accompanies this artifact.\n"

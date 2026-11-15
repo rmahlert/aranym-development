@@ -13,8 +13,8 @@ status. See each platform's evidence before assuming a feature works there.
 
 The Mac workflow currently validates an imported AArch64 instruction emitter
 and prepares a native **interpreter baseline**. The 68k-to-AArch64 JIT is not
-connected yet. The Mac baseline also has SLIRP disabled pending its platform
-integration. A green workflow does not certify a guest desktop or a JIT beta.
+connected yet. The Mac baseline includes SLIRP user-mode networking and its
+runtime dependencies. A green workflow does not certify a guest desktop or a JIT beta.
 The remaining acceptance gates are in
 [tests/arm64-platform/README.md](tests/arm64-platform/README.md).
 

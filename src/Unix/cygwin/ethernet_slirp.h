@@ -58,6 +58,7 @@ public:
 	virtual void close();
 	virtual int recv(uint8 *, int);
 	virtual int send(const uint8 *, int);
+	virtual bool joinReceiverOnStop() const { return true; }
 };
 
 #endif

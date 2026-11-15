@@ -62,6 +62,14 @@ public:
 		virtual void close() = 0;
 		virtual int recv(uint8 *, int) = 0;
 		virtual int send(const uint8 *, int) = 0;
+		virtual bool joinReceiverOnStop() const {
+#ifdef __APPLE__
+			// Preserve the historical TAP/BPF policy until those drivers are qualified.
+			return false;
+#else
+			return true;
+#endif
+		}
 	};
 
 private:
