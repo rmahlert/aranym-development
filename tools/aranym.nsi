@@ -571,12 +571,12 @@ Section -verifyruntime
   Delete "$INSTDIR\libgcc_s_seh-1.dll"
   Delete "$PLUGINSDIR\runtime-verification.txt"
   ExecWait '$\"$PLUGINSDIR\runtime-verifier.exe$\" verify $\"$INSTDIR$\" $\"$PLUGINSDIR\runtime-verification.txt$\" $\"$PLUGINSDIR\runtime-manifest.txt$\"' $0
-  CopyFiles /SILENT "$PLUGINSDIR\runtime-verification.txt" "$INSTDIR\ARAnyM-RC3-runtime-verification.txt"
+  CopyFiles /SILENT "$PLUGINSDIR\runtime-verification.txt" "$INSTDIR\ARAnyM-runtime-verification.txt"
   ${If} $0 != 0
-    MessageBox MB_ICONSTOP|MB_OK "The final RC3 executable or runtime DLLs did not verify after installation.$\r$\n$\r$\nInstallation has stopped. See:$\r$\n$INSTDIR\ARAnyM-RC3-runtime-verification.txt$\r$\n$\r$\nDo not launch ARAnyM from this directory until the verification problem is corrected." /SD IDOK
+    MessageBox MB_ICONSTOP|MB_OK "The installed executable or runtime DLLs did not verify after installation.$\r$\n$\r$\nInstallation has stopped. See:$\r$\n$INSTDIR\ARAnyM-runtime-verification.txt$\r$\n$\r$\nDo not launch ARAnyM from this directory until the verification problem is corrected." /SD IDOK
     Abort
   ${EndIf}
-  DetailPrint "Final RC3 executable and runtime DLL hashes verified"
+  DetailPrint "Installed executable and runtime DLL hashes verified"
 SectionEnd
 !endif
 

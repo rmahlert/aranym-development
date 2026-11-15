@@ -61,11 +61,12 @@ def main():
     info.update({
         "CFBundleExecutable": "aranym",
         "CFBundleName": "ARAnyM Unofficial",
-        "CFBundleDisplayName": "ARAnyM Unofficial ARM64 Interpreter",
+        "CFBundleDisplayName": "ARAnyM 1.2.0 Unofficial Beta 1 ARM64 Interpreter",
         "CFBundleIdentifier": "org.aranym.unofficial.arm64",
         "CFBundleShortVersionString": "1.2.0",
         "CFBundleVersion": "1.2.0",
         "ARAnyMSourceCommit": sha,
+        "ARAnyMBuildLabel": "1.2.0 Unofficial Beta 1",
         "ARAnyMGuestJIT": False,
         "LSMinimumSystemVersion": os.environ.get("MACOSX_DEPLOYMENT_TARGET", "11.0"),
     })
@@ -178,7 +179,7 @@ def main():
     (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (output / "homebrew-dependencies.json").write_text(run("brew", "info", "--json=v2", "--installed") + "\n")
     (output / "README.txt").write_text(
-        "Unofficial ARAnyM ARM64 interpreter development artifact.\n"
+        "ARAnyM 1.2.0 Unofficial Beta 1 - ARM64 interpreter.\n"
         "Guest ARM64 JIT is not connected in this baseline. SLIRP is included.\n"
         "Select SLIRP in Network settings or use the bundled slirp.config.example ETH0 settings.\n"
         "Guest: 10.0.2.15/24, gateway 10.0.2.2, DNS 10.0.2.3; requires the MiNT NatFeat Ethernet driver.\n"

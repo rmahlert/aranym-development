@@ -29,3 +29,21 @@ Community beta releases should use GitHub prerelease status and include the
 commit, checksum, enabled features, known limitations and actual hardware test
 results. GFA Basic/GBE testing on Apple Silicon is still required before
 claiming that workload works.
+
+## Unofficial Beta 1 packaging targets
+
+Application packages only: Windows x86-64 and macOS ARM64, followed by Linux
+x86-64, then Raspberry Pi `armhf` (32-bit) and `arm64` (64-bit). No personal
+drive image or guest applications are included. A target listed here is not a
+claim that its build or acceptance tests have passed.
+
+BeePi publishes separate images for Pi 3, Pi 4/400 and Pi 5/500 at
+<https://sites.google.com/site/beebox68k/beepi>. That hardware list does not
+identify the installed userspace architecture. Select the package using
+`dpkg --print-architecture` on the actual BeePi installation, rather than the
+Pi model or kernel architecture. Both package architectures are requested.
+Linux x86-64 comes first; Raspberry Pi packaging follows.
+
+BeePi relies on JIT performance. The ARM64 guest JIT remains an explicit gate
+for a performance replacement; the existing Mac interpreter acceptance and
+ARM64 emitter tests do not establish a working ARM64 guest JIT on Raspberry Pi.

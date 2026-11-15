@@ -268,7 +268,7 @@ AC_ARG_ENABLE(jit-fpu,
 AC_ARG_ENABLE(jit-debug,       [AS_HELP_STRING([--enable-jit-debug],[activate native code disassemblers (default=no)])], [WANT_JIT_DEBUG=$enableval], [WANT_JIT_DEBUG=no])
 
 AC_ARG_ENABLE(ethernet,        [AS_HELP_STRING([--enable-ethernet],[enable ethernet card emulation (default=yes)])], [WANT_ETHERNET=$enableval], [WANT_ETHERNET=yes])
-AC_ARG_ENABLE(slirp,           [AS_HELP_STRING([--enable-slirp],[enable user-mode SLIRP networking on Windows/macOS (default=auto)])], [WANT_SLIRP=$enableval], [WANT_SLIRP=auto])
+AC_ARG_ENABLE(slirp,           [AS_HELP_STRING([--enable-slirp],[enable user-mode SLIRP networking on Windows/macOS/Linux (default=auto)])], [WANT_SLIRP=$enableval], [WANT_SLIRP=auto])
 
 AC_ARG_ENABLE(bpf-ethernet,    [AS_HELP_STRING([--enable-bpf-ethernet],[enable ethernet card emulation using BPF (default=no)])], [WANT_BFP_ETHERNET=$enableval], [WANT_BFP_ETHERNET=no])
 
@@ -315,7 +315,7 @@ AM_CONDITIONAL([WITH_FINK], test "$WITH_FINK" = "yes")
 have_slirp=no
 if test "$WANT_SLIRP" != no; then
 	case "$host_os" in
-		cygwin*|mingw*|darwin*)
+		cygwin*|mingw*|darwin*|linux*)
 			PKG_CHECK_MODULES([SLIRP], [slirp >= 4.9], [have_slirp=yes], [have_slirp=no])
 			;;
 	esac

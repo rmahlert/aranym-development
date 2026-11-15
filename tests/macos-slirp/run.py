@@ -25,14 +25,17 @@ def main():
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--app", type=Path)
     mode.add_argument("--reference-emulator", type=Path)
+    mode.add_argument("--linux-emulator", type=Path)
     parser.add_argument("--firmware", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     native = sys.platform == "darwin" and os.uname().machine == "arm64"
     if args.app and not native:
         parser.error("Mac acceptance requires native Apple Silicon")
-    if args.reference_emulator and not args.firmware:
-        parser.error("reference run needs --firmware")
+    if args.linux_emulator and sys.platform != "linux":
+        parser.error("Linux acceptance requires native Linux")
+    if (args.reference_emulator or args.linux_emulator) and not args.firmware:
+        parser.error("standalone emulator needs --firmware")
     args.output.mkdir(parents=True, exist_ok=True)
     requests, datagrams = [], []
     stop = threading.Event()
@@ -74,7 +77,9 @@ def main():
     udp_thread = threading.Thread(target=echo, daemon=True)
     http_thread.start()
     udp_thread.start()
-    result = {"native_mac_arm64": native and bool(args.app), "reference_only": bool(args.reference_emulator), "profiles": []}
+    result = {"native_mac_arm64": native and bool(args.app),
+              "native_linux": bool(args.linux_emulator),
+              "reference_only": bool(args.reference_emulator), "profiles": []}
     try:
         # Distinguish unavailable host DNS from a guest SLIRP DNS regression.
         result["host_dns_ipv4"] = sorted({p[4][0] for p in socket.getaddrinfo("example.com", 80, socket.AF_INET)})
@@ -89,7 +94,7 @@ def main():
                     emulator = app / "Contents/MacOS/aranym"
                     firmware = app / "Contents/Resources/emutos-aranym.img"
                 else:
-                    emulator = args.reference_emulator.resolve(strict=True)
+                    emulator = (args.reference_emulator or args.linux_emulator).resolve(strict=True)
                     firmware = args.firmware.resolve(strict=True)
                 code = template
                 for old, port in ((0xa55a1234, http.server_port), (0xa55a5678, udp.getsockname()[1])):
@@ -107,7 +112,7 @@ def main():
                     "Netmask = 255.255.255.0\nMAC = 52:54:00:12:34:56\n")
                 environment = {key: value for key, value in os.environ.items()
                                if not key.startswith(("DYLD_", "ARANYM_", "SDL_"))}
-                if args.reference_emulator:
+                if args.reference_emulator or args.linux_emulator:
                     environment.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
                 log = args.output / ("slirp-" + label + ".txt")
                 request_start, datagram_start = len(requests), len(datagrams)

@@ -44,8 +44,9 @@ python3 tests/macos-slirp/build-guest.py /tmp/NETTEST.PRG --verify-compiler
 
 CI uses the checked-in executable hex and needs no Atari cross compiler. The
 host runner patches two unique data words with its ephemeral fixture ports.
-The same guest can be run in an explicitly marked Linux reference mode with
-`--reference-emulator BINARY --firmware IMAGE`; those results are never native
-Mac acceptance. The temporary reference build uses the same production SLIRP
-backend and NF driver with a local HAVE_SLIRP build override, without enabling
-or advertising a Linux release profile.
+The same guest runs against the Linux package using
+`--linux-emulator BINARY --firmware IMAGE`. That mode requires Linux and records
+Linux acceptance separately from Mac acceptance. `--reference-emulator` remains
+available for explicitly marked development comparisons; those results are
+never package acceptance. Linux now configures the production SLIRP backend
+normally with `--enable-slirp`, without local build overrides.

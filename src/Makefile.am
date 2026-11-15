@@ -253,6 +253,9 @@ endif
 
 if OS_TYPE_linux
 aranym_SOURCES += midi_sequencer.cpp Unix/linux/parameters_linux.cpp Unix/linux/ethernet_linux.cpp Unix/linux/ethernet_linux.h Unix/host_filesys_unix.cpp
+if HAVE_SLIRP
+aranym_SOURCES += Unix/cygwin/ethernet_slirp.cpp Unix/cygwin/ethernet_slirp.h
+endif
 else
 if OS_TYPE_cygwin
 aranym_SOURCES += Unix/cygwin/parameters_cygwin.cpp Unix/cygwin/tools_cygwin.cpp Unix/cygwin/ethernet_cygwin.cpp Unix/cygwin/ethernet_cygwin.h Unix/cygwin/win32_supp.cpp Unix/win32_supp.h Unix/windows_ver.h

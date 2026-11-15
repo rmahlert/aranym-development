@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Package the Linux x86-64 modern040 build as an application-only Debian package."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+
+ROOT = Path(__file__).resolve().parents[1]
+VERSION = "1.2.0~unofficial.beta1"
+PACKAGE = "aranym-unofficial"
+
+
+def run(*args, **kwargs):
+    return subprocess.check_output(args, text=True, **kwargs).strip()
+
+
+def sha(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--build-dir", type=Path, required=True)
+    parser.add_argument("--slirp-library", type=Path, required=True)
+    parser.add_argument("--slirp-source-archive", type=Path, required=True)
+    parser.add_argument("--emutos-source-archive", type=Path, required=True)
+    parser.add_argument("--winuae-source-archive", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    if sys.platform != "linux" or os.uname().machine != "x86_64":
+        parser.error("this packaging profile requires native Linux x86-64")
+    commit = run("git", "-C", str(ROOT), "rev-parse", "HEAD")
+    if run("git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"):
+        parser.error("commit source changes before packaging")
+    build = args.build_dir.resolve(strict=True)
+    binary = build / "src/aranym"
+    config = (build / "config.h").read_text()
+    for macro in ("HAVE_SLIRP", "ETHERNET_SUPPORT"):
+        if not re.search(r"^#define " + macro + r" 1$", config, re.M):
+            raise RuntimeError("missing build feature: " + macro)
+    if "-DEXPERIMENTAL_UPSTREAM_MODERN040" not in (build / "Makefile").read_text():
+        raise RuntimeError("missing modern040 build profile")
+    if "Advanced Micro Devices X86-64" not in run("readelf", "-h", str(binary)):
+        raise RuntimeError("binary is not x86-64")
+    if "libslirp.so.0" not in run("readelf", "-d", str(binary)):
+        raise RuntimeError("binary does not link libslirp")
+    if "[/usr/lib/aranym-unofficial]" not in run("readelf", "-d", str(binary)):
+        raise RuntimeError("configure LDFLAGS with -Wl,-rpath,/usr/lib/aranym-unofficial")
+    if "--datadir=/usr/share/aranym-unofficial" not in run(str(build / "config.status"), "--config"):
+        raise RuntimeError("configure with --datadir=/usr/share/aranym-unofficial")
+    output = args.output.resolve()
+    stage = output / "deb-root"
+    if stage.exists():
+        parser.error("choose an output without an existing deb-root")
+    output.mkdir(parents=True, exist_ok=True)
+    data = stage / "usr/share/aranym-unofficial/aranym"
+    doc = stage / "usr/share/doc/aranym-unofficial"
+    lib = stage / "usr/lib/aranym-unofficial"
+    exe = stage / "usr/bin/aranym-unofficial"
+    for path in (data, doc, lib, exe.parent, stage / "DEBIAN"):
+        path.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(binary, exe)
+    subprocess.run(["strip", str(exe)], check=True)
+    shutil.copy2(args.slirp_library.resolve(strict=True), lib / "libslirp.so.0")
+    # Fixed, reviewed allowlist: no guest hard disk, user config or applications.
+    for name in ("logo.bmp", "wm_icon.bmp"):
+        shutil.copy2(ROOT / "data" / name, data / name)
+    shutil.copy2(ROOT / "doc/config", data / "config.example")
+    shutil.copy2(ROOT / "COPYING", doc / "copyright")
+    shutil.copy2(ROOT / "UNOFFICIAL.md", doc / "UNOFFICIAL.md")
+    firmware = json.loads((ROOT / "data/emutos-macos.json").read_text())
+    image = ROOT / "data/emutos-macos-reference.img"
+    if sha(image) != firmware["image_sha256"] or sha(args.emutos_source_archive) != firmware["source_archive_sha256"]:
+        raise RuntimeError("firmware/source pair does not match pinned provenance")
+    shutil.copy2(image, data / "emutos-aranym.img")
+    shutil.copy2(ROOT / "data/emutos-macos.json", doc / "EmuTOS-BUILD.json")
+    with tarfile.open(args.emutos_source_archive) as archive:
+        license_file = next(m for m in archive.getmembers() if m.name.endswith("/doc/license.txt"))
+        (doc / "EmuTOS-LICENSE.txt").write_bytes(archive.extractfile(license_file).read())
+    if sha(args.slirp_source_archive) != "3caff6e2de445f4995629d4929c55419f661b2b1d14f12481e155a71c1e8f811":
+        raise RuntimeError("libslirp source archive does not match 4.9.1 pin")
+    with tarfile.open(args.slirp_source_archive) as archive:
+        license_file = next(m for m in archive.getmembers() if m.name.endswith("/COPYRIGHT"))
+        (doc / "libslirp-COPYRIGHT").write_bytes(archive.extractfile(license_file).read())
+    sources = output / "source"
+    sources.mkdir()
+    subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar.gz", "-o", str(sources / "aranym-source.tar.gz"), commit], check=True)
+    for source, name in ((args.emutos_source_archive, "emutos-e0f0c233-source.tar.gz"),
+                         (args.winuae_source_archive, "winuae-d82bc254-source.tar.gz"),
+                         (args.slirp_source_archive, "libslirp-v4.9.1.tar.bz2")):
+        shutil.copy2(source, sources / name)
+    # Resolve system package dependencies from the actual ELF images. The
+    # private libslirp is supplied here, so exclude the self dependency only.
+    (output / "debian").mkdir()
+    (output / "debian/control").write_text("Source: aranym-unofficial\n\nPackage: aranym-unofficial\nArchitecture: amd64\nDescription: Unofficial ARAnyM beta\n")
+    shlibs = output / "debian/shlibs.local"
+    shlibs.write_text("libslirp 0 aranym-unofficial\n")
+    dependencies = run("dpkg-shlibdeps", "-O", "-xaranym-unofficial", "-L" + str(shlibs),
+                       "-l" + str(lib), "-e" + str(exe), "-e" + str(lib / "libslirp.so.0"), cwd=output)
+    depends = next(line.split("=", 1)[1] for line in dependencies.splitlines() if line.startswith("shlibs:Depends="))
+    (stage / "DEBIAN/control").write_text(
+        f"Package: {PACKAGE}\nVersion: {VERSION}\nArchitecture: amd64\n"
+        "Maintainer: ARAnyM Unofficial Community\nSection: otherosfs\nPriority: optional\n"
+        f"Depends: {depends}\n"
+        "Description: ARAnyM 1.2.0 Unofficial Beta 1\n"
+        " Experimental modern040 x86-64 JIT and SLIRP networking.\n"
+        " Application and EmuTOS firmware only; no guest hard disk.\n")
+    (doc / "README.txt").write_text(
+        "ARAnyM 1.2.0 Unofficial Beta 1, Linux x86-64.\n"
+        "Install the .deb with: sudo apt install ./aranym-1.2.0-unofficial-beta1-linux-amd64.deb\n"
+        "Launch aranym-unofficial. Use -c PATH to open your existing configuration.\n"
+        "Default profile: ~/aranym-modern040-beta1; existing profiles are preserved.\n"
+        "Firmware: /usr/share/aranym-unofficial/aranym/emutos-aranym.img\n"
+        "SLIRP: ETH0 Type=slirp, AtariIP=10.0.2.15, HostIP=10.0.2.2, Netmask=255.255.255.0.\n"
+        "Guest gateway=10.0.2.2, DNS=10.0.2.3; use the MiNT NatFeat Ethernet driver.\n"
+        "FPU interpretation is supported; FPU JIT is disabled. Full desktop testing remains required.\n"
+        "Corresponding source archives accompany this package.\n")
+    applications = stage / "usr/share/applications"
+    applications.mkdir(parents=True)
+    (applications / "aranym-unofficial.desktop").write_text(
+        "[Desktop Entry]\nType=Application\nName=ARAnyM Unofficial Beta 1\n"
+        "Exec=aranym-unofficial\nIcon=aranym-unofficial\nCategories=System;Emulator;\nTerminal=false\n")
+    icons = stage / "usr/share/icons/hicolor/48x48/apps"
+    icons.mkdir(parents=True)
+    shutil.copy2(ROOT / "contrib/icon-48.png", icons / "aranym-unofficial.png")
+    manifest = {"source_commit": commit, "architecture": "amd64", "guest_jit": "x86-64 modern040; FPU JIT disabled",
+                "slirp": "4.9.1 (bundled)", "depends": depends, "emutos": firmware,
+                "files": {str(p.relative_to(stage)): sha(p) for p in sorted(stage.rglob("*")) if p.is_file()},
+                "sources": {p.name: sha(p) for p in sources.iterdir()}}
+    (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    package = output / "aranym-1.2.0-unofficial-beta1-linux-amd64.deb"
+    subprocess.run(["dpkg-deb", "--root-owner-group", "--build", str(stage), str(package)], check=True)
+    print(package)
+
+
+if __name__ == "__main__":
+    main()
