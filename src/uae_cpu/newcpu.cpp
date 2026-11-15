@@ -1091,6 +1091,13 @@ void m68k_reset (void)
 	log_ptr = 0;
 	memset(frlog, 0, sizeof(frlog));
 #endif
+#if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+	/* The modern exception/MMU boundary must exist before translated guest code
+	 * can raise its first exception. Physical FPU fallback used to initialize it
+	 * accidentally; keeping FPU on the direct IEEE path exposed that dependency.
+	 * Re-create the boundary explicitly after every architectural reset. */
+	modern040_prepare();
+#endif
 }
 
 void m68k_emulop_return(void)
