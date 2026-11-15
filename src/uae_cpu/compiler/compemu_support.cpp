@@ -6927,8 +6927,7 @@ void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
 {
     const bool translated=aranym_modern_translation_active(regs.tc,
         regs.itt0,regs.itt1,regs.dtt0,regs.dtt1);
-    if(translated||regs.t1||regs.t0||modern040_restart_pending()||
-       aranym_modern_only_opcode(opcode)) {
+    if(translated||regs.t1||regs.t0||aranym_modern_only_opcode(opcode)) {
         aranym_upstream_modern_step(opcode);
         if(translated)SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
         return;
@@ -6946,8 +6945,13 @@ void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
     aranym_hybrid_classic_active=true;
     (*cpufunctbl[opcode])(opcode);
     aranym_hybrid_classic_active=false;
+    /* A classic physical instruction cannot create or consume modern restart
+     * state.  A genuine modern operation sets JIT_END_COMPILE before returning,
+     * and m68k_do_compile_execute checks the restart boundary before its next
+     * dispatch.  Do not cross that C ABI twice for every ordinary instruction:
+     * this path is also the interpreter warm-up for one-shot boot code. */
     if(aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,
-       regs.dtt0,regs.dtt1)||regs.t1||regs.t0||modern040_restart_pending())
+       regs.dtt0,regs.dtt1)||regs.t1||regs.t0)
         SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
 }
 #endif

@@ -1378,7 +1378,7 @@ static bool modern040_serve_priority_irqs(bool resetStop)
 #define SERVE_VBL_MFP(resetStop)							\
 {															\
 	if (MODERN040_PRIORITY_IRQS(resetStop)) {} else			\
-	if (!MODERN040_IRQ_BLOCKED && SPCFLAGS_TEST( SPCFLAG_INT3|SPCFLAG_VBL|SPCFLAG_INT5|SPCFLAG_SCC|SPCFLAG_MFP )) {		\
+	if (SPCFLAGS_TEST( SPCFLAG_INT3|SPCFLAG_VBL|SPCFLAG_INT5|SPCFLAG_SCC|SPCFLAG_MFP ) && !MODERN040_IRQ_BLOCKED) {		\
 		if (SPCFLAGS_TEST( SPCFLAG_INT3 )) {					\
 			if (3 > regs.intmask) {							\
 				Interrupt(3);								\
