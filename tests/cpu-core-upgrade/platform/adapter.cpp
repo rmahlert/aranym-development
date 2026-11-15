@@ -137,6 +137,7 @@ void service(m040_result &result) {
     if(trace_service)std::fprintf(stderr,"MODERN040_SERVICE end kind=%u pc=%08x d0=%08x sr=%04x\n",call.kind,unsigned(m68k_getpc()),regs.regs[0],regs.sr);
 }
 }
+void modern040_prepare(){initialize();}
 void modern040_reset_requested(){initialized=false;}
 void modern040_external_exception(int vector) {
     if(!initialized)fail("external exception before initialization");

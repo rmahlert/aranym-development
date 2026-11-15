@@ -555,7 +555,18 @@ static int building_bus_fault_stack_frame=0;
 
 void Exception(int nr, uaecptr oldpc)
 {
-#if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+#if defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+    extern bool aranym_upstream_classic_exception_active();
+    const bool classic=aranym_upstream_classic_exception_active();
+    const bool physical_probe=(nr==2||nr==3)&&!modern040_owns_exception();
+    const uae_u32 pc=m68k_getpc();
+    const bool fast_guest=pc>=FastRAMBase&&
+        uint64_t(pc)<uint64_t(FastRAMBase)+FastRAMSize;
+    if (!classic&&!physical_probe&&(modern040_owns_exception()||fast_guest)) {
+        modern040_external_exception(nr);
+        return;
+    }
+#elif defined(EXPERIMENTAL_MODERN040)
     modern040_external_exception(nr);
     return;
 #endif
@@ -659,7 +670,12 @@ void Exception(int nr, uaecptr oldpc)
 
 static void Interrupt(int nr)
 {
-#if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+#if defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+    if (modern040_owns_interrupt()) {
+        modern040_external_interrupt(nr+24,unsigned(nr));
+        return;
+    }
+#elif defined(EXPERIMENTAL_MODERN040)
     modern040_external_interrupt(nr+24,unsigned(nr));
     return;
 #endif
@@ -673,7 +689,12 @@ static void Interrupt(int nr)
 
 static void SCCInterrupt(int nr)
 {
-#if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+#if defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+    if (modern040_owns_interrupt()) {
+        modern040_external_interrupt(nr,5);
+        return;
+    }
+#elif defined(EXPERIMENTAL_MODERN040)
     modern040_external_interrupt(nr,5);
     return;
 #endif
@@ -685,7 +706,12 @@ static void SCCInterrupt(int nr)
 
 static void MFPInterrupt(int nr)
 {
-#if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+#if defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+    if (modern040_owns_interrupt()) {
+        modern040_external_interrupt(nr,6);
+        return;
+    }
+#elif defined(EXPERIMENTAL_MODERN040)
     modern040_external_interrupt(nr,6);
     return;
 #endif

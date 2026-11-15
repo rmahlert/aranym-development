@@ -39,6 +39,7 @@ extern uae_u32 aranym_upstream_native_pc_count(uae_u32);
 extern uae_u32 aranym_upstream_native_pc_noflags_count(uae_u32);
 namespace {
 bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
+bool modern_guest_started=false;
 // ABI1 imports overwrite every field except BUSCR/PCR and, for legacy FPU,
 // instruction_pc. Reuse the last exact export; no guest access is skipped.
 static_assert(sizeof(m040_state)==152,"audit cached import when state ABI changes");
@@ -402,6 +403,7 @@ void initialize() {
     checked(m040_modern_fpu_operations(!legacy_fpu),"select pinned modern FPU frontend");
     checked(m040_private_operations(1),"enable ARAnyM extension decoder");initialized=true;
     std::fprintf(stderr,"MODERN040_EXPERIMENTAL source=d82bc254 profile=%s paged-MMU native-JIT-boundary fault-restart=precise-physical-bus\n",legacy_fpu?"modern-integer-original-ieee-fpu":"modern-integer-pinned-softfloat-fpu");
+    std::fprintf(stderr,"MODERN040_FALLBACK physical=classic modern=FPU/MMU/private/translation/trace/restart/guest-frames\n");
 }
 bool acceptable(const m040_result &result){return result.exit==M040_BUDGET||result.exit==M040_STOPPED||result.exit==M040_HOST_RETURN;}
 void service(m040_result &result) {
@@ -453,16 +455,23 @@ void service(m040_result &result) {
     if(trace_service)std::fprintf(stderr,"MODERN040_SERVICE end kind=%u pc=%08x d0=%08x sr=%04x\n",call.kind,unsigned(m68k_getpc()),regs.regs[0],regs.sr);
 }
 }
+void modern040_prepare(){initialize();}
 void modern040_memory_barrier() {
     aranym_modern_perf_event(9);
     // Hardware copies can run inside an existing CPU bus callback. The core
     // barrier touches only same-thread provenance, with no resolver/reentry.
     if(initialized&&frame_irq_profile)checked(m040_frame_barrier(),"invalidate direct hardware RAM write provenance");
 }
-void modern040_reset_requested(){initialized=false;import_snapshot_valid=false;}
+void modern040_reset_requested(){initialized=false;import_snapshot_valid=false;modern_guest_started=false;}
 bool modern040_restart_pending() {
     if(!initialized)return false;
     int pending=0;checked(m040_native_restart_pending(&pending),"read native restart boundary");return pending;
+}
+bool modern040_owns_exception() {
+    return depth||modern040_restart_pending();
+}
+bool modern040_owns_interrupt() {
+    return modern040_owns_exception()||(frame_irq_profile&&modern_guest_started);
 }
 bool modern040_irq_restart_pending() {
     if(!initialized)return false;
@@ -516,6 +525,9 @@ void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
     if(depth)fail("nested JIT fallback guest execution not qualified");
     struct Depth{Depth(){++depth;}~Depth(){--depth;}}guard;
     initialize();
+    const uae_u32 entry_pc=m68k_getpc();
+    if(entry_pc>=FastRAMBase&&uint64_t(entry_pc)<uint64_t(FastRAMBase)+FastRAMSize)
+        modern_guest_started=true;
     unsigned profile_opcode=encoded_opcode;
 #if defined(HAVE_GET_WORD_UNSWAPPED) && !defined(FULLMMU)
     profile_opcode=do_byteswap_16(profile_opcode);

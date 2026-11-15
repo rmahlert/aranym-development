@@ -98,7 +98,10 @@ static void build_comp(void);
 #include "../../modern040/native-ea-plan.hpp"
 #include "modern040_performance.h"
 extern void REGPARAM2 aranym_upstream_modern_step(uae_u32 opcode);
+void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode);
+bool aranym_upstream_classic_exception_active();
 extern void modern040_execute();
+extern void modern040_prepare();
 extern uae_u32 REGPARAM2 aranym_upstream_ram_move_guard(uae_u32 opcode,uae_u32 extensions);
 extern uae_u32 REGPARAM2 aranym_upstream_control_guard(const void *image);
 extern void aranym_upstream_memory_deopt();
@@ -6537,7 +6540,7 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 					}
 					raw_dec_sp(STACK_SHADOW_SPACE);
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-                    compemu_raw_call(JITPTR aranym_upstream_modern_step);
+                    compemu_raw_call(JITPTR aranym_upstream_hybrid_step);
 #else
                     compemu_raw_call(JITPTR cputbl[opcode]);
 #endif
@@ -6901,91 +6904,58 @@ void do_nothing(void)
     /* Different implementation in newcpu.cpp */
 #else
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-static inline bool aranym_classic_warmup_safe(uae_u32 opcode,uae_u32 pc)
+static inline bool aranym_modern_only_opcode(uae_u32 opcode)
 {
     const uae_u32 canonical=cft_map(opcode);
     const instr &in=table68k[canonical];
-    const bool memory=(in.suse&&in.smode>=Aind&&in.smode<=PC8r)||
-        (in.duse&&in.dmode>=Aind&&in.dmode<=PC8r);
-    if(!memory) {
-        switch(in.mnemo) {
-        case i_OR:case i_AND:case i_EOR:case i_ADD:case i_ADDA:case i_ADDX:
-        case i_SUB:case i_SUBA:case i_SUBX:case i_CMP:case i_CMPA:
-        case i_MOVE:case i_MOVEA:case i_ASR:case i_ASL:case i_LSR:case i_LSL:
-        case i_ROL:case i_ROR:case i_ROXL:case i_ROXR:case i_SWAP:case i_EXT:
-        case i_NEG:case i_NEGX:case i_CLR:case i_NOT:case i_TST:case i_BCHG:
-        case i_BCLR:case i_BSET:case i_BTST:case i_Bcc:case i_DBcc:case i_Scc:
-        case i_NOP:case i_MULU:case i_MULS:case i_MULL:case i_EXG:
-            return true;
-        default:
-            break;
-        }
+    switch(in.mnemo) {
+    case i_FPP:case i_FDBcc:case i_FScc:case i_FTRAPcc:case i_FBcc:
+    case i_FSAVE:case i_FRESTORE:case i_MMUOP:
+    case i_EMULOP_RETURN:case i_EMULOP:case i_NATFEAT_ID:case i_NATFEAT_CALL:
+        return true;
+    case i_TRAP:case i_TRAPV:case i_TRAPcc:case i_CHK:case i_CHK2:
+    case i_BKPT:case i_RTE:case i_RTR:case i_STOP: {
+        const uae_u32 pc=m68k_getpc();
+        return pc>=FastRAMBase&&
+            uint64_t(pc)<uint64_t(FastRAMBase)+FastRAMSize;
     }
-
-    const auto span=modern040::native_ea::code_span(pc,FastRAMBase,FastRAMSize);
-    if(!span.words)return false;
-    modern040::native_ea::Image image;
-    image.pc=pc;image.count=span.words;
-    auto *code=(uae_u16 *)regs.pc_p;
-    for(unsigned i=0;i<image.count;++i)image.words[i]=do_get_mem_word(code+i);
-    if(in.mnemo==i_BSR) {
-        const uint64_t stack_end=uint64_t(regs.regs[15]);
-        const uae_u32 stack=regs.regs[15]-4;
-        const bool stack_backed=stack_end<=STRAM_END||
-            (stack>=FastRAMBase&&stack_end<=uint64_t(FastRAMBase)+FastRAMSize);
-        if(!stack_backed||!test_ram_boundary(stack,4,regs.s,true))return false;
-        const unsigned low=canonical&255;uae_u32 target=0;
-        if(low==0) {
-            if(image.count<2)return false;
-            target=pc+2+uae_u32(uae_s32(uae_s16(image.words[1])));
-        } else if(low==255) {
-            if(image.count<3)return false;
-            const uae_u32 displacement=(uae_u32(image.words[1])<<16)|image.words[2];
-            target=pc+2+displacement;
-        } else target=pc+2+uae_u32(uae_s32(uae_s8(low)));
-        const uint64_t target_end=uint64_t(target)+2;
-        const bool target_backed=target_end<=STRAM_END||
-            (target>=FastRAMBase&&target_end<=uint64_t(FastRAMBase)+FastRAMSize)||
-            (target>=ROMBase&&target_end<=uint64_t(ROMBase)+ROMSize);
-        return target_backed&&!(target&1)&&target<0xff000000&&
-            (target&0xfff00000)!=0x00f00000&&
-            test_ram_boundary(target,2,regs.s,false);
+    default:
+        return false;
     }
-    const bool control=canonical==0x4e75||
-        (canonical&0xffc0)==0x4e80||(canonical&0xffc0)==0x4ec0||
-        (canonical&0xffc0)==0x4840||(canonical&0xfff8)==0x4e50||
-        (canonical&0xfff8)==0x4e58;
-    if(control)return aranym_upstream_control_guard(&image)!=0;
-    if(!memory)return false;
-    if(modern040::native_ea::multiple_memory_policy(canonical).size)
-        return aranym_upstream_ram_movem_guard(&image)!=0;
-    return aranym_upstream_ram_complex_guard(&image)!=0;
 }
 
-static inline void aranym_execute_warmup_step(uae_u32 opcode)
+static bool aranym_hybrid_classic_active=false;
+bool aranym_upstream_classic_exception_active()
+{
+    const bool active=aranym_hybrid_classic_active;
+    // An exception can leave the original handler through ARAnyM's longjmp
+    // boundary, bypassing the normal clear after cpufunctbl returns.
+    aranym_hybrid_classic_active=false;
+    return active;
+}
+
+void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
 {
     const bool translated=aranym_modern_translation_active(regs.tc,
         regs.itt0,regs.itt1,regs.dtt0,regs.dtt1);
-    const bool native_covered=compfunctbl[opcode]||nfcompfunctbl[opcode];
-    const uae_u32 pc=m68k_getpc();
-    const bool plain_code=(pc>=FastRAMBase&&
-        uint64_t(pc)<uint64_t(FastRAMBase)+FastRAMSize)||
-        (pc>=ROMBase&&uint64_t(pc)<uint64_t(ROMBase)+ROMSize);
-
-    if(translated||modern040_restart_pending()||!native_covered||
-       !plain_code||!aranym_classic_warmup_safe(opcode,pc)) {
+    if(translated||regs.t1||regs.t0||modern040_restart_pending()||
+       aranym_modern_only_opcode(opcode)) {
         aranym_upstream_modern_step(opcode);
-        /* A physical-address history must not grow while paging is active.
-         * Return to m68k_do_compile_execute, which transfers ownership to
-         * modern040_execute(). */
         if(translated)SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
         return;
     }
 
-    const bool old_translation=translated;
+    /* The original ARAnyM interpreter is the fast and proven fallback for
+     * ordinary physical-address execution.  Keep the pinned modern core for
+     * FPU/MMU/private operations and whenever translation, trace or restart
+     * state requires it; do not import/export the complete 040 state around
+     * every uncompiled XBoot instruction. */
+    modern040_prepare();
+    aranym_hybrid_classic_active=true;
     (*cpufunctbl[opcode])(opcode);
-    if(old_translation!=aranym_modern_translation_active(regs.tc,
-       regs.itt0,regs.itt1,regs.dtt0,regs.dtt1))
+    aranym_hybrid_classic_active=false;
+    if(aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,
+       regs.dtt0,regs.dtt1)||regs.t1||regs.t0||modern040_restart_pending())
         SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
 }
 #endif
@@ -6997,7 +6967,7 @@ void exec_nostats(void)
 		m68k_record_step(m68k_getpc(), cft_map(opcode));
 #endif
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-        aranym_execute_warmup_step(opcode);
+        aranym_upstream_hybrid_step(opcode);
 #else
         (*cpufunctbl[opcode])(opcode);
 #endif
@@ -7034,7 +7004,7 @@ void execute_normal(void)
 			m68k_record_step(m68k_getpc(), cft_map(opcode));
 #endif
 	#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-        aranym_execute_warmup_step(opcode);
+        aranym_upstream_hybrid_step(opcode);
 #else
         (*cpufunctbl[opcode])(opcode);
 #endif
