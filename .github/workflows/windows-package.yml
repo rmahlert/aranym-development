@@ -10,6 +10,9 @@ on:
       installer_sha256:
         description: Expected SHA-256 of the exact installer
         required: true
+      candidate_url:
+        description: Optional temporary GitHub asset download URL for a draft candidate
+        required: false
 
 permissions:
   contents: read
@@ -23,14 +26,22 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       EXPECTED_SHA256: ${{ inputs.installer_sha256 }}
+      CANDIDATE_URL: ${{ inputs.candidate_url }}
     steps:
       - uses: actions/checkout@v4
       - name: Download and verify candidate installer
         shell: pwsh
         run: |
           if ($env:EXPECTED_SHA256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Expected SHA-256 is invalid' }
-          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'aranym-1.2.0-unofficial-beta1-windows-x86_64-setup.exe' --dir build/windows-dist
-          if ($LASTEXITCODE -ne 0) { throw 'Installer download failed' }
+          if ($env:CANDIDATE_URL) {
+            $url = [uri]$env:CANDIDATE_URL
+            if ($url.Scheme -ne 'https' -or $url.Host -notin @('release-assets.githubusercontent.com', 'objects.githubusercontent.com')) { throw 'Candidate URL must be a GitHub release asset' }
+            New-Item -ItemType Directory -Force build/windows-dist | Out-Null
+            Invoke-WebRequest -Uri $url -OutFile build/windows-dist/aranym-1.2.0-unofficial-beta1-windows-x86_64-setup.exe
+          } else {
+            gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'aranym-1.2.0-unofficial-beta1-windows-x86_64-setup.exe' --dir build/windows-dist
+            if ($LASTEXITCODE -ne 0) { throw 'Installer download failed' }
+          }
           $installer = Get-Item build/windows-dist/*-setup.exe
           $actual = (Get-FileHash $installer -Algorithm SHA256).Hash
           if ($actual -ne $env:EXPECTED_SHA256) { throw 'Installer checksum mismatch' }

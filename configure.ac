@@ -659,6 +659,10 @@ AC_CACHE_CHECK([whether BPF is supported],
 
   
 dnl Various checks if the system supports vm_allocate() and the like functions.
+dnl vm_alloc.cpp includes Unix/sysdeps.h, which in turn needs stat_.h.
+dnl Keep this include path local to the VM probes; make supplies its own paths.
+aranym_vm_saved_CPPFLAGS=$CPPFLAGS
+CPPFLAGS="$CPPFLAGS -I$srcdir/src/include"
 have_mach_vm=no
 if [[ "x$ac_cv_func_vm_allocate" = "xyes" -a "x$ac_cv_func_vm_deallocate" = "xyes" -a \
       "x$ac_cv_func_vm_protect" = "xyes" ]]; then
@@ -792,6 +796,8 @@ AC_TRANSLATE_DEFINE(HAVE_MMAP_VM, $have_mmap_vm,
   [Define if your system has a working mmap()-based memory allocator.])
 
 fi dnl HAVE_MMAP_VM
+
+CPPFLAGS=$aranym_vm_saved_CPPFLAGS
 
 AH_TEMPLATE(HAVE_WIN32_VM, [Define if your system has a working VirtualAlloc()-based memory allocator.])
 if test "$OS_TYPE" = mingw; then
