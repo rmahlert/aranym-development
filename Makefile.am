@@ -317,6 +317,7 @@ EXTRA_DIST += src/include/display_diagnostics.h tools/config-locator.cpp tools/b
  src/include/display_performance.h src/include/modern040_performance.h src/include/modern040_qualified_jit.h \
  src/modern040/native-ea-plan.hpp tests/modern-jit/native-ea-plan-test.cpp \
  tests/modern-jit/qualified-jit-gates-test.cpp \
+ tests/modern-jit/execution-mode-test.cpp src/include/modern040_execution_mode.h \
  tests/modern-jit/native-rmw-plan-test.cpp \
  tests/modern-jit/native-movem-plan-test.cpp \
  tests/modern-jit/generate-rmw-oracle.py tests/modern-jit/guest/rmw-oracle.c \

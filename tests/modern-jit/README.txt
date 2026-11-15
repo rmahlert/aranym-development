@@ -21,9 +21,11 @@ Build in a separate owned Linux x86-64 tree (never installs or launches):
 python3 tests/modern-jit/build.py --build-dir /path/owned/build \
     --profile /home/you/path/owned/profile --modern-core /path/copied/core-objects
 
-The modern-core directory contains integer.o, core.o, c-api.o and the matching
-nonsanitized runner-provenance.json from cpu-core-upgrade/runner/build.py. The
-builder checks the d82 pin and records object, adapter and native-source hashes.
+The modern-core directory contains the complete nonsanitized object set from
+cpu-core-upgrade/runner/build.py: integer/restart, core/C API, MMU walk,
+SoftFloat/FPU frontend and the pinned WinUAE SoftFloat objects, plus the matching
+runner-provenance.json. The builder checks the d82 pin and records every object,
+adapter and native-source hash.
 Omit --modern-core only for the initial native-interpreter isolation profile.
 The builder records effective configure flags: the native configure logic selects
 -O3 despite the initial CFLAGS request. There is no speed comparison here.
@@ -57,11 +59,13 @@ Native interface adaptations
 
 Admitted translation profile and limits
 --------------------------------------
-The full compiler is built, but its native table admits register arithmetic,
-logic, shifts, moves, conditions and simple branches. Memory operands, implicit
-stack operations, traps, FPU and other families use genuine modern interpreter
-handlers. Memory-JIT/MMIO fault restart is NOT qualified. Native fault_pc has an
-actual mapping; UAE-only ir/opcode fields have no fabricated native equivalents.
+The full compiler retains ARAnyM's complete native no-MMU table. Its established
+physical-address memory and control handlers are used while 68040 paging is
+disabled. Transparent ranges do not remap addresses, so cache/supervisor TTR
+attributes retain the native path; data-TTR write protection and TC paging hand
+execution to the modern permission/translation core. FPU operations and
+uncompiled instructions also use that core. Native fault_pc has an actual
+mapping; UAE-only ir/opcode fields have no fabricated native equivalents.
 
 This is one no-MMU 68040 Linux x86-64 no-PIE profile. Windows, macOS, ARM64,
 general fault restart, broader source-core profiles and actual HighWire workloads

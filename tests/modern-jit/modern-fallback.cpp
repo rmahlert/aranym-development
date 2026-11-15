@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include "modern040_performance.h"
 #include "modern040_qualified_jit.h"
+#include "modern040_execution_mode.h"
 extern uae_u32 aranym_jit_alu_probe_begin,aranym_jit_alu_probe_end;
 extern uae_u32 aranym_upstream_alu_count(unsigned);
 extern uae_u32 aranym_jit_ea_probe_begin,aranym_jit_ea_probe_end;
@@ -511,6 +512,8 @@ void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
 #endif
     AranymModernPerfStep profile_step(true,profile_opcode,m68k_getpc());from_old();
     const uae_u32 old_cacr=regs.cacr;
+    const bool old_translation=aranym_modern_translation_active(regs.tc,
+        regs.itt0,regs.itt1,regs.dtt0,regs.dtt1);
     m040_result result;checked(profiled_run(1,&result),"modern JIT fallback");
     attempted+=result.instructions;to_old();
     if(result.exit==M040_HOST_SERVICE)service(result);
@@ -526,6 +529,9 @@ void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
     // Core cache helpers have empty synchronous interpreter caches. Propagate
     // their architectural control to the real native code cache explicitly.
     if(regs.cacr!=old_cacr)set_cache_state(regs.cacr&0x8000);
+    if(old_translation!=aranym_modern_translation_active(regs.tc,
+       regs.itt0,regs.itt1,regs.dtt0,regs.dtt1))
+        SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
     #if defined(HAVE_GET_WORD_UNSWAPPED) && !defined(FULLMMU)
     const uae_u32 numeric_opcode=do_byteswap_16(encoded_opcode);
 #else

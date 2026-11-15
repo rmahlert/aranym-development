@@ -9,6 +9,9 @@
  * data-preserving Windows upgrade installer with network/config discovery
  * corrected RC3 defaults: cached state import and unqualified wider control
    emitters remain opt-in
+ * restored the complete ARAnyM native JIT table for physical/no-MMU execution;
+   paging and data-TTR write protection hand off to the modern 68040 core
+ * complete reproducible MMU, restart and SoftFloat/FPU core-object linkage
 
  New features:
  -------------

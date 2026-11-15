@@ -15,6 +15,9 @@ import subprocess
 
 HERE=Path(__file__).resolve().parent
 ROOT=HERE.parents[1]
+MODERN_OBJECTS=('integer','restart','core','c-api','fpu-frontend','mmu-walk',
+                'softfloat-adapter','winuae-fpp_softfloat','winuae-softfloat',
+                'winuae-softfloat_decimal','winuae-softfloat_fpsp')
 def run(command,**kwargs):subprocess.run([str(x) for x in command],check=True,**kwargs)
 def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def main():
@@ -65,7 +68,7 @@ def main():
              '-I'+str(ROOT/'src/Unix'),'-I'+str(ROOT/'src/uae_cpu'),'-I'+str(build/'src/uae_cpu'),
              *sdl,'-O2','-fno-pie','-Wall','-Wextra','-c',HERE/'modern-fallback.cpp','-o',adapter],cwd=build)
         objects=[adapter]
-        for name in ('integer','core','c-api'):
+        for name in MODERN_OBJECTS:
             obj=build/('modern040-'+name+'.o');shutil.copyfile(core/(name+'.o'),obj);objects.append(obj)
         run(['ar','rcs',build/'src/libaranym.a',*objects],cwd=build)
         run(['make','-j'+str(a.jobs),'-C','src','aranym'],cwd=build)
@@ -78,10 +81,11 @@ def main():
             'upstream_pin':'d82bc2549f27943d11dc59482d5388daf1c0f337','configuration':configuration,
             'source_sha256':{str(x.relative_to(ROOT)):sha(x) for x in inputs},
             'binary':str(binary),'binary_sha256':sha(binary),'profile':str(profile),'effective_flags':{k:next((line.partition(' = ')[2] for line in (build/'src/Makefile').read_text().splitlines() if line.startswith(k+' = ')),None) for k in ('DEFINES','CPPFLAGS','CFLAGS','CXXFLAGS','LDFLAGS')},
-            'modern_core':None if not a.modern_core else {'provenance_sha256':sha(a.modern_core/'runner-provenance.json'),'objects':{n:sha(a.modern_core/(n+'.o')) for n in ('integer','core','c-api')}},
+            'modern_core':None if not a.modern_core else {'provenance_sha256':sha(a.modern_core/'runner-provenance.json'),'objects':{n:sha(a.modern_core/(n+'.o')) for n in MODERN_OBJECTS}},
             'limits':['experimental Linux x86-64 no-PIE fixed-address native profile',
                       'modern040 C ABI fallback' if a.modern_core else 'native ARAnyM interpreter fallback',
-                      'memory/traps/FPU remain interpreter operations; no MMU/desktop/performance acceptance']}
+                      'physical-address native JIT with modern paging/write-protection handoff',
+                      'modern MMU/restart/SoftFloat/FPU object set linked and hashed']}
     (build/'upstream-jit-build.json').write_text(json.dumps(record,indent=2)+'\n')
     print('Built experimental full upstream JIT; not launched or installed:',binary)
 if __name__=='__main__':main()

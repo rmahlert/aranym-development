@@ -8,6 +8,9 @@ HERE=Path(__file__).resolve().parent
 ROOT=HERE.parents[1]
 RUNNER=ROOT/'tests/cpu-core-upgrade/runner'
 PIN='d82bc2549f27943d11dc59482d5388daf1c0f337'
+MODERN_OBJECTS=('integer','restart','core','c-api','fpu-frontend','mmu-walk',
+                'softfloat-adapter','winuae-fpp_softfloat','winuae-softfloat',
+                'winuae-softfloat_decimal','winuae-softfloat_fpsp')
 def sha(p):
     with p.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
 def run(command,**kw):subprocess.run([str(x) for x in command],check=True,**kw)
@@ -55,13 +58,13 @@ def main():
     adapter=build/'modern-jit-fallback.o'
     run([env['CXX'],*defines,'-DHAVE_CONFIG_H','-DEXPERIMENTAL_UPSTREAM_X86_JIT','-DEXPERIMENTAL_UPSTREAM_MODERN040','-I'+str(build),'-I'+str(build/'src'),'-I'+str(ROOT/'src/include'),'-I'+str(ROOT/'src/Unix'),'-I'+str(ROOT/'src/uae_cpu'),'-I'+str(build/'src/uae_cpu'),'-I'+str(mingw/'include/SDL2'),'-O2','-Wall','-Wextra','-c',HERE/'modern-fallback.cpp','-o',adapter],env=env)
     objects=[adapter]
-    for name in ('integer','core','c-api'):
+    for name in MODERN_OBJECTS:
         target=build/('modern040-'+name+'.o');shutil.copyfile(core/target.name,target);objects.append(target)
     run([env['AR'],'rcs',build/'src/libaranym.a',*objects],env=env)
     run(['make','-j'+str(a.jobs),'-C','src','aranym.exe'],cwd=build,env=env)
     binary=build/'src/aranym.exe'
     sourcefiles=[ROOT/'src/uae_cpu/newcpu.cpp',ROOT/'src/Unix/vm_alloc.cpp',ROOT/'src/uae_cpu/compiler/compemu_support.cpp',ROOT/'src/uae_cpu/compiler/compemu.h',ROOT/'src/uae_cpu/compiler/codegen_x86.cpp',ROOT/'src/uae_cpu/compiler/codegen_x86.h',ROOT/'src/uae_cpu/compiler/compemu_midfunc_x86.cpp',ROOT/'src/uae_cpu/compiler/compemu_midfunc_x86.h',HERE/'modern-fallback.cpp',HERE/'build-windows.py',*sorted(HERE.glob('upstream-*'))]
     imports=subprocess.check_output(['x86_64-w64-mingw32-objdump','-p',str(binary)],text=True)
-    record={'experimental':True,'launched':False,'installed':False,'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'upstream_pin':PIN,'configuration':configuration,'effective_defines':defines,'effective_ldflags':value(build/'src/Makefile','LDFLAGS'),'effective_cxxflags':value(build/'src/Makefile','CXXFLAGS'),'profile_path':'%USERPROFILE%\\'+a.profile,'profile_macro_verified':True,'binary':str(binary),'binary_sha256':sha(binary),'config_h_sha256':sha(config),'source_sha256':{str(x.relative_to(ROOT)):sha(x) for x in sourcefiles},'core_input_sha256':sha(core/'inputs.json'),'seed_build_identity_sha256':sha(core/'seed-build-identity.json'),'core_object_sha256':{name:sha(core/('modern040-'+name+'.o')) for name in ('integer','core','c-api')},'dll_imports':re.findall(r'DLL Name:\s+(\S+)',imports),'image_base':next((line.split()[-1] for line in imports.splitlines() if line.startswith('ImageBase')),None),'limits':['cross-link/static ABI checks only; no Windows runtime acceptance','64MiB no-MMU/default register-control JIT profile','memory-JIT disabled; original IEEE FPU optional host service','use owned copied profiles/images; no installer/public release']}
+    record={'experimental':True,'launched':False,'installed':False,'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'upstream_pin':PIN,'configuration':configuration,'effective_defines':defines,'effective_ldflags':value(build/'src/Makefile','LDFLAGS'),'effective_cxxflags':value(build/'src/Makefile','CXXFLAGS'),'profile_path':'%USERPROFILE%\\'+a.profile,'profile_macro_verified':True,'binary':str(binary),'binary_sha256':sha(binary),'config_h_sha256':sha(config),'source_sha256':{str(x.relative_to(ROOT)):sha(x) for x in sourcefiles},'core_input_sha256':sha(core/'inputs.json'),'seed_build_identity_sha256':sha(core/'seed-build-identity.json'),'core_object_sha256':{name:sha(core/('modern040-'+name+'.o')) for name in MODERN_OBJECTS},'dll_imports':re.findall(r'DLL Name:\s+(\S+)',imports),'image_base':next((line.split()[-1] for line in imports.splitlines() if line.startswith('ImageBase')),None),'limits':['cross-link/static ABI checks only; no Windows runtime acceptance','physical-address native JIT with modern MMU/TTR handoff','modern SoftFloat/FPU and precise fault/restart core','use owned copied profiles/images; no installer/public release']}
     (build/'windows-jit-build.json').write_text(json.dumps(record,indent=2)+'\n');print('Cross-built private Windows JIT candidate; not launched/installed:',binary)
 if __name__=='__main__':main()

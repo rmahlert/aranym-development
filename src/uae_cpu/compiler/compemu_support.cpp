@@ -92,11 +92,13 @@
 #include "fpu/flags.h"
 #include "parameters.h"
 #include "modern040_qualified_jit.h"
+#include "modern040_execution_mode.h"
 static void build_comp(void);
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 #include "../../modern040/native-ea-plan.hpp"
 #include "modern040_performance.h"
 extern void REGPARAM2 aranym_upstream_modern_step(uae_u32 opcode);
+extern void modern040_execute();
 extern uae_u32 REGPARAM2 aranym_upstream_ram_move_guard(uae_u32 opcode,uae_u32 extensions);
 extern uae_u32 REGPARAM2 aranym_upstream_control_guard(const void *image);
 extern void aranym_upstream_memory_deopt();
@@ -902,6 +904,10 @@ static bool aranym_checked_move_opcode(uae_u32 canonical) {
          (in.mnemo==i_MOVEA && source && in.dmode==Areg));
 }
 static bool aranym_jit_diagnostics(){return getenv("ARANYM_UPSTREAM_JIT_DIAGNOSTICS")!=nullptr;}
+static bool aranym_classic_full_jit_enabled() {
+    return getenv("ARANYM_UPSTREAM_JIT_GROUP")==nullptr&&
+        getenv("ARANYM_UPSTREAM_JIT_FALLBACK_ONLY")==nullptr;
+}
 #endif
 static uae_u32 cache_size = 0; // Size of total cache allocated for compiled blocks
 static uae_u32 current_cache_size = 0; // Cache grows upwards: how much has been consumed already
@@ -4295,7 +4301,7 @@ static inline void writemem(int address, int source, int offset, int size, int t
 void writebyte(int address, int source, int tmp)
 {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-    if(aranym_checked_move_enabled()){aranym_emit_checked_write(address,source,1,tmp);return;}
+    if(!aranym_classic_full_jit_enabled()&&aranym_checked_move_enabled()){aranym_emit_checked_write(address,source,1,tmp);return;}
 #endif
 #ifdef UAE
 	if ((special_mem & S_WRITE) || distrust_byte() || jit_use_memory_helpers()) {
@@ -4310,7 +4316,7 @@ static inline void writeword_general(int address, int source, int tmp,
 	int clobber)
 {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-    if(aranym_checked_move_enabled()){aranym_emit_checked_write(address,source,2,tmp);return;}
+    if(!aranym_classic_full_jit_enabled()&&aranym_checked_move_enabled()){aranym_emit_checked_write(address,source,2,tmp);return;}
 #endif
 #ifdef UAE
 	if ((special_mem & S_WRITE) || distrust_word() || jit_use_memory_helpers()) {
@@ -4335,7 +4341,7 @@ static inline void writelong_general(int address, int source, int tmp,
 	int clobber)
 {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-    if(aranym_checked_move_enabled()){aranym_emit_checked_write(address,source,4,tmp);return;}
+    if(!aranym_classic_full_jit_enabled()&&aranym_checked_move_enabled()){aranym_emit_checked_write(address,source,4,tmp);return;}
 #endif
 #ifdef UAE
 	if ((special_mem & S_WRITE) || distrust_long() || jit_use_memory_helpers()) {
@@ -4474,7 +4480,7 @@ static inline void readmem(int address, int dest, int offset, int size, int tmp)
 void readbyte(int address, int dest, int tmp)
 {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-    if(aranym_checked_move_enabled()){aranym_emit_checked_read(address,dest,1,tmp);return;}
+    if(!aranym_classic_full_jit_enabled()&&aranym_checked_move_enabled()){aranym_emit_checked_read(address,dest,1,tmp);return;}
 #endif
 #ifdef UAE
 	if ((special_mem & S_READ) || distrust_byte() || jit_use_memory_helpers()) {
@@ -4488,7 +4494,7 @@ void readbyte(int address, int dest, int tmp)
 void readword(int address, int dest, int tmp)
 {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-    if(aranym_checked_move_enabled()){aranym_emit_checked_read(address,dest,2,tmp);return;}
+    if(!aranym_classic_full_jit_enabled()&&aranym_checked_move_enabled()){aranym_emit_checked_read(address,dest,2,tmp);return;}
 #endif
 #ifdef UAE
 	if ((special_mem & S_READ) || distrust_word() || jit_use_memory_helpers()) {
@@ -4502,7 +4508,7 @@ void readword(int address, int dest, int tmp)
 void readlong(int address, int dest, int tmp)
 {
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-    if(aranym_checked_move_enabled()){aranym_emit_checked_read(address,dest,4,tmp);return;}
+    if(!aranym_classic_full_jit_enabled()&&aranym_checked_move_enabled()){aranym_emit_checked_read(address,dest,4,tmp);return;}
 #endif
 #ifdef UAE
 	if ((special_mem & S_READ) || distrust_long() || jit_use_memory_helpers()) {
@@ -5633,8 +5639,12 @@ void build_comp(void)
 		jit_log("<JIT compiler> : blacklist merge failure!");
 	}
 
-	/* First native integration profile: memory, traps and FPU remain real
-     * interpreter fallbacks until their ARAnyM state/bus contracts qualify. */
+	/* Keep ARAnyM's complete, proven no-MMU native compiler table.  GROUP and
+     * FALLBACK_ONLY remain explicit qualification controls; they must never
+     * narrow an installed build by default.  Runtime dispatch below prevents
+     * this physical-address JIT from running while 040 translation is active. */
+    const char *restricted_group=getenv("ARANYM_UPSTREAM_JIT_GROUP");
+    const bool fallback_only=getenv("ARANYM_UPSTREAM_JIT_FALLBACK_ONLY")!=nullptr;
     for (opcode=0;opcode<65536;++opcode) {
         const instr &in=table68k[opcode];
         bool register_family=false;
@@ -5656,9 +5666,10 @@ void build_comp(void)
             ||(in.duse&&in.dmode>=Aind&&in.dmode<=PC8r);
         // The pre-instruction guard may leave the native block for an access
         // exception. Preserve the incoming CCR even when MOVE overwrites it.
-        if((aranym_guarded_move_enabled()&&aranym_checked_move_opcode(opcode))||aranym_checked_control_opcode(opcode))
+        if(!aranym_classic_full_jit_enabled()&&
+           ((aranym_guarded_move_enabled()&&aranym_checked_move_opcode(opcode))||aranym_checked_control_opcode(opcode)))
             prop[cft_map(opcode)].use_flags|=FLAG_ALL;
-        const char *group=getenv("ARANYM_UPSTREAM_JIT_GROUP");
+        const char *group=restricted_group;
         if(group) {
             bool selected=false;
             if(!strcmp(group,"move")) selected=in.mnemo==i_MOVE||in.mnemo==i_MOVEA;
@@ -5668,7 +5679,8 @@ void build_comp(void)
             register_family=register_family&&selected;
         }
         if(aranym_checked_control_opcode(opcode))register_family=true;
-        if(!register_family||(memory&&!aranym_checked_move_opcode(opcode)&&!aranym_checked_control_opcode(opcode))||getenv("ARANYM_UPSTREAM_JIT_FALLBACK_ONLY")) {
+        if(fallback_only||(group&&(!register_family||
+           (memory&&!aranym_checked_move_opcode(opcode)&&!aranym_checked_control_opcode(opcode))))) {
             compfunctbl[cft_map(opcode)]=nullptr;
             nfcompfunctbl[cft_map(opcode)]=nullptr;
         }
@@ -6236,8 +6248,13 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 				failure = 1; // gb-- defaults to failure state
 				prepare_compiled_exception_state((uintptr)pc_hist[i].location, opcode);
 				const uae_u32 instruction_guest_pc=get_virtual_compile_pc((uintptr)pc_hist[i].location);
-                const bool checked_move=aranym_checked_move_opcode(cft_map(opcode));
-                const bool checked_control=aranym_checked_control_opcode(cft_map(opcode));
+                // Full installed coverage uses ARAnyM's original native body
+                // and fault path end-to-end. The newer preflight wrappers are
+                // retained only for explicit restricted qualification runs.
+                const bool checked_move=!aranym_classic_full_jit_enabled()&&
+                    aranym_checked_move_opcode(cft_map(opcode));
+                const bool checked_control=!aranym_classic_full_jit_enabled()&&
+                    aranym_checked_control_opcode(cft_map(opcode));
                 const instr &checked_instruction=table68k[cft_map(opcode)];
                 const bool complex_ea=checked_move&&aranym_guarded_move_enabled()&&
                     !((checked_instruction.mnemo==i_MOVE||checked_instruction.mnemo==i_MOVEA)&&
@@ -6956,7 +6973,12 @@ void m68k_do_compile_execute(void)
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
         // Tracing is implemented by the real modern interpreter. Never enter
         // an already-cached untraced block while either trace bit is active.
-        if(regs.t1||regs.t0||modern040_restart_pending()) {
+        // The native JIT uses physical addresses, so the modern core also owns
+        // execution for paging or a data-TTR write-protection policy.
+        if(aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,
+              regs.dtt0,regs.dtt1)) {
+            modern040_execute();
+        } else if(regs.t1||regs.t0||modern040_restart_pending()) {
             aranym_upstream_modern_step(GET_OPCODE);
             cpu_check_ticks();
         } else
