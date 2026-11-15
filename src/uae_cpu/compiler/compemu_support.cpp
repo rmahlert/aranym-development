@@ -940,11 +940,7 @@ static int		optcount[10]		= {
 #ifdef UAE
 	4,		// How often a block has to be executed before it is translated
 #else
-#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-	1,		// Modern fallback makes repeated warm-up disproportionately costly
-#else
-	10,		// How often a block has to be executed before it is translated
-#endif
+	10,		// Avoid compiling one-shot startup blocks; translate recurring code
 #endif
 	0,		// How often to use naive translation
 	0, 0, 0, 0,
