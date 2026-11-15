@@ -10,6 +10,12 @@ extern unsigned char iarb_begin,iarb_end,iarb_next,iarb_vbl;
 #ifndef IARB_SOURCES
 #define IARB_SOURCES 3
 #endif
+#ifndef IARB_MASTER
+#define IARB_MASTER 0
+#endif
+unsigned char iarb_master_stack[2048];
+unsigned long iarb_saved_msp,iarb_master_top;
+unsigned long iarb_format[4],iarb_mformat[4],iarb_msr[4];
 unsigned long iarb_sources=IARB_SOURCES,iarb_count,iarb_marker,iarb_timeout;
 unsigned long iarb_source[4],iarb_pc[4],iarb_sr[4],iarb_sp[4],iarb_at_marker[4];
 unsigned long iarb_base_sp,iarb_warm_before,iarb_warm_after,iarb_before,iarb_after;
@@ -26,7 +32,7 @@ static long run(void){
  volatile unsigned long *w=(volatile unsigned long *)0x00fec000UL;
  const unsigned long jit=iarb_jit()&1,expected_count=(IARB_SOURCES==3?2:1);
  unsigned long error=0;unsigned i;
- w[0]=(unsigned long)&iarb_begin;w[1]=(unsigned long)&iarb_end;w[2]=(unsigned long)&iarb_next;
+ if(!IARB_MASTER){w[0]=(unsigned long)&iarb_begin;w[1]=(unsigned long)&iarb_end;w[2]=(unsigned long)&iarb_next;}
  iarb_probe();
  if(iarb_timeout||iarb_ticks!=6||!(iarb_pending&0x20)||iarb_marker!=1){error=7;goto done;}
  if(iarb_count!=expected_count
@@ -50,8 +56,10 @@ static long run(void){
 #endif
   if(iarb_source[i]!=source||iarb_pc[i]!=pc||iarb_sr[i]!=sr){error=3;goto done;}
   if(iarb_sp[i]!=sp||iarb_at_marker[i]){error=4;goto done;}
+  if(IARB_MASTER&&(iarb_format[i]!=(0x1000|(source==6?iarb_mfp_vector:0x70))||
+     iarb_mformat[i]!=(source==6?iarb_mfp_vector:0x70)||iarb_msr[i]!=sr)){error=8;goto done;}
  }
- if(jit&&(iarb_warm_after<=iarb_warm_before||iarb_after!=iarb_before+1)){error=6;goto done;}
+ if(!IARB_MASTER&&jit&&(iarb_warm_after<=iarb_warm_before||iarb_after!=iarb_before+1)){error=6;goto done;}
  if(!jit&&(iarb_warm_after!=iarb_warm_before||iarb_after!=iarb_before)){error=6;goto done;}
 #ifdef IARB_BAD_NATIVE
  if(jit&&iarb_after>iarb_before){error=6;goto done;}
@@ -73,6 +81,7 @@ done:
 #ifdef IARB_BEFORE_ONLY
   "IARB BEFORE-ONLY audit observed extra VBL frame before MFP acknowledgement\r\n"
 #else
+  IARB_MASTER?"MASTER IRQ PASS real VBL/MFP format0-MSP format1-ISP RTE\r\n":
   "IARB ORACLE PASS real VBL/MFP pending priority context native witness\r\n"
 #endif
  );

@@ -394,3 +394,6 @@ EXTRA_DIST += src/include/display_performance.h
 EXTRA_DIST += src/include/modern040_performance.h
 
 EXTRA_DIST += tests/modern-jit/windows-hotpath-20261115.txt
+
+EXTRA_DIST += tests/modern-jit/guest/master-bridge.c tests/modern-jit/guest/master-bridge.S \
+ tests/modern-jit/master-stack-validation-20261115.txt

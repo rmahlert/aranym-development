@@ -553,7 +553,7 @@ void ex_rte(void)
 static int building_bus_fault_stack_frame=0;
 #endif
 
-void Exception(int nr, uaecptr oldpc)
+static void exception_with_source(int nr, uaecptr oldpc, bool interrupt)
 {
 #if defined(EXPERIMENTAL_UPSTREAM_MODERN040)
     extern bool aranym_upstream_classic_exception_active();
@@ -562,7 +562,7 @@ void Exception(int nr, uaecptr oldpc)
     const uae_u32 pc=m68k_getpc();
     const bool fast_guest=pc>=FastRAMBase&&
         uint64_t(pc)<uint64_t(FastRAMBase)+FastRAMSize;
-    if (!classic&&!physical_probe&&(modern040_owns_exception()||fast_guest)) {
+    if (!interrupt&&!classic&&!physical_probe&&(modern040_owns_exception()||fast_guest)) {
         modern040_external_exception(nr);
         return;
     }
@@ -649,7 +649,7 @@ void Exception(int nr, uaecptr oldpc)
     } else if (nr == 5 || nr == 6 || nr == 7 || nr == 9) {
 	/* div by zero, CHK, TRAP or TRACE */
 	exc_make_frame(2, regs.sr, currpc, nr, oldpc, 0);
-    } else if (regs.m && nr >= 24 && nr < 32) {
+    } else if (regs.m && interrupt) {
 	/* interrupts! */
 	exc_make_frame(0, regs.sr, currpc, nr, 0, 0);
 	regs.sr |= (1 << 13);
@@ -664,8 +664,18 @@ void Exception(int nr, uaecptr oldpc)
     m68k_setpc (get_long (regs.vbr + 4*nr));
     SPCFLAGS_SET( SPCFLAG_JIT_END_COMPILE );
     fill_prefetch_0 ();
-    regs.t1 = regs.t0 = regs.m = 0;
+    regs.t1 = regs.t0 = 0;
+    // Synchronous exceptions retain M, so a handler changing stacked SR.M
+    // lets RTE perform the actual MSP/ISP transition. Only interrupts clear M;
+    // vectored SCC/MFP interrupts need the same throwaway frame as autovectors.
+    if (interrupt)
+        regs.m = 0;
     SPCFLAGS_CLEAR(SPCFLAG_TRACE | SPCFLAG_DOTRACE);
+}
+
+void Exception(int nr, uaecptr oldpc)
+{
+    exception_with_source(nr, oldpc, false);
 }
 
 static void Interrupt(int nr)
@@ -680,7 +690,7 @@ static void Interrupt(int nr)
     return;
 #endif
     assert(nr < 8 && nr >= 0);
-    Exception(nr+24, 0);
+    exception_with_source(nr+24, 0, true);
 
     regs.intmask = nr;
     // why the hell the SPCFLAG_INT is to be set??? (joy)
@@ -699,7 +709,7 @@ static void SCCInterrupt(int nr)
     return;
 #endif
     // fprintf(stderr, "CPU: in SCCInterrupt\n");
-    Exception(nr, 0);
+    exception_with_source(nr, 0, true);
 
     regs.intmask = 5;// ex 5
 }
@@ -716,7 +726,7 @@ static void MFPInterrupt(int nr)
     return;
 #endif
     // fprintf(stderr, "CPU: in MFPInterrupt\n");
-    Exception(nr, 0);
+    exception_with_source(nr, 0, true);
 
     regs.intmask = 6;
 }

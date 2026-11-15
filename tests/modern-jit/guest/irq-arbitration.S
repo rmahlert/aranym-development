@@ -7,14 +7,18 @@ _iarb_probe:
  movem.l %d2-%d7/%a2-%a6,-(%sp)
  move.w %sr,-(%sp)
  ori.w #0x0700,%sr
+#if !IARB_MASTER
  move.l 0x00fec008,_iarb_warm_before
+#endif
  lea _iarb_marker,%a1
  moveq #1,%d0
  moveq #127,%d2
 1:
  jsr _iarb_next
  dbra %d2,1b
+#if !IARB_MASTER
  move.l 0x00fec008,_iarb_warm_after
+#endif
  clr.l _iarb_marker
  movec %vbr,%d0
  move.l %d0,%a2
@@ -71,11 +75,23 @@ _iarb_probe:
  beq 6f
  move.b #0x20,0xfffffa15
 6:
+#if !IARB_MASTER
  move.l 0x00fec008,_iarb_before
+#endif
  lea _iarb_marker,%a1
  moveq #1,%d0
  bsr iarb_release
+#if IARB_MASTER
+ /* The master RTS consumed the copied return address, leaving the original
+  * ISP return address untouched. Switch back before restoring the caller. */
+ move.w #0x2700,%sr
+ addq.l #4,%sp
+ move.l _iarb_saved_msp,%d1
+ movec %d1,%msp
+#endif
+#if !IARB_MASTER
  move.l 0x00fec008,_iarb_after
+#endif
 7:
  ori.w #0x0700,%sr
  clr.b 0xfffffa13
@@ -99,6 +115,15 @@ _iarb_probe:
  rts
 iarb_release:
  move.l %sp,_iarb_base_sp
+#if IARB_MASTER
+ movec %msp,%d1
+ move.l %d1,_iarb_saved_msp
+ lea _iarb_master_stack+2048,%a0
+ move.l (%sp),-(%a0)
+ move.l %a0,_iarb_master_top
+ movec %a0,%msp
+ ori.w #0x1000,_iarb_release_sr
+#endif
  move.w _iarb_release_sr,%sr
 _iarb_next:
  move.l %d0,(%a1)
@@ -124,6 +149,19 @@ _iarb_next:
  lea _iarb_sp,%a0
  lea 60(%sp),%a1
  move.l %a1,0(%a0,%d0.l)
+#if IARB_MASTER
+ lea _iarb_format,%a0
+ moveq #0,%d1
+ move.w 66(%sp),%d1
+ move.l %d1,0(%a0,%d0.l)
+ move.l _iarb_master_top,%a1
+ lea _iarb_mformat,%a0
+ move.w -2(%a1),%d1
+ move.l %d1,0(%a0,%d0.l)
+ lea _iarb_msr,%a0
+ move.w -8(%a1),%d1
+ move.l %d1,0(%a0,%d0.l)
+#endif
  lea _iarb_at_marker,%a0
  move.l _iarb_marker,0(%a0,%d0.l)
 9:
