@@ -938,7 +938,11 @@ static int		optcount[10]		= {
 #ifdef UAE
 	4,		// How often a block has to be executed before it is translated
 #else
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+	1,		// Modern fallback makes repeated warm-up disproportionately costly
+#else
 	10,		// How often a block has to be executed before it is translated
+#endif
 #endif
 	0,		// How often to use naive translation
 	0, 0, 0, 0,
@@ -6896,6 +6900,95 @@ void do_nothing(void)
 #ifdef UAE
     /* Different implementation in newcpu.cpp */
 #else
+#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
+static inline bool aranym_classic_warmup_safe(uae_u32 opcode,uae_u32 pc)
+{
+    const uae_u32 canonical=cft_map(opcode);
+    const instr &in=table68k[canonical];
+    const bool memory=(in.suse&&in.smode>=Aind&&in.smode<=PC8r)||
+        (in.duse&&in.dmode>=Aind&&in.dmode<=PC8r);
+    if(!memory) {
+        switch(in.mnemo) {
+        case i_OR:case i_AND:case i_EOR:case i_ADD:case i_ADDA:case i_ADDX:
+        case i_SUB:case i_SUBA:case i_SUBX:case i_CMP:case i_CMPA:
+        case i_MOVE:case i_MOVEA:case i_ASR:case i_ASL:case i_LSR:case i_LSL:
+        case i_ROL:case i_ROR:case i_ROXL:case i_ROXR:case i_SWAP:case i_EXT:
+        case i_NEG:case i_NEGX:case i_CLR:case i_NOT:case i_TST:case i_BCHG:
+        case i_BCLR:case i_BSET:case i_BTST:case i_Bcc:case i_DBcc:case i_Scc:
+        case i_NOP:case i_MULU:case i_MULS:case i_MULL:case i_EXG:
+            return true;
+        default:
+            break;
+        }
+    }
+
+    const auto span=modern040::native_ea::code_span(pc,FastRAMBase,FastRAMSize);
+    if(!span.words)return false;
+    modern040::native_ea::Image image;
+    image.pc=pc;image.count=span.words;
+    auto *code=(uae_u16 *)regs.pc_p;
+    for(unsigned i=0;i<image.count;++i)image.words[i]=do_get_mem_word(code+i);
+    if(in.mnemo==i_BSR) {
+        const uint64_t stack_end=uint64_t(regs.regs[15]);
+        const uae_u32 stack=regs.regs[15]-4;
+        const bool stack_backed=stack_end<=STRAM_END||
+            (stack>=FastRAMBase&&stack_end<=uint64_t(FastRAMBase)+FastRAMSize);
+        if(!stack_backed||!test_ram_boundary(stack,4,regs.s,true))return false;
+        const unsigned low=canonical&255;uae_u32 target=0;
+        if(low==0) {
+            if(image.count<2)return false;
+            target=pc+2+uae_u32(uae_s32(uae_s16(image.words[1])));
+        } else if(low==255) {
+            if(image.count<3)return false;
+            const uae_u32 displacement=(uae_u32(image.words[1])<<16)|image.words[2];
+            target=pc+2+displacement;
+        } else target=pc+2+uae_u32(uae_s32(uae_s8(low)));
+        const uint64_t target_end=uint64_t(target)+2;
+        const bool target_backed=target_end<=STRAM_END||
+            (target>=FastRAMBase&&target_end<=uint64_t(FastRAMBase)+FastRAMSize)||
+            (target>=ROMBase&&target_end<=uint64_t(ROMBase)+ROMSize);
+        return target_backed&&!(target&1)&&target<0xff000000&&
+            (target&0xfff00000)!=0x00f00000&&
+            test_ram_boundary(target,2,regs.s,false);
+    }
+    const bool control=canonical==0x4e75||
+        (canonical&0xffc0)==0x4e80||(canonical&0xffc0)==0x4ec0||
+        (canonical&0xffc0)==0x4840||(canonical&0xfff8)==0x4e50||
+        (canonical&0xfff8)==0x4e58;
+    if(control)return aranym_upstream_control_guard(&image)!=0;
+    if(!memory)return false;
+    if(modern040::native_ea::multiple_memory_policy(canonical).size)
+        return aranym_upstream_ram_movem_guard(&image)!=0;
+    return aranym_upstream_ram_complex_guard(&image)!=0;
+}
+
+static inline void aranym_execute_warmup_step(uae_u32 opcode)
+{
+    const bool translated=aranym_modern_translation_active(regs.tc,
+        regs.itt0,regs.itt1,regs.dtt0,regs.dtt1);
+    const bool native_covered=compfunctbl[opcode]||nfcompfunctbl[opcode];
+    const uae_u32 pc=m68k_getpc();
+    const bool plain_code=(pc>=FastRAMBase&&
+        uint64_t(pc)<uint64_t(FastRAMBase)+FastRAMSize)||
+        (pc>=ROMBase&&uint64_t(pc)<uint64_t(ROMBase)+ROMSize);
+
+    if(translated||modern040_restart_pending()||!native_covered||
+       !plain_code||!aranym_classic_warmup_safe(opcode,pc)) {
+        aranym_upstream_modern_step(opcode);
+        /* A physical-address history must not grow while paging is active.
+         * Return to m68k_do_compile_execute, which transfers ownership to
+         * modern040_execute(). */
+        if(translated)SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
+        return;
+    }
+
+    const bool old_translation=translated;
+    (*cpufunctbl[opcode])(opcode);
+    if(old_translation!=aranym_modern_translation_active(regs.tc,
+       regs.itt0,regs.itt1,regs.dtt0,regs.dtt1))
+        SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
+}
+#endif
 void exec_nostats(void)
 {
 	for (;;)  { 
@@ -6904,7 +6997,7 @@ void exec_nostats(void)
 		m68k_record_step(m68k_getpc(), cft_map(opcode));
 #endif
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-        aranym_upstream_modern_step(opcode);
+        aranym_execute_warmup_step(opcode);
 #else
         (*cpufunctbl[opcode])(opcode);
 #endif
@@ -6941,7 +7034,7 @@ void execute_normal(void)
 			m68k_record_step(m68k_getpc(), cft_map(opcode));
 #endif
 	#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-        aranym_upstream_modern_step(opcode);
+        aranym_execute_warmup_step(opcode);
 #else
         (*cpufunctbl[opcode])(opcode);
 #endif

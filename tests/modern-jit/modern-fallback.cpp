@@ -353,7 +353,11 @@ int memory(void *,const m040_bus_request *request,uint32_t *value) {
     // explicit bus operation must recheck its own effective FC and boundary.
     read_page=write_page=request->address^(uae_u32(ARAM_PAGE_MASK)+1);
 #endif
-    int ok=1;
+    VOLATILE int ok=1;
+    /* TRY uses ARAnyM's process-global excep_env in longjmp builds.  A bus
+     * callback is nested inside the outer CPU/JIT exception frame, so retain
+     * that owner before installing this short-lived probe frame. */
+    SAVE_EXCEPTION;
     TRY(prb) {
         if(request->kind==M040_WRITE) {
             if(request->size==1)phys_put_byte(request->address,*value);
@@ -367,6 +371,7 @@ int memory(void *,const m040_bus_request *request,uint32_t *value) {
             else ok=0;
         }
     } CATCH(prb) {ok=0;}
+    RESTORE_EXCEPTION;
     regs.s=saved_super;return ok;
 }
 void initialize() {
@@ -403,9 +408,13 @@ void service(m040_result &result) {
     AranymModernPerfScope sample(4);
     m040_service call;checked(m040_get_service(&call),"read private instruction metadata");
     if(aranym_modern_perf_enabled()&&call.kind<6)++aranym_modern_perf().services[call.kind];
-    const bool trace_service=diagnostics&&call.kind<=M040_NATFEAT_CALL&&(service_messages++<128||call.pc>=0x01000000);
+    VOLATILE bool trace_service=diagnostics&&call.kind<=M040_NATFEAT_CALL&&(service_messages++<128||call.pc>=0x01000000);
     if(trace_service)std::fprintf(stderr,"MODERN040_SERVICE begin kind=%u pc=%08x stack=%08x d0=%08x sr=%04x\n",call.kind,call.pc,call.stack,regs.regs[0],regs.sr);
     service_exception_delivered=false;
+    /* NatFeat, EmulOp and legacy-FPU services can themselves use TRY. Do not
+     * leave their temporary longjmp target installed after returning to the
+     * native JIT. */
+    SAVE_EXCEPTION;
     TRY(prb) {
         switch(call.kind) {
         case M040_NATFEAT_ID:m68k_natfeat_id();break;
@@ -439,6 +448,7 @@ void service(m040_result &result) {
         if(call.kind==M040_LEGACY_FPU)fail("legacy FPU operand fault/restart not integrated");
         from_old();checked(m040_exception(int(prb),&result),"NatFeat host exception boundary");
     }
+    RESTORE_EXCEPTION;
     to_old();
     if(trace_service)std::fprintf(stderr,"MODERN040_SERVICE end kind=%u pc=%08x d0=%08x sr=%04x\n",call.kind,unsigned(m68k_getpc()),regs.regs[0],regs.sr);
 }
