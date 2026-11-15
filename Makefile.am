@@ -392,3 +392,5 @@ EXTRA_DIST += src/include/display_diagnostics.h tools/config-locator.cpp tools/b
 EXTRA_DIST += src/include/display_performance.h
 
 EXTRA_DIST += src/include/modern040_performance.h
+
+EXTRA_DIST += tests/modern-jit/windows-hotpath-20261115.txt
