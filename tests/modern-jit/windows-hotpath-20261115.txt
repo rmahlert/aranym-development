@@ -1,0 +1,30 @@
+Windows JIT regression isolation, 2026-11-15
+==========================================
+
+ACER controlled run, identical config hash
+b0e46d1126aa4e5bb6112583a1c3ebb73020da4a1bfa3c1a31ecdded4d8c6ef6:
+
+classic fdbfcaa5: desktop 9657 ms, first window 1320 ms
+imported JIT, no modern040 boundary, 338f5aeb:
+    desktop 18582 ms, first window 1740 ms
+    exe ada025e6c0d66d531c6195b8872b103f05d594ea323a52092e83f49d45712508
+
+This reproduces the regression without the modern040 boundary. Earlier modern
+arms took about 18.2 seconds with the same safe/hard-flush configuration.
+Larger cache and inline mode did not close the gap.
+
+Inspection found uncached getenv calls in execute_normal and the outer native
+dispatcher, plus up to six repeated getenv calls per compiler instruction for
+full-coverage and diagnostic selection. Cache these process launch controls on
+first use, following the existing controls in this file. The Windows CRT
+environment scan/lock must not be paid for every instruction or block. This
+change does not alter generated guest semantics, admission, cache invalidation,
+JITSafe, JITFPU or the user's config.
+
+Validation: Linux and Windows x64 builds succeed. Linux real guest EmulOp,
+trace/RTE, own-code patch/invalidation and physical IEEE FPU regression gates
+all pass with translated guest witnesses. Timing of these diagnostic-enabled
+small fixtures does not prove a Windows boot performance improvement.
+
+Windows desktop timing after this change remains pending. Do not describe the
+performance regression as fixed until the ACER controlled comparison confirms it.

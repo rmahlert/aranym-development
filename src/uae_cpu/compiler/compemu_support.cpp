@@ -905,10 +905,22 @@ static bool aranym_checked_move_opcode(uae_u32 canonical) {
         ((in.mnemo==i_MOVE && ((source&&in.dmode==Dreg)||(in.smode==Dreg&&destination))) ||
          (in.mnemo==i_MOVEA && source && in.dmode==Areg));
 }
-static bool aranym_jit_diagnostics(){return getenv("ARANYM_UPSTREAM_JIT_DIAGNOSTICS")!=nullptr;}
+static bool aranym_jit_diagnostics() {
+    // Process launch controls are immutable during an emulation run. In
+    // particular, Windows getenv scans/locks the CRT environment: consulting
+    // it at every block dispatch and translated instruction is expensive even
+    // when diagnostics are disabled.
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_DIAGNOSTICS")!=nullptr;
+    return enabled;
+}
+static bool aranym_jit_emit_diagnostics() {
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_EMIT_DIAGNOSTIC")!=nullptr;
+    return enabled;
+}
 static bool aranym_classic_full_jit_enabled() {
-    return getenv("ARANYM_UPSTREAM_JIT_GROUP")==nullptr&&
+    static const bool enabled=getenv("ARANYM_UPSTREAM_JIT_GROUP")==nullptr&&
         getenv("ARANYM_UPSTREAM_JIT_FALLBACK_ONLY")==nullptr;
+    return enabled;
 }
 #endif
 static uae_u32 cache_size = 0; // Size of total cache allocated for compiled blocks
@@ -6412,7 +6424,7 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 #endif
                     comptbl[opcode](opcode);
 #ifndef UAE
-                    if(getenv("ARANYM_UPSTREAM_JIT_EMIT_DIAGNOSTIC") && aranym_jit_alu_family(cft_map(opcode))==0 && instruction_guest_pc>=FastRAMBase) {
+                    if(aranym_jit_emit_diagnostics() && aranym_jit_alu_family(cft_map(opcode))==0 && instruction_guest_pc>=FastRAMBase) {
                         static unsigned dumps=0;
                         if(dumps++<64) {
                             fprintf(stderr,"OWN-JIT-EMIT pc=%08x op=%04x need=%x live=%x xstatus=%d xreg=%d bytes=",instruction_guest_pc,cft_map(opcode),needed_flags,liveflags[i+1],live.state[FLAGX].status,live.state[FLAGX].realreg);
