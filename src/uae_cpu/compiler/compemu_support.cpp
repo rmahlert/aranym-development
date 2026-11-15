@@ -5637,9 +5637,14 @@ void build_comp(void)
 		 * instructions use the original one-call interpreter hot path. */
 		switch (table68k[cft_map(opcode)].mnemo) {
 		case i_MMUOP:
+			aranym_modern_dispatch[opcode]=1;
+			break;
 		case i_EMULOP_RETURN:
 		case i_EMULOP:
-			aranym_modern_dispatch[opcode]=1;
+			/* Supervisor physical EmulOps can use ARAnyM's original fast
+			 * service body. User-mode EmulOps retain the modern path because
+			 * it owns the qualified 68040 privilege-frame contract. */
+			aranym_modern_dispatch[opcode]=3;
 			break;
 		case i_MOVE2C:
 		case i_ORSR:
@@ -6952,7 +6957,7 @@ void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
      * entering this physical block.  Only the small predecoded set below can
      * change that mode, and each such opcode ends the block. */
     const uae_u8 dispatch=aranym_modern_dispatch[opcode];
-    if(dispatch==1) {
+    if(dispatch==1||(dispatch==3&&!regs.s)) {
         aranym_upstream_modern_step(opcode);
         if(aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,
            regs.dtt0,regs.dtt1)||regs.t1||regs.t0||modern040_restart_pending())
@@ -6964,9 +6969,10 @@ void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
      * ordinary physical-address execution.  This deliberately includes
      * ARAnyM's NatFeat services and ordinary no-MMU exception frames: fVDI
      * can issue a NatFeat call for each screen operation and a full modern
-     * state handoff there makes XBoot visibly paint the display.  EmulOp stays
-     * modern because its direct privilege/frame contract differs from the old
-     * physical handler.
+     * state handoff there makes XBoot visibly paint the display.  Physical
+     * supervisor EmulOps use the same proven classic body as the old backend;
+     * user-mode EmulOps stay modern for their qualified privilege frame. Paged
+     * execution also reaches the modern core before this physical dispatcher.
      * Paging, trace or a pending modern restart is transferred by
      * m68k_do_compile_execute, while MMU and mode-changing instructions use
      * the predecoded boundary above. With FPU JIT disabled, physical-mode FPU
@@ -6977,7 +6983,7 @@ void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
     aranym_hybrid_classic_active=true;
     (*cpufunctbl[opcode])(opcode);
     aranym_hybrid_classic_active=false;
-    if(dispatch==2&&
+    if(dispatch>=2&&
        (aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,
           regs.dtt0,regs.dtt1)||regs.t1||regs.t0||modern040_restart_pending()))
         SPCFLAGS_SET(SPCFLAG_JIT_END_COMPILE);
