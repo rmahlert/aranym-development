@@ -36,3 +36,13 @@ MSP and ISP selection is controlled by S/M. This is not a desktop speed claim.
 Native Windows acceptance of this subsequent CPU fix remains pending; the
 separately frozen HOTPATH-02 installer contains only the prior tested CPU and
 the corrected statically linked installer helpers.
+
+Owner Windows follow-up: HOTPATH-02 / git0d8f4a17 booted to XaAES, then MiNT
+reported invalid stack_magic while loading a website in HighWire. The owner
+also confirmed using the NAT option and noted the earlier network speed work.
+STACKFIX-01 / git03a08cda was subsequently packaged with the CPU correction
+and the same networking speed changes and preserving installer helper repair.
+Owner retest report: "latest I didn't have issues with highwire".
+Record this as a successful reported live retest of the symptom, not as a
+general network throughput result or proof that every network/FPU issue is
+resolved. No post-fix owner log or installed-binary hash was supplied with it.
