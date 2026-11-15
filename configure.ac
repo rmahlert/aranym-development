@@ -443,6 +443,7 @@ AC_PROG_CC_C_O
 AC_PROG_OBJC
 AC_PROG_CPP
 AC_PROG_CXX
+AC_PROG_OBJCXX
 AC_PROG_CXXCPP
 if test "x$MODERN040_UPGRADE" = xyes; then
   dnl The preserving installer removes stale shared GCC runtimes after

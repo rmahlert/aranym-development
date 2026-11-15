@@ -4,9 +4,9 @@ This branch contains community development work. It is not an official ARAnyM
 release, and upstream ARAnyM maintainers have not approved these builds.
 The original project is at <https://github.com/aranym/aranym>.
 
-Development stays in the owner's private repository until the builds are
-ready and the owner approves public sharing. Keep Actions artifacts in that
-private repository; this workflow does not publish community releases.
+The owner has approved public development source and build diagnostics.
+Builds remain experimental until their platform acceptance gates pass;
+this workflow does not automatically publish community releases.
 
 The Windows modernization and the Mac ARM64 port have different qualification
 status. See each platform's evidence before assuming a feature works there.

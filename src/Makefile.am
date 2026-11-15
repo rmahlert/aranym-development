@@ -18,6 +18,8 @@ endif
 CFLAGS_NOWARN = $(DBGSP) $(ARCHFLAGS) $(SDL_CFLAGS) $(ZLIB_CFLAGS) $(DISASM_CFLAGS) $(SLIRP_CFLAGS)
 AM_CFLAGS = $(CFLAGS_NOWARN) $(WFLAGS)
 AM_CXXFLAGS = $(CFLAGS_NOWARN) $(WFLAGS)
+AM_OBJCFLAGS = $(CFLAGS_NOWARN) $(WFLAGS)
+AM_OBJCXXFLAGS = $(CFLAGS_NOWARN) $(WFLAGS)
 AM_LDFLAGS = $(ARCHFLAGS)
 
 LIBS = @LIBS@ $(SDL_LIBS) $(JPEG_LIBS) $(ZLIB_LIBS) $(DISASM_LIBS) $(SLIRP_LIBS)
@@ -52,7 +54,10 @@ if OS_TYPE_darwin
 bin_SCRIPTS = $(APP_BUNDLE)
 endif
 
-EXTRA_DIST =
+EXTRA_DIST = \
+	Unix/darwin/SDLMain.M \
+	Unix/darwin/SDLHotkeysRefresh.M \
+	Unix/darwin/clipbrd_darwin.M
 
 ## Files
 aranym_SOURCES = \
@@ -272,15 +277,15 @@ aranym_SOURCES += \
 	Unix/parameters_unix.cpp \
 	Unix/host_filesys_unix.cpp \
 	Unix/darwin/ethernet_darwin.cpp Unix/darwin/ethernet_darwin.h \
-	Unix/darwin/SDLMain.M Unix/darwin/SDLMain.h \
-	Unix/darwin/SDLHotkeysRefresh.M \
+	Unix/darwin/SDLMain.mm Unix/darwin/SDLMain.h \
+	Unix/darwin/SDLHotkeysRefresh.mm \
 	$(empty)
 else
 aranym_SOURCES += \
 	gui-osx/SDLMain.m gui-osx/SDLMain.h \
 	Unix/MacOSX/parameters_MacOSX.cpp \
 	Unix/darwin/ethernet_darwin.cpp Unix/darwin/ethernet_darwin.h \
-	Unix/darwin/SDLHotkeysRefresh.M \
+	Unix/darwin/SDLHotkeysRefresh.mm \
 	Unix/MacOSX/fd_trans.c Unix/MacOSX/fd_trans.h \
 	Unix/MacOSX/ethernet_macosx.cpp Unix/MacOSX/ethernet_macosx.h \
 	Unix/darwin/MachServer.c \
@@ -391,7 +396,7 @@ if OS_TYPE_mingw
 aranym_SOURCES += Unix/cygwin/clipbrd_cygwin.cpp
 else
 if OS_TYPE_darwin
-aranym_SOURCES += Unix/darwin/clipbrd_darwin.M
+aranym_SOURCES += Unix/darwin/clipbrd_darwin.mm
 else
 if OS_TYPE_beos
 aranym_SOURCES += Unix/beos/clipbrd_beos.cpp
