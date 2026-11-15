@@ -101,7 +101,6 @@ extern void REGPARAM2 aranym_upstream_modern_step(uae_u32 opcode);
 void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode);
 bool aranym_upstream_classic_exception_active();
 extern void modern040_execute();
-extern void modern040_prepare();
 extern uae_u32 REGPARAM2 aranym_upstream_ram_move_guard(uae_u32 opcode,uae_u32 extensions);
 extern uae_u32 REGPARAM2 aranym_upstream_control_guard(const void *image);
 extern void aranym_upstream_memory_deopt();
@@ -6911,14 +6910,8 @@ static inline bool aranym_modern_only_opcode(uae_u32 opcode)
     switch(in.mnemo) {
     case i_FPP:case i_FDBcc:case i_FScc:case i_FTRAPcc:case i_FBcc:
     case i_FSAVE:case i_FRESTORE:case i_MMUOP:
-    case i_EMULOP_RETURN:case i_EMULOP:case i_NATFEAT_ID:case i_NATFEAT_CALL:
+    case i_EMULOP_RETURN:case i_EMULOP:
         return true;
-    case i_TRAP:case i_TRAPV:case i_TRAPcc:case i_CHK:case i_CHK2:
-    case i_BKPT:case i_RTE:case i_RTR:case i_STOP: {
-        const uae_u32 pc=m68k_getpc();
-        return pc>=FastRAMBase&&
-            uint64_t(pc)<uint64_t(FastRAMBase)+FastRAMSize;
-    }
     default:
         return false;
     }
@@ -6946,11 +6939,14 @@ void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
     }
 
     /* The original ARAnyM interpreter is the fast and proven fallback for
-     * ordinary physical-address execution.  Keep the pinned modern core for
-     * FPU/MMU/private operations and whenever translation, trace or restart
-     * state requires it; do not import/export the complete 040 state around
-     * every uncompiled XBoot instruction. */
-    modern040_prepare();
+     * ordinary physical-address execution.  This deliberately includes
+     * ARAnyM's NatFeat services and ordinary no-MMU exception frames: fVDI
+     * can issue a NatFeat call for each screen operation and a full modern
+     * state handoff there makes XBoot visibly paint the display.  EmulOp stays
+     * modern because its direct privilege/frame contract differs from the old
+     * physical handler.
+     * Paging, trace or a pending modern restart still takes the modern path
+     * above, as do the modern FPU and MMU instruction families. */
     aranym_hybrid_classic_active=true;
     (*cpufunctbl[opcode])(opcode);
     aranym_hybrid_classic_active=false;
