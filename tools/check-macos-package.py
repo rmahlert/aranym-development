@@ -26,7 +26,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="ARAnyM relocated package ") as directory:
         root = Path(directory)
         relocated = root / app.name
-        shutil.copytree(app, relocated)
+        shutil.copytree(app, relocated, symlinks=True)
         contents = relocated / "Contents"
         executable = contents / "MacOS/aranym"
         libraries = list((contents / "Frameworks").iterdir())
