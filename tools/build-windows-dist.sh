@@ -198,16 +198,29 @@ fi
 # NSIS's temporary plugin directory.  Add it after aranym.files is generated
 # so it is not installed beside ARAnyM.
 if test "${PRESERVE_USER_DATA:-0}" = 1; then
-    test -f "$build_dir/config-locator.exe" || {
-        echo "$0: preserving installer requires $build_dir/config-locator.exe" >&2
-        exit 1
-    }
-    cp -a "$build_dir/config-locator.exe" "$stage/config-locator.exe"
-    test -f "$build_dir/runtime-verifier.exe" || {
-        echo "$0: preserving installer requires $build_dir/runtime-verifier.exe" >&2
-        exit 1
-    }
-    cp -a "$build_dir/runtime-verifier.exe" "$stage/runtime-verifier.exe"
+    # Helpers run from NSIS's private temporary directory before application
+    # files are installed. Never reuse build-dir helpers: an old dynamically
+    # linked config-locator requires GCC DLLs unavailable in that directory.
+    "${MINGW_CXX:-${MINGW_TOOL_PREFIX:-x86_64-w64-mingw32}-g++}" \
+        -std=c++17 -O2 -municode -mwindows -DCONFIG_LOCATOR_GUI -static \
+        "$root/tools/config-locator.cpp" -lole32 -lshell32 -luuid \
+        -o "$stage/config-locator.exe"
+    "${MINGW_CC:-${MINGW_TOOL_PREFIX:-x86_64-w64-mingw32}-gcc}" \
+        -O2 -municode -static "$root/tools/runtime-verifier.c" -ladvapi32 \
+        -o "$stage/runtime-verifier.exe"
+    for helper in config-locator.exe runtime-verifier.exe; do
+        "$package_strip" --strip-unneeded "$stage/$helper"
+        "$package_objdump" -p "$stage/$helper" > "$work/helper-imports"
+        sed -n 's/^[[:space:]]*DLL Name:[[:space:]]*//p' \
+            "$work/helper-imports" > "$work/helper-dlls"
+        while IFS= read -r dep; do
+            case "$(echo "$dep" | tr '[A-Z]' '[a-z]')" in
+            advapi32.dll|kernel32.dll|msvcrt.dll|ole32.dll|shell32.dll|user32.dll) ;;
+            *) echo "$0: installer helper $helper requires non-system runtime $dep" >&2
+               exit 1 ;;
+            esac
+        done < "$work/helper-dlls"
+    done
     (
         cd "$stage"
         sha256sum aranym.exe ./*.dll > runtime-manifest.txt
