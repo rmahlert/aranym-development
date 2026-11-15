@@ -23,6 +23,7 @@
 #   RELEASE_LABEL human-readable suffix from the executable build label
 #   CORRESPONDING_SOURCE_ARCHIVE exact source archive to include in installer
 #   RUNTIME_LICENSE_DIR dependency license notices to include
+#   EMUTOS_SOURCE_ARCHIVE exact source for the pinned bundled firmware
 #   ATARI_TAP_SETUP_ZIP optional shared TAP setup kit, with matching .sha256
 
 set -eu
@@ -135,6 +136,25 @@ done
 for f in config logo.bmp wm_icon.bmp installer_welcome.bmp emutos-aranym.img; do
 	test -f "$root/data/$f" && cp -a "$root/data/$f" "$stage/aranym/$f"
 done
+if test -n "${EMUTOS_SOURCE_ARCHIVE:-}"; then
+    python3 - "$root" "$stage" "$EMUTOS_SOURCE_ARCHIVE" <<'PY'
+import hashlib, json, shutil, sys, tarfile
+from pathlib import Path
+root, stage, archive_path = map(Path, sys.argv[1:])
+metadata = root / 'data/emutos-macos.json'
+record = json.loads(metadata.read_text())
+assert hashlib.sha256((stage / 'aranym/emutos-aranym.img').read_bytes()).hexdigest() == record['image_sha256'], 'firmware hash mismatch'
+assert hashlib.sha256(archive_path.read_bytes()).hexdigest() == record['source_archive_sha256'], 'firmware source mismatch'
+licenses = stage / 'LICENSES/EmuTOS'
+licenses.mkdir(parents=True, exist_ok=True)
+shutil.copy2(metadata, licenses / 'BUILD.json')
+with tarfile.open(archive_path) as archive:
+    member = next(m for m in archive.getmembers() if m.name.endswith('/doc/license.txt'))
+    (licenses / 'LICENSE.txt').write_bytes(archive.extractfile(member).read())
+(stage / 'source').mkdir(exist_ok=True)
+shutil.copy2(archive_path, stage / 'source/emutos-e0f0c233-source.tar.gz')
+PY
+fi
 for f in nfeth.xif nfeth-config netsetup.prg eth0-config.sh README-setup.txt; do
 	cp -a "$root/data/network/$f" "$stage/aranym/network/$f"
 done

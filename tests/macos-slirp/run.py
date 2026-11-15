@@ -26,6 +26,7 @@ def main():
     mode.add_argument("--app", type=Path)
     mode.add_argument("--reference-emulator", type=Path)
     mode.add_argument("--linux-emulator", type=Path)
+    mode.add_argument("--windows-emulator", type=Path)
     parser.add_argument("--firmware", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -34,7 +35,9 @@ def main():
         parser.error("Mac acceptance requires native Apple Silicon")
     if args.linux_emulator and sys.platform != "linux":
         parser.error("Linux acceptance requires native Linux")
-    if (args.reference_emulator or args.linux_emulator) and not args.firmware:
+    if args.windows_emulator and sys.platform != "win32":
+        parser.error("Windows acceptance requires native Windows")
+    if (args.reference_emulator or args.linux_emulator or args.windows_emulator) and not args.firmware:
         parser.error("standalone emulator needs --firmware")
     args.output.mkdir(parents=True, exist_ok=True)
     requests, datagrams = [], []
@@ -79,6 +82,7 @@ def main():
     udp_thread.start()
     result = {"native_mac_arm64": native and bool(args.app),
               "native_linux": bool(args.linux_emulator),
+              "native_windows": bool(args.windows_emulator),
               "reference_only": bool(args.reference_emulator), "profiles": []}
     try:
         # Distinguish unavailable host DNS from a guest SLIRP DNS regression.
@@ -94,7 +98,7 @@ def main():
                     emulator = app / "Contents/MacOS/aranym"
                     firmware = app / "Contents/Resources/emutos-aranym.img"
                 else:
-                    emulator = (args.reference_emulator or args.linux_emulator).resolve(strict=True)
+                    emulator = (args.reference_emulator or args.linux_emulator or args.windows_emulator).resolve(strict=True)
                     firmware = args.firmware.resolve(strict=True)
                 code = template
                 for old, port in ((0xa55a1234, http.server_port), (0xa55a5678, udp.getsockname()[1])):
@@ -112,7 +116,7 @@ def main():
                     "Netmask = 255.255.255.0\nMAC = 52:54:00:12:34:56\n")
                 environment = {key: value for key, value in os.environ.items()
                                if not key.startswith(("DYLD_", "ARANYM_", "SDL_"))}
-                if args.reference_emulator or args.linux_emulator:
+                if args.reference_emulator or args.linux_emulator or args.windows_emulator:
                     environment.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
                 log = args.output / ("slirp-" + label + ".txt")
                 request_start, datagram_start = len(requests), len(datagrams)
