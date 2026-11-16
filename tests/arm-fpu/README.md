@@ -42,3 +42,8 @@ No personal guest drive is used in these tests.
 
 The FPU-enabled EmulOp fixtures explicitly verify its FPU state bit and toggling
 while retaining the original all-CCR/register/privilege/frame/RTE assertions.
+
+Timing uses host monotonic timestamps between guest markers, outside boot.
+The loop performs ten million iterations and independently accumulates the
+iteration count in an FPU register even with diagnostic counters disabled.
+Guest 200Hz ticks are retained for diagnosis, not used as the timing oracle.

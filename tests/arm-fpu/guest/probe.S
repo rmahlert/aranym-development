@@ -79,15 +79,24 @@ _fpu_benchmark:
     fmove.l #3,%fp0
     fmove.l #2,%fp1
     fmove.l #1,%fp2
+    fmove.l #0,%fp3
     move.l 4(%sp),%d0
 1:  fmul.x %fp1,%fp0
     fadd.x %fp2,%fp0
     fsub.x %fp2,%fp0
     fdiv.x %fp1,%fp0
+    fadd.x %fp2,%fp3
     subq.l #1,%d0
     bne 1b
+    fmove.l %fp3,%d1
+    move.l %d1,_fpu_benchmark_iterations
     fmove.l %fp0,%d0
     rts
+.data
+.balign 4
+.globl _fpu_benchmark_iterations
+_fpu_benchmark_iterations: .long 0
+.text
 
 .globl _fpu_rom_probe
 _fpu_rom_probe:

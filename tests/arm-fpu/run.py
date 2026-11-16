@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse,hashlib,json,os,platform,re,shutil,statistics,subprocess,sys,tempfile
+import argparse,hashlib,json,os,platform,re,shutil,statistics,subprocess,sys,tempfile,threading,time
 from pathlib import Path
 HERE=Path(__file__).resolve().parent
 ROOT=HERE.parents[1]
@@ -52,15 +52,35 @@ def main():
    env={k:v for k,v in os.environ.items() if k!='HOME' and not k.startswith(('ARANYM_','SDL_','DYLD_'))}
    if a.emulator:env.update(SDL_VIDEODRIVER='dummy',SDL_AUDIODRIVER='dummy')
    if diagnostics:env['ARANYM_ARM_FPU_DIAGNOSTICS']='1'
-   result=subprocess.run(prefix+[str(run_binary),'-c',str(config)],cwd=work,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=180)
-   text=result.stdout.decode(errors='replace');(out/(label+'.log')).write_text(text)
+   command=prefix+[str(run_binary),'-c',str(config)]
+   elapsed=None
+   if fixture=='FPUBENCH':
+    process=subprocess.Popen(command,cwd=work,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+    lines=[];times={}
+    def capture():
+     for line in process.stdout:
+      if b'FPU-BENCH BEGIN' in line:times['begin']=time.monotonic()
+      if b'FPU-BENCH ticks=' in line:times['end']=time.monotonic()
+      lines.append(line)
+    reader=threading.Thread(target=capture,daemon=True);reader.start()
+    try:status=process.wait(timeout=180)
+    except subprocess.TimeoutExpired:
+     process.kill();process.wait();reader.join(timeout=3);raise
+    reader.join(timeout=3);text=b''.join(lines).decode(errors='replace')
+    assert 'begin' in times and 'end' in times,(label,'missing timed guest markers')
+    elapsed=times['end']-times['begin']
+   else:
+    result=subprocess.run(command,cwd=work,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=180)
+    status=result.returncode;text=result.stdout.decode(errors='replace')
+   (out/(label+'.log')).write_text(text)
    witness=re.search(r'ARM-FPU-JIT available=yes enabled=(yes|no) executed-native=(\d+) deoptimized=(\d+) precision=ieee64',text)
-   record={'label':label,'jit':jit,'fpu_jit':fpu,'exit':result.returncode,'diagnostics':diagnostics,
+   record={'label':label,'jit':jit,'fpu_jit':fpu,'exit':status,'diagnostics':diagnostics,
       'guest_sha256':hashlib.sha256(body).hexdigest(),'config_sha256':sha(config),
       'executed_native_fpu':int(witness[2]) if witness else 0,'deoptimized':int(witness[3]) if witness else 0}
+   if elapsed is not None:record['host_seconds']=elapsed
    report['profiles'].append(record)
    marker='ARM FPU JIT GUEST PASS' if fixture=='FPU' else 'FPU-BENCH ticks='
-   assert result.returncode==0 and marker in text,(label,text[-7000:])
+   assert status==0 and marker in text,(label,text[-7000:])
    if diagnostics:
     assert witness,(label,'missing compiled FPU capability')
     assert bool(record['executed_native_fpu'])==(jit and fpu),(label,'native witness mismatch')
@@ -86,18 +106,19 @@ def main():
    previous=values;record['exact_profiles']=221
   if a.benchmark:
    text,witness=run('benchmark-witness','FPUBENCH',True,True)
-   assert witness['executed_native_fpu']>=3000000,'benchmark lacks native FP execution'
-   samples={}
+   assert witness['executed_native_fpu']>=40000000,'benchmark lacks native FP execution'
+   samples={};host_samples={}
    for label,fpu in [('integer-jit',False),('fpu-jit',True)]:
-    samples[label]=[]
+    samples[label]=[];host_samples[label]=[]
     for repeat in range(3):
      text,record=run('timing-'+label+'-'+str(repeat),'FPUBENCH',True,fpu,False)
      m=re.search(r'FPU-BENCH ticks=(\w+) result=(\w+)',text);assert m and int(m[2],16)==3
-     record['ticks_200hz']=int(m[1],16);samples[label].append(record['ticks_200hz'])
-   medians={k:statistics.median(v) for k,v in samples.items()};assert medians['fpu-jit']>0
-   report['benchmark']={'samples_ticks_200hz':samples,'medians_ticks_200hz':medians,
+     assert 'iterations=00989680' in text,(label,'counter-free iteration count mismatch')
+     record['ticks_200hz']=int(m[1],16);samples[label].append(record['ticks_200hz']);host_samples[label].append(record['host_seconds'])
+   medians={k:statistics.median(v) for k,v in host_samples.items()};assert all(x>0 for v in host_samples.values() for x in v)
+   report['benchmark']={'samples_ticks_200hz':samples,'samples_host_seconds':host_samples,'medians_host_seconds':medians,
       'integer_jit_over_fpu_jit':medians['integer-jit']/medians['fpu-jit'],
-      'scope':'One exact arithmetic loop; counters disabled. No desktop or overall performance claim.'}
+      'scope':'Host monotonic time between guest BEGIN/result markers; ten million independently counted iterations; counters disabled. Guest200Hz ticks retained as diagnostics only; no whole-system claim.'}
    print(json.dumps(report['benchmark']),flush=True)
   report['passed']=True
  finally:(out/'arm-fpu-results.json').write_text(json.dumps(report,indent=2)+'\n')

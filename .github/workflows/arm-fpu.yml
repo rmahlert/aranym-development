@@ -2,14 +2,21 @@ name: ARM64 FPU JIT testing packages
 
 on:
   workflow_dispatch:
+    inputs:
+      validation_only:
+        description: Validate the already qualified37fb6f49 packages with the current timing oracle
+        type: boolean
+        default: false
   push:
     branches: [arm-fpu-jit-20261116]
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   native:
+    if: inputs.validation_only != true
     strategy:
       fail-fast: false
       matrix:
@@ -169,3 +176,52 @@ jobs:
             build/rpi64-fpu
             build/rpi64-network
             build/rpi64-package/build-manifest.json
+
+  validation:
+    if: inputs.validation_only == true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            artifact: aranym-macos-arm64-guest-jit-37fb6f4916dbd8186007e751f18027907dc75099
+            archive: aranym-1.2.0-unofficial-arm-fpu-jit-test1-macos-arm64.tar.gz
+          - runner: ubuntu-24.04-arm
+            artifact: aranym-rpi-arm64-guest-jit-37fb6f4916dbd8186007e751f18027907dc75099
+            archive: aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-arm64.tar.gz
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          run-id: 43980153821
+          github-token: ${{ github.token }}
+          path: build/candidate-archive
+      - name: Extract exact qualified package
+        run: |
+          test '${{ runner.arch }}' = ARM64
+          mkdir -p build/candidate
+          tar -xzf build/candidate-archive/${{ matrix.archive }} -C build/candidate
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+          j=json.loads(Path('build/candidate/build-manifest.json').read_text())
+          assert j['source_commit']=='37fb6f4916dbd8186007e751f18027907dc75099'
+          assert j['fpu_jit_available']
+          PYCODE
+      - name: Install Linux package
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ./build/candidate/aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-arm64.deb
+      - name: Native Apple Silicon exact FPU results and counted arithmetic
+        if: runner.os == 'macOS'
+        run: python3 tests/arm-fpu/run.py --app build/candidate/ARAnyM-Unofficial.app --output build/validation --benchmark
+      - name: Native Linux exact FPU results and counted arithmetic
+        if: runner.os == 'Linux'
+        run: python3 tests/arm-fpu/run.py --emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --output build/validation --benchmark
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm-fpu-final-validation-${{ runner.os }}-${{ github.sha }}
+          path: build/validation
