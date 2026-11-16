@@ -232,6 +232,9 @@ dnl JIT compiler options.
 AC_ARG_ENABLE(modern040-core,
  [AS_HELP_STRING([--enable-modern040-core],[enable experimental modern040/x64 JIT core (default=no)])],
  [WANT_MODERN040=$enableval], [WANT_MODERN040=no])
+AC_ARG_ENABLE(arm64-jit,
+ [AS_HELP_STRING([--enable-arm64-jit],[enable experimental native AArch64 guest compiler integration (default=no)])],
+ [WANT_ARM64_JIT=$enableval], [WANT_ARM64_JIT=no])
 AC_ARG_WITH(modern040-library,
  [AS_HELP_STRING([--with-modern040-library=FILE],[target modern040 C-ABI static library for the experimental core])],
  [MODERN040_LIBRARY=$withval], [MODERN040_LIBRARY=])
@@ -433,8 +436,18 @@ if test "$CPU_TYPE" = "unknown"; then
 fi
 DEFINES="$DEFINES -DCPU_$CPU_TYPE"
 AC_DEFINE_UNQUOTED([CPU_TYPE], "$CPU_TYPE", [Define CPU type])
-if $HAVE_AARCH64 && test "$WANT_JIT" = yes; then
+if $HAVE_AARCH64 && test "$WANT_JIT" = yes && test "$WANT_ARM64_JIT" != yes; then
   AC_MSG_ERROR([The AArch64 emitter is undergoing platform validation; the guest JIT is not connected yet. Use --disable-jit-compiler for the interpreter baseline.])
+fi
+AM_CONDITIONAL([ARM64_JIT], test "$WANT_ARM64_JIT" = yes && $HAVE_AARCH64)
+if test "$WANT_ARM64_JIT" = yes; then
+  if ! $HAVE_AARCH64 || test "$WANT_JIT" != yes; then
+    AC_MSG_ERROR([arm64-jit requires an AArch64 target and --enable-jit-compiler])
+  fi
+  if test "$WANT_JIT_FPU" = yes; then
+    AC_MSG_ERROR([the ARM64 integration currently requires --disable-jit-fpu])
+  fi
+  WANT_CXX_EXCEPTIONS=no
 fi
 
 dnl Checks for programs.
@@ -976,7 +989,12 @@ case $CONTROL_KEY in
 		;;
 esac
 
-if [[ "x$WANT_JIT" = "xyes" ]]; then
+if test "$WANT_ARM64_JIT" = yes; then
+  dnl The A64 bank ABI uses ARAnyM's checked helpers, including hardware access.
+  dnl It does not require signal-decoding of generated memory instructions.
+  WANT_EXSIGSEGV=no
+  MEMORY_CHECK=full
+elif [[ "x$WANT_JIT" = "xyes" ]]; then
   WANT_EXSIGSEGV=yes
   MEMORY_CHECK=sseg
 fi
@@ -1431,6 +1449,11 @@ elif test "$GCC" = yes && $HAVE_X86_64; then
              CFLAGS_NOREDZONE=-mno-red-zone
 	  fi
   fi
+elif test "$GCC" = yes && $HAVE_AARCH64 && test "$WANT_ARM64_JIT" = yes; then
+  ASM_OPTIMIZATIONS="AArch64 guest JIT (experimental)"
+  DEFINES="$DEFINES -DCPU_AARCH64 -DARANYM_ARM64"
+  CAN_JIT=yes
+  GENCOMP_ARCH=arm64
 elif test "$GCC" = yes && $HAVE_SPARC; then
   dnl SPARC CPU
   case "$host_os" in

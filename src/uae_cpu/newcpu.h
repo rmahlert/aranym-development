@@ -80,7 +80,11 @@ struct cputbl {
 extern cpuop_func *cpufunctbl[65536];
 
 #ifdef USE_JIT
+#if defined(CPU_aarch64)
+typedef uae_u32 compop_func (uae_u32) REGPARAM;
+#else
 typedef void compop_func (uae_u32) REGPARAM;
+#endif
 
 struct comptbl {
     compop_func *handler;

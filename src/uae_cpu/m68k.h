@@ -34,6 +34,9 @@
 #ifndef M68K_FLAGS_H
 #define M68K_FLAGS_H
 
+#if defined(CPU_aarch64) && defined(USE_JIT)
+#include "compiler/arm64/native_flags.h"
+#else
 #ifdef OPTIMIZED_FLAGS
 
 #if (defined(CPU_i386) && defined(X86_ASSEMBLY)) || (defined(CPU_x86_64) && defined(X86_64_ASSEMBLY))
@@ -1476,4 +1479,5 @@ static inline int cctrue(const int cc)
 
 #endif /* OPTIMIZED_FLAGS */
 
+#endif /* CPU_aarch64 && USE_JIT */
 #endif /* M68K_FLAGS_H */

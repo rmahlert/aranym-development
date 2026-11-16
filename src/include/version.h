@@ -22,7 +22,7 @@
 #define VER_MAJOR	1
 #define VER_MINOR	2
 #define VER_MICRO	0
-#define BUILD_LABEL	" unofficial-beta1"
+#define BUILD_LABEL	" unofficial-arm-jit-dev"
 #define RELEASE_DATE "2026/11/15"
 
 

@@ -38,10 +38,17 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--emutos-source-archive", type=Path, required=True)
+    parser.add_argument("--jit-build-dir", type=Path, help="require and package the experimental ARM64 JIT build")
     args = parser.parse_args()
     if sys.platform != "darwin":
         parser.error("packaging requires native macOS tools")
     binary = args.binary.resolve(strict=True)
+    guest_jit = args.jit_build_dir is not None
+    if guest_jit:
+        build = args.jit_build_dir.resolve(strict=True)
+        flags = (build / "Makefile").read_text()
+        if binary != (build / "src/aranym").resolve() or not all(flag in flags for flag in ("-DUSE_JIT=1", "-DARANYM_ARM64")):
+            parser.error("JIT packaging requires the actual ARM64 JIT build binary and flags")
     output = args.output.resolve()
     app = output / "ARAnyM-Unofficial.app"
     if app.exists():
@@ -61,13 +68,13 @@ def main():
     info.update({
         "CFBundleExecutable": "aranym",
         "CFBundleName": "ARAnyM Unofficial",
-        "CFBundleDisplayName": "ARAnyM 1.2.0 Unofficial Beta 1 ARM64 Interpreter",
+        "CFBundleDisplayName": "ARAnyM Unofficial ARM64 JIT Integration" if guest_jit else "ARAnyM 1.2.0 Unofficial Beta 1 ARM64 Interpreter",
         "CFBundleIdentifier": "org.aranym.unofficial.arm64",
         "CFBundleShortVersionString": "1.2.0",
         "CFBundleVersion": "1.2.0",
         "ARAnyMSourceCommit": sha,
-        "ARAnyMBuildLabel": "1.2.0 Unofficial Beta 1",
-        "ARAnyMGuestJIT": False,
+        "ARAnyMBuildLabel": "ARM64 JIT integration" if guest_jit else "1.2.0 Unofficial Beta 1",
+        "ARAnyMGuestJIT": guest_jit,
         "LSMinimumSystemVersion": os.environ.get("MACOSX_DEPLOYMENT_TARGET", "11.0"),
     })
     info.pop("LSMinimumSystemVersionByArchitecture", None)
@@ -169,18 +176,19 @@ def main():
             run("codesign", "--force", "--sign", "-", str(library))
     if not any(name.startswith("libslirp") for name in copied):
         raise RuntimeError("Mac networking package requires a linked and bundled libslirp")
-    # Interpreter baseline needs no JIT entitlement.
-    run("codesign", "--force", "--sign", "-", "--options", "runtime", str(app))
+    signing_args = ["--entitlements", str(ROOT / "tests/arm64-platform/entitlements.plist")] if guest_jit else []
+    run("codesign", "--force", "--sign", "-", "--options", "runtime", *signing_args, str(app))
     run("codesign", "--verify", "--deep", "--strict", str(app))
-    manifest = {"source_commit": sha, "architecture": "arm64", "guest_jit": False,
+    manifest = {"source_commit": sha, "architecture": "arm64", "guest_jit": guest_jit,
                 "slirp": True, "signing": "ad-hoc; not notarized", "libraries": records,
                 "dynamic_libraries": dynamic_libraries,
                 "emutos": firmware}
     (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (output / "homebrew-dependencies.json").write_text(run("brew", "info", "--json=v2", "--installed") + "\n")
+    introduction = ("ARAnyM ARM64 JIT integration build; guest correctness gates remain required. SLIRP is included.\n" if guest_jit else
+                    "ARAnyM 1.2.0 Unofficial Beta 1 - ARM64 interpreter.\nGuest ARM64 JIT is not connected in this baseline. SLIRP is included.\n")
     (output / "README.txt").write_text(
-        "ARAnyM 1.2.0 Unofficial Beta 1 - ARM64 interpreter.\n"
-        "Guest ARM64 JIT is not connected in this baseline. SLIRP is included.\n"
+        introduction +
         "Select SLIRP in Network settings or use the bundled slirp.config.example ETH0 settings.\n"
         "Guest: 10.0.2.15/24, gateway 10.0.2.2, DNS 10.0.2.3; requires the MiNT NatFeat Ethernet driver.\n"
         "Ad-hoc signed, not notarized. No guest desktop acceptance yet.\n"

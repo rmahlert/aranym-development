@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import plistlib
 from pathlib import Path
 import re
 import shutil
@@ -19,8 +20,10 @@ def main():
         parser.error("package checks require native macOS")
     app = args.app.resolve(strict=True)
     output = app.parent
+    with (app / "Contents/Info.plist").open("rb") as stream:
+        jit_enabled = bool(plistlib.load(stream).get("ARAnyMGuestJIT"))
     report = {"native_arch": os.uname().machine, "relocated_cli": False,
-              "guest_boot": "not tested", "guest_jit": "not connected"}
+              "guest_boot": "not tested", "guest_jit": "enabled; execution tested separately" if jit_enabled else "disabled"}
     if os.uname().machine != "arm64":
         raise RuntimeError("native Apple Silicon runner required")
     with tempfile.TemporaryDirectory(prefix="ARAnyM relocated package ") as directory:

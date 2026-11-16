@@ -11,10 +11,12 @@ this workflow does not automatically publish community releases.
 The Windows modernization and the Mac ARM64 port have different qualification
 status. See each platform's evidence before assuming a feature works there.
 
-The Mac workflow currently validates an imported AArch64 instruction emitter
-and prepares a native **interpreter baseline**. The 68k-to-AArch64 JIT is not
-connected yet. The Mac baseline includes SLIRP user-mode networking and its
-runtime dependencies. A green workflow does not certify a guest desktop or a JIT beta.
+The published Beta 1 Mac download is an **interpreter baseline** with SLIRP.
+This integration branch is connecting the complete pinned ARM64 guest compiler
+to ARAnyM. Its separate `ARM64 guest JIT integration` workflow requires actual
+native guest execution witnesses and paired JIT on/off correctness tests on
+Apple Silicon and Linux ARM64. Passing compiler or emitter checks alone does
+not qualify a guest JIT build. No ARM JIT community release has been qualified.
 The remaining acceptance gates are in
 [tests/arm64-platform/README.md](tests/arm64-platform/README.md).
 

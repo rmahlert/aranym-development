@@ -32,6 +32,9 @@
 #ifndef COMPEMU_X86_H
 #define COMPEMU_X86_H
 
+#if defined(CPU_aarch64)
+#include "arm64/compemu_arm.h"
+#else
 #include "sysconfig.h"
 #include "newcpu.h"
 #if defined(CPU_x86_64)
@@ -588,4 +591,5 @@ void jit_abort(const char *format,...) __attribute__((format(printf, 1, 2))) __a
    32-bit pointers where it shouldn't. */
 #define uae_p32(x) ((uintptr)(x))
 
+#endif /* CPU_aarch64 */
 #endif /* COMPEMU_X86_H */

@@ -312,6 +312,10 @@ endif
 
 
 if USE_JIT
+if ARM64_JIT
+aranym_SOURCES += uae_cpu/compiler/arm64/aranym_arm64.cpp
+libaranym_a_SOURCES += uae_cpu/compiler/arm64/compemu_arm.cpp uae_cpu/compiler/arm64/compstbl_arm.cpp
+else
 aranym_SOURCES += \
 	uae_cpu/compiler/compemu.h \
 	uae_cpu/compiler/flags_arm.h \
@@ -340,6 +344,7 @@ libaranym_a_SOURCES += \
 	$(empty)
 if USE_JIT_FPU
 aranym_SOURCES += uae_cpu/compiler/compemu_fpp.cpp
+endif
 endif
 endif
 
@@ -674,3 +679,28 @@ cdromtest: $(srcdir)/cdromtest.cpp $(srcdir)/natfeat/nfcdrom.cpp $(srcdir)/natfe
 	$(AM_V_CC)$(CXX) $(LDFLAGS) $(CXXFLAGS) $(CPPFLAGS) $(DEFS) $(WFLAGS) $(CFLAGS) $(ARCHFLAGS) -o $@ $(srcdir)/cdromtest.cpp $(LIBS)
 
 CLEANFILES = cdromtest$(EXEEXT) m68kdisasm$(EXEEXT)
+
+# Complete pinned ARM64 backend and its native adapter.
+EXTRA_DIST += \
+	uae_cpu/compiler/arm64/SOURCE.json \
+	uae_cpu/compiler/arm64/UPSTREAM.md \
+	uae_cpu/compiler/arm64/aarch64.h \
+	uae_cpu/compiler/arm64/aranym_arm64.cpp \
+	uae_cpu/compiler/arm64/aranym_arm64.h \
+	uae_cpu/compiler/arm64/codegen_arm64.cpp \
+	uae_cpu/compiler/arm64/codegen_arm64.h \
+	uae_cpu/compiler/arm64/compemu_arm.cpp \
+	uae_cpu/compiler/arm64/compemu_arm.h \
+	uae_cpu/compiler/arm64/compemu_fpp_arm.cpp \
+	uae_cpu/compiler/arm64/compemu_midfunc_arm.h \
+	uae_cpu/compiler/arm64/compemu_midfunc_arm2.h \
+	uae_cpu/compiler/arm64/compemu_midfunc_arm64.cpp \
+	uae_cpu/compiler/arm64/compemu_midfunc_arm64_2.cpp \
+	uae_cpu/compiler/arm64/compemu_support_arm.cpp \
+	uae_cpu/compiler/arm64/compstbl_arm.cpp \
+	uae_cpu/compiler/arm64/comptbl_arm.h \
+	uae_cpu/compiler/arm64/flags_arm.h \
+	uae_cpu/compiler/arm64/gencomp_arm.c \
+	uae_cpu/compiler/arm64/jit_trap_policy.h \
+	uae_cpu/compiler/arm64/native_flags.h \
+	$(empty)

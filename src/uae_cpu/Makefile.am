@@ -39,7 +39,9 @@ AM_CXXFLAGS = $(CFLAGS_NOWARN) $(WFLAGS)
 
 noinst_PROGRAMS = build68k gencpu
 if USE_JIT
+if !ARM64_JIT
 noinst_PROGRAMS += gencomp
+endif
 endif
 
 BUILT_SOURCES = \
@@ -62,7 +64,9 @@ endif
 gencomp_SOURCES += readcpu.cpp cpudefs.cpp
 
 if USE_JIT
+if !ARM64_JIT
 BUILT_SOURCES += compemu.cpp compstbl.cpp comptbl.h
+endif
 endif
 
 

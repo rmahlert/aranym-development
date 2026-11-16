@@ -1,0 +1,88 @@
+{
+  "repository": "https://github.com/BlitterStudio/amiberry",
+  "commit": "2cff10571b25a5f138a4771c6694d2ed08dbcdb5",
+  "license": "GPL-2.0-or-later; original notices retained",
+  "files": {
+    "aarch64.h": {
+      "upstream_path": "src/jit/arm/aarch64.h",
+      "upstream_sha256": "424215c92e47d524e4564aeb0c87c9743aaaaee324b0e1986c0953577ac50b64",
+      "integrated_sha256": "424215c92e47d524e4564aeb0c87c9743aaaaee324b0e1986c0953577ac50b64"
+    },
+    "codegen_arm64.cpp": {
+      "upstream_path": "src/jit/arm/codegen_arm64.cpp",
+      "upstream_sha256": "43cceef7b912f28d01efe9a5d18fd9cbc9f54a0453246d9be3883592f637b53f",
+      "integrated_sha256": "b072b97684d52019c2f4ff92f9ed4908d85c105acec4d866a693abfe51d36a40"
+    },
+    "codegen_arm64.h": {
+      "upstream_path": "src/jit/arm/codegen_arm64.h",
+      "upstream_sha256": "9d4c8a47689ac6b4b7ab34285d0482edc6be9798192655a473be044b4a1ca4e5",
+      "integrated_sha256": "9d4c8a47689ac6b4b7ab34285d0482edc6be9798192655a473be044b4a1ca4e5"
+    },
+    "compemu_arm.cpp": {
+      "upstream_path": "src/jit/arm/compemu_arm.cpp",
+      "upstream_sha256": "bb9a599fa4a7046b39f1f39e7e0f38239029ed2590ef1673458e88fc31864c87",
+      "integrated_sha256": "462f10ae562d784e4b45fef8a4afca2bb9f236f41818c01f941cb1b2a39fea02"
+    },
+    "compemu_arm.h": {
+      "upstream_path": "src/jit/arm/compemu_arm.h",
+      "upstream_sha256": "eea9fd95b4faa5dd6d945cfaffc49495fa3f848c6355b804ebe5df0ed8455ee5",
+      "integrated_sha256": "1c9f11d0a8a3c40347f3d8a6bc156f94b5e2ad50c0c48fc650d5475abb8b709f"
+    },
+    "compemu_fpp_arm.cpp": {
+      "upstream_path": "src/jit/arm/compemu_fpp_arm.cpp",
+      "upstream_sha256": "3be60e34bdd93123dfb601c4b093d35efa656a6e670c5e0abd308c83c21c3007",
+      "integrated_sha256": "3be60e34bdd93123dfb601c4b093d35efa656a6e670c5e0abd308c83c21c3007"
+    },
+    "compemu_midfunc_arm.h": {
+      "upstream_path": "src/jit/arm/compemu_midfunc_arm.h",
+      "upstream_sha256": "159b550d5ef25c993215204d490060c837a30ef64806c7cb4c3790ebee48dc67",
+      "integrated_sha256": "159b550d5ef25c993215204d490060c837a30ef64806c7cb4c3790ebee48dc67"
+    },
+    "compemu_midfunc_arm2.h": {
+      "upstream_path": "src/jit/arm/compemu_midfunc_arm2.h",
+      "upstream_sha256": "3d7c27a8d5e9fc8435ec28950bfc760a1b83d1ea408c7cf1154c8b1495f5990c",
+      "integrated_sha256": "3d7c27a8d5e9fc8435ec28950bfc760a1b83d1ea408c7cf1154c8b1495f5990c"
+    },
+    "compemu_midfunc_arm64.cpp": {
+      "upstream_path": "src/jit/arm/compemu_midfunc_arm64.cpp",
+      "upstream_sha256": "aabc974e39763f500fbfcb652da35d37753a33432ec134c67e45d7661bbe2219",
+      "integrated_sha256": "aabc974e39763f500fbfcb652da35d37753a33432ec134c67e45d7661bbe2219"
+    },
+    "compemu_midfunc_arm64_2.cpp": {
+      "upstream_path": "src/jit/arm/compemu_midfunc_arm64_2.cpp",
+      "upstream_sha256": "c771ba9acd6846b3b450dddffe959809e3b96e0a96edbd59ff76a4d41bf53c71",
+      "integrated_sha256": "545d7c6f86ad0a057004fc0d49306cb90310167af51037facc0625a248044628"
+    },
+    "compemu_support_arm.cpp": {
+      "upstream_path": "src/jit/arm/compemu_support_arm.cpp",
+      "upstream_sha256": "b697188dcb3d4df9a7959f93d3c03942a2c8b273a793b438cfd7d0ae22391ad6",
+      "integrated_sha256": "6cb6f453826ce1a3b22dd34ea49712d58d68d562c4c57799c2366736da0ca244"
+    },
+    "compstbl_arm.cpp": {
+      "upstream_path": "src/jit/arm/compstbl_arm.cpp",
+      "upstream_sha256": "6b75f6e8ac0a54cc23f828a563382feb7c4e1dddd46bf15a93b5e3408cf13fd6",
+      "integrated_sha256": "9ed640943845c849e1067721823e885abaa4e4563943d073957f0c626b50c98e"
+    },
+    "comptbl_arm.h": {
+      "upstream_path": "src/jit/arm/comptbl_arm.h",
+      "upstream_sha256": "9b5f50bbeb6b1132ceee9ae3c5939319f83a29a0429e7cca38e4c4da39d3ed5a",
+      "integrated_sha256": "9b5f50bbeb6b1132ceee9ae3c5939319f83a29a0429e7cca38e4c4da39d3ed5a"
+    },
+    "flags_arm.h": {
+      "upstream_path": "src/jit/arm/flags_arm.h",
+      "upstream_sha256": "d3632339cd611ab45adff37dc41b672702591c05c6755f8342f58ac1ecf7d5d2",
+      "integrated_sha256": "d3632339cd611ab45adff37dc41b672702591c05c6755f8342f58ac1ecf7d5d2"
+    },
+    "gencomp_arm.c": {
+      "upstream_path": "src/jit/arm/gencomp_arm.c",
+      "upstream_sha256": "37c96dbb15c138d8884408a9f2268d8ff62577710649d2d324212a7147a11c0c",
+      "integrated_sha256": "37c96dbb15c138d8884408a9f2268d8ff62577710649d2d324212a7147a11c0c"
+    },
+    "jit_trap_policy.h": {
+      "upstream_path": "src/jit/jit_trap_policy.h",
+      "upstream_sha256": "e950b72464ae8f9bd49c904a0d855f85cc6c241f2df77116753dee437e99a751",
+      "integrated_sha256": "37fb4e1499bec035f4947a94f400a0c46d5129927e1c5674aaf8825029b11a6b"
+    }
+  },
+  "status": "Experimental full-backend integration; requires native guest execution and correctness qualification"
+}

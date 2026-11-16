@@ -102,6 +102,12 @@ extern struct regstruct
 
     /* Cache reg*/
     uae_u32 cacr,caar;
+#if defined(CPU_aarch64) && defined(USE_JIT)
+    // Host-only JIT bookkeeping; architectural CPU state above remains native.
+    uintptr mem_banks, cache_tags;
+    uae_u32 scratchregs[3];
+    uae_u32 instruction_pc, jit_exception;
+#endif
 } regs;
 
 static inline uaecptr m68k_getpc (void)
