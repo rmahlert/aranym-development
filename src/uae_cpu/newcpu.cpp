@@ -1161,6 +1161,15 @@ void m68k_emulop(uae_u32 opcode)
 		restore_regs(r);
 }
 
+bool m68k_emulop_checked(uae_u32 opcode)
+{
+    M68kRegisters r;
+    save_regs(r);
+    const bool completed=EmulOp(opcode,&r);
+    if(completed) restore_regs(r);
+    return completed;
+}
+
 void m68k_natfeat_id(void)
 {
 	struct M68kRegisters r;

@@ -69,7 +69,9 @@ static inline void uae_vm_jit_write_protect(bool enabled) {
 #endif
 }
 static inline size_t uae_vm_page_size() { return getpagesize(); }
-static inline void *aranym_arm64_meta_acquire(size_t size) { return vm_acquire(size,VM_MAP_DEFAULT); }
+static inline void *aranym_arm64_meta_acquire(size_t size) {
+    return mmap(nullptr,size,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+}
 #define vm_acquire(size,options) aranym_arm64_meta_acquire(size)
 static inline void set_special(uae_u32 bits) { SPCFLAGS_SET(bits|SPCFLAG_JIT_END_COMPILE); }
 #endif

@@ -315,6 +315,7 @@ extern void m68k_record_step(uaecptr, int);
 #endif
 
 extern void m68k_do_execute(void);
+extern bool m68k_emulop_checked(uae_u32 opcode);
 extern void m68k_execute(void);
 #ifdef USE_JIT
 extern void m68k_compile_execute(void);
