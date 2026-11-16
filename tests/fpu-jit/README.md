@@ -76,3 +76,24 @@ own frame/FSAVE/FRESTORE/RTE qualification.
 Packed-decimal and undefined FPU encodings are outside the connected SoftFloat
 frontend. Native FPU JIT is not enabled on ARM. FreeMiNT/XaAES/GBE and real
 application performance still need owner/community testing.
+
+## Test 1 results
+
+Application source `04aa43ed` passed native Linux [run 43808156740](https://github.com/rmahlert/aranym-development/actions/runs/43808156740)
+and the exact Windows preserving installer passed native [run 43809291156](https://github.com/rmahlert/aranym-development/actions/runs/43809291156).
+Both cover 208 exact profiles, CPU boundaries and SLIRP. Windows also verifies
+clean installation, runtime payload hashes and preservation during upgrade.
+Qualification checkout `b3427138` fixes LF source checkout on Windows; it does
+not change the application binary.
+
+Three counter-free samples of the same exact arithmetic loop gave medians:
+
+| Native host | Classic IEEE | SoftFloat | Guarded FPU JIT |
+| --- | ---: | ---: | ---: |
+| Windows x86-64 | 17 | 295 | 23 |
+| Linux x86-64 | 18 | 447 | 25 |
+
+Values are guest 200Hz ticks; lower is faster. The native path beats SoftFloat
+on this loop but remains slower than classic IEEE. These are not desktop/GBE
+performance results. Packages, corresponding source, raw validation and
+checksums are on the [unofficial testing release](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test1).
