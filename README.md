@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://aranym.github.io/">
+    <img src="android/AndroidData/logo.png" alt="ARAnyM logo" width="320" height="240">
+  </a>
+</p>
+
 # ARAnyM 1.2.0 — Unofficial development
 
 Community development builds of **ARAnyM (Atari Running on Any Machine)**,
