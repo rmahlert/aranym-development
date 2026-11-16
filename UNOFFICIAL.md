@@ -1,77 +1,82 @@
-# Unofficial ARAnyM development
+# Unofficial ARAnyM builds and platform status
 
-This branch contains community development work. It is not an official ARAnyM
-release, and upstream ARAnyM maintainers have not approved these builds.
-The original project is at <https://github.com/aranym/aranym>.
+These are community testing builds of ARAnyM, not official upstream releases.
+Original project: [ARAnyM website](https://aranym.github.io/) and
+[upstream source](https://github.com/aranym/aranym).
 
-The owner has approved public development source and build diagnostics.
-Builds remain experimental until their platform acceptance gates pass;
-this workflow does not automatically publish community releases.
+## Current downloads
 
-The `fpu-jit-x64-20261116` branch adds an experimental, opt-in x86-64 FPU JIT
-profile for Windows and Linux. It preserves 80-bit registers across native and
-SoftFloat execution, carries FPSR/FPIAR and null/idle state across MMU boundaries,
-and guards unsupported modes/operands before native execution. See
-[tests/fpu-jit/README.md](tests/fpu-jit/README.md). Enabled arithmetic exception
-and full FPSP continuation remain explicitly unsupported; this is not full
-68040 FPU pipeline qualification. Existing profiles retain `JITFPU = No`.
+All packages install the application only. Keep your existing configuration,
+firmware and boot drive. No personal hard disk image or guest applications are
+included. Original Beta 1 downloads remain available as an earlier baseline.
 
-The Windows modernization and the Mac ARM64 port have different qualification
-status. See each platform's evidence before assuming a feature works there.
+| Platform | Testing release | CPU and FPU | Qualification |
+| --- | --- | --- | --- |
+| Windows x86-64 | [FPU JIT Test 1](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test1) | Modern040 / integer JIT; guarded FPU JIT is opt-in | Native Windows CPU, installation, preserving upgrade and SLIRP passed |
+| Linux x86-64 / Ubuntu 24.04 | [FPU JIT Test 1](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test1) | Modern040 / integer JIT; guarded FPU JIT is opt-in | Native Linux CPU, installed Debian package and SLIRP passed |
+| Apple Silicon / macOS 15+ | [ARM JIT Test 1](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-arm-jit-test1) | Complete ARM64 integer guest JIT; IEEE FPU interpreter | Native Apple Silicon CPU and packaged application SLIRP passed |
+| Raspberry Pi arm64 / Bookworm or newer | [ARM JIT Test 1](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-arm-jit-test1) | Complete ARM64 integer guest JIT; IEEE FPU interpreter | Native Linux ARM64 CPU and installed Debian package SLIRP passed; physical Pi testing remains |
+| Raspberry Pi armhf / Bookworm or newer | [ARM JIT Test 1](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-arm-jit-test1) | Restored complete ARM32 integer guest JIT; IEEE FPU interpreter | CPU and installed-package SLIRP passed under QEMU; physical Pi testing remains |
 
-The published Beta 1 Mac download is an **interpreter baseline** with SLIRP.
-The separate **Unofficial ARM JIT Test 1** release includes a real complete
-68k-to-ARM64 integer JIT on Apple Silicon and 64-bit Linux. Native run
-[43797819194](https://github.com/rmahlert/aranym-development/actions/runs/43797819194)
-passed all 15 paired guest profiles on Apple Silicon and Linux ARM64, including
-FPU fallback, and packaged Mac/installed Debian Bookworm SLIRP checks with
-translated guest execution witnesses. Its source is `6cdceb01`.
+The [README download table](https://github.com/rmahlert/aranym-development#latest-testing-downloads)
+links directly to each installer/package. Every release provides corresponding
+source and SHA256SUMS. The Mac app is ad-hoc signed, not notarized; its bundled
+libraries require macOS 15 or newer. The Beta 1 Mac package is an earlier
+interpreter baseline, separate from the current ARM JIT test package.
 
-The current Mac package requires macOS 15 or newer because of its bundled
-Homebrew dependencies. It is ad-hoc signed, not notarized.
+## Windows and Linux FPU JIT
 
-The 32-bit Pi path restores the complete original ARAnyM ARM32 compiler in
-an isolated architecture path. The same 15 CPU profiles pass under QEMU ARM
-ISA execution. Its separate package workflow passed installed SLIRP
-with translated guest execution in [run 43798991271](https://github.com/rmahlert/aranym-development/actions/runs/43798991271)
-at source `6d78d7a4`; QEMU results are explicitly cross-emulated,
-and do not claim physical Pi acceptance.
+FPU JIT Test 1 was built from `04aa43ed`. It is off by default. To try it:
 
-These ARM builds use the classic physical CPU core and IEEE FPU interpreter.
-FPU JIT and the Windows modern040 paged-MMU integration are not enabled on ARM.
-FreeMiNT/XaAES/fVDI, GFA Basic/GBE, real Pi display/BeePi integration and measured
-performance still need community hardware testing. This testing prerelease
-does not assert those workload acceptance gates have passed. See
-[guest tests](tests/arm64-guest/README.md) for CPU qualification and
-[platform tests](tests/arm64-platform/README.md) for the remaining workload gates.
+```ini
+[JIT]
+JIT = Yes
+JITSafe = Yes
+JITFPU = Yes
+```
 
-Development artifacts identify their source commit and carry an exact source
-archive, license notices and runtime dependency metadata. The bundled official
-EmuTOS snapshot image is paired with its exact upstream source archive and build
-recipe in `data/emutos-macos.json`. Preserve those
-materials when sharing an artifact. No personal boot disk or installed guest
-applications belong in the public repository or public CI artifacts.
+Set `JITFPU = No` to retain the classic-compatible physical FPU path. Native
+admission covers ordinary extended/nearest arithmetic and moves. Other rounding
+modes, explicit single/double operations, transcendentals, quotient operations
+and exceptional values use the pinned WinUAE SoftFloat frontend. Exact 80-bit
+registers, FPSR/FPIAR and null/idle state are preserved across core boundaries.
+Paging and tracing use the modern interpreter.
 
-Community beta releases should use GitHub prerelease status and include the
-commit, checksum, enabled features, known limitations and actual hardware test
-results. GFA Basic/GBE testing on Apple Silicon is still required before
-claiming that workload works.
+Enabled arithmetic exception/FPSP pending-state continuation, packed decimal
+and undefined encodings remain unsupported. This is not complete FPU hardware
+coverage. ARM packages do not enable FPU JIT or the modern040 paged-MMU core.
+See the [FPU tests and limitations](https://github.com/rmahlert/aranym-development/blob/fpu-jit-x64-20261116/tests/fpu-jit/README.md).
 
-## Unofficial Beta 1 packaging targets
+## Published test evidence
 
-Application packages only: Windows x86-64 and macOS ARM64, followed by Linux
-x86-64, then Raspberry Pi `armhf` (32-bit) and `arm64` (64-bit). No personal
-drive image or guest applications are included. A target listed here is not a
-claim that its build or acceptance tests have passed.
+- [Windows native qualification](https://github.com/rmahlert/aranym-development/actions/runs/43809291156): the exact downloaded installer passed 208 bit-exact FPU profiles, CPU boundary regressions, positive native FPU execution, clean installation, runtime payload verification, preserving upgrade and SLIRP on both subnets.
+- [Linux x86-64 native qualification](https://github.com/rmahlert/aranym-development/actions/runs/43808156740): 208 bit-exact FPU profiles, CPU boundary regressions, positive native FPU execution, installed-package checks and SLIRP on both subnets passed.
+- [Apple Silicon and Linux ARM64 native qualification](https://github.com/rmahlert/aranym-development/actions/runs/43797819194): 15 paired CPU profiles, mixed integer/FPU fallback and packaged Mac/installed Debian Bookworm SLIRP passed with translated guest execution. Application source: `6cdceb01`.
+- [ARM32 qualification under QEMU](https://github.com/rmahlert/aranym-development/actions/runs/43798991271): the same 15 CPU profiles and installed-package SLIRP passed with translated guest execution. Application source: `6d78d7a4`. These are emulated-ISA results, not physical Pi acceptance.
 
-BeePi publishes separate images for Pi 3, Pi 4/400 and Pi 5/500 at
-<https://sites.google.com/site/beebox68k/beepi>. That hardware list does not
-identify the installed userspace architecture. Select the package using
-`dpkg --print-architecture` on the actual BeePi installation, rather than the
-Pi model or kernel architecture. Both package architectures are requested.
-Linux x86-64 comes first; Raspberry Pi packaging follows.
+The FPU release validation archive includes raw reports and qualification
+checkout `b3427138`, which fixes Windows test-source line endings without
+changing the application binary. Network checks exercise DHCP, DNS, ARP, UDP,
+TCP/HTTP, receiver restart and shutdown with the receiver active.
 
-BeePi relies on JIT performance. Both target packages must prove actual guest
-JIT execution; instruction-emitter and interpreter checks alone are insufficient.
-Select the correct OS ABI and compare the same guest configuration on physical
-Pi hardware before claiming a measured speed improvement.
+The arithmetic loop medians were 17 / 295 / 23 guest timer ticks on Windows and
+18 / 447 / 25 on Linux for classic IEEE / SoftFloat / guarded FPU JIT. The native
+path beats SoftFloat on this loop but still trails classic IEEE. These results
+do not establish a desktop, GBE or whole-system speed improvement.
+
+## Application and hardware testing
+
+FreeMiNT/XaAES/fVDI desktop work, GFA Basic/GBE, physical Pi display/BeePi
+integration and real application performance still need community testing.
+On BeePi, use `dpkg --print-architecture` to choose `arm64` or `armhf`; the Pi
+model or kernel architecture alone does not identify the userspace ABI.
+BeePi information: <https://sites.google.com/site/beebox68k/beepi>.
+
+Keep source archives, license notices, firmware provenance and checksums with
+redistributed packages. The bundled EmuTOS image is paired with its exact source
+and recipe in `data/emutos-macos.json`.
+
+[Report issues](https://github.com/rmahlert/aranym-development/issues/new) with
+the platform, build, JIT settings, steps to reproduce and relevant console log.
+For networking, specify SLIRP or TAP. Please keep private drive images out of
+public issue reports.
