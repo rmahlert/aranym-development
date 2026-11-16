@@ -35,7 +35,7 @@ FPU arithmetic exception/FPSP continuation remains unsupported.
 ARM builds use the IEEE FPU interpreter and do
 not yet include the Windows/Linux x86-64 modern040 paged-MMU integration.
 FreeMiNT/XaAES/GBE and physical BeePi desktop testing is still needed.
-See [platform status and test details](https://github.com/rmahlert/aranym-development/blob/arm-jit-integration-20261115/UNOFFICIAL.md).
+See [platform status and test details](https://github.com/rmahlert/aranym-development/blob/macos-arm64-beta-20261115/UNOFFICIAL.md).
 
 ## Latest testing downloads
 
@@ -58,8 +58,14 @@ The 32-bit build has passed ARM execution tests under QEMU; physical Pi testing
 remains required. The Mac app is ad-hoc signed, not notarized.
 
 [All releases, matching source and checksums](https://github.com/rmahlert/aranym-development/releases).
-The ARM JIT sources are on the
-[ARM JIT development branch](https://github.com/rmahlert/aranym-development/tree/arm-jit-integration-20261115).
+Corresponding source is available for each current release:
+
+- Windows/Linux FPU JIT Test 1: [source bundle](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test1/aranym-1.2.0-unofficial-fpu-jit-test1-source.tar.gz) and [development branch](https://github.com/rmahlert/aranym-development/tree/fpu-jit-x64-20261116).
+- Mac/Pi ARM64 JIT Test 1: [source archive](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-source-6cdceb01.tar.gz).
+- Pi ARM32 JIT Test 1: [source archive](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-source-6d78d7a4.tar.gz).
+
+ARM development continues on the [ARM JIT branch](https://github.com/rmahlert/aranym-development/tree/arm-jit-integration-20261115).
+See [platform status, native test results and known limitations](https://github.com/rmahlert/aranym-development/blob/macos-arm64-beta-20261115/UNOFFICIAL.md).
 
 ## Reporting issues
 
