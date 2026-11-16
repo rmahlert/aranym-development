@@ -38,6 +38,7 @@ def main():
     for name,expected in pins['source_sha256'].items():
         if digest(ROOT/name)!=expected: raise RuntimeError('guest source changed: '+name)
     cases=[('emulop','EMUON','EMUOFF','EMULOP JIT GUEST PASS',0),
+           ('fpu-fallback','ARMFPU','ARMFPU','ARM FPU FALLBACK PASS',0),
            ('bridge','MASTER','MASTER','CPU BRIDGE PASS all checks',0),
            ('vbl','MVBL','MVBL','MASTER IRQ PASS',0),
            ('mfp','MMFP','MMFP','MASTER IRQ PASS',0),

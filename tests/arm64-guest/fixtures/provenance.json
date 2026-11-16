@@ -9,7 +9,8 @@
     "MMFP.PRG": "0804e34a133d6cf54c9a066a5069f7dc3f7c78a10e319024601c103c77af6e5e",
     "INVALID.PRG": "5261fb23f1f005be346276e251c07e2477b45b13d23b148796447dbdc290014e",
     "TRACE.PRG": "10b80495131af2ecc027ff1a6a92e4ced2f4c92d7b3a44548896c86e411e2b12",
-    "EMUNEG.PRG": "9afadc4af927aefac4e18e0eafa4c8febb9d90f7a408a1a6364fbb228e797e6f"
+    "EMUNEG.PRG": "9afadc4af927aefac4e18e0eafa4c8febb9d90f7a408a1a6364fbb228e797e6f",
+    "ARMFPU.PRG": "859f4d2431e264234401f549a4412be73ea380b8c97dedbc601d6380ebde8370"
   },
   "source_sha256": {
     "tests/modern-jit/guest/access-probe.S": "b5ea0efd3eec1ff71c748d9cd6fd0acfc3d75366b6b9cc36aa82cea0e71c951f",
@@ -19,6 +20,8 @@
     "tests/modern-jit/guest/alu-cases.h": "0adcda21fa8413262d6935a123629c5cb1263fa40fdca52547311daf651a6885",
     "tests/modern-jit/guest/alu-oracle.S": "bb19c3ecbcdda950e13308ec86b6b5291ce58c5a0a3949ac4b2986ff1353300a",
     "tests/modern-jit/guest/alu-oracle.c": "78f333cf90b65326ee59c957db9c60c8729ec375565f86c1ccc1bb6857422b1d",
+    "tests/modern-jit/guest/arm64-fpu.S": "9035ff5499492fa49a8397427559b6759693558006f57ec29a8f0859fa78af5c",
+    "tests/modern-jit/guest/arm64-fpu.c": "36244df49f91122a3368a5278a2ca4e5018a8f3b40289136830af6ddbdf4ca5b",
     "tests/modern-jit/guest/bitfield-containment.S": "f9fbc1744404bb929f2fbc2db36b88accade84c7f53c38c0be76da89c6278421",
     "tests/modern-jit/guest/bitfield-containment.c": "408dbdbb217f46836ecf4ca14b33c4a5d6666ad55ea92e72fc24495106911f0a",
     "tests/modern-jit/guest/chain-cases.h": "e4d6af36ce06ae6b98d1be7938446b38c4ba9f70ae7c32b7f4f06160355a4d7e",

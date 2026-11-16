@@ -21,7 +21,8 @@ def main():
            ('EMUNEG','emulop-jit',['-DEMULOP_EXPECT_JIT=1','-DEMULOP_EXPECT_PC_DELTA=2']),
            ('INVALID','invalidation',[]),('INVNEG','invalidation',['-DEXPECTED_PATCH=3']),('TRACE','trace',[]),('TRACEN','trace',['-DTRACE_PC_DELTA=2']),('CHECKMEM','checked-move',[]),('MEMNEG','checked-move',['-DCOUNT_DELTA=1']),('MEMFAULT','checked-move',['-DFAULT_TRANSFER=1'])]
     cases.append(('MASTER','master-bridge',[]))
-    for family in ('emulop-jit','invalidation','trace','checked-move','master-bridge'):
+    cases.append(('ARMFPU','arm64-fpu',[]))
+    for family in ('emulop-jit','invalidation','trace','checked-move','master-bridge','arm64-fpu'):
         run([a.cc,'-m68040','-c',HERE/'guest'/(family+'.S'),'-o',out/(family+'.o')])
     for name,family,defines in cases:
         run([a.cc,'-m68000','-msoft-float','-O2','-Wall','-Wextra',*defines,'-c',HERE/'guest'/(family+'.c'),'-o',out/(name+'.o')])

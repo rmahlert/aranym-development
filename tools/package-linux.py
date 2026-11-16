@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package the Linux x86-64 modern040 build as an application-only Debian package."""
+"""Package qualified Linux x86-64 or Raspberry Pi guest JIT application builds."""
 import argparse
 import hashlib
 import json
@@ -31,11 +31,22 @@ def main():
     parser.add_argument("--slirp-library", type=Path, required=True)
     parser.add_argument("--slirp-source-archive", type=Path, required=True)
     parser.add_argument("--emutos-source-archive", type=Path, required=True)
-    parser.add_argument("--winuae-source-archive", type=Path, required=True)
+    parser.add_argument("--winuae-source-archive", type=Path)
+    parser.add_argument("--architecture", choices=("amd64", "arm64", "armhf"), default="amd64")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    if sys.platform != "linux" or os.uname().machine != "x86_64":
-        parser.error("this packaging profile requires native Linux x86-64")
+    if sys.platform != "linux":
+        parser.error("Debian packaging requires Linux")
+    arch=args.architecture
+    if run("dpkg", "--print-architecture") != arch:
+        parser.error("use a packaging environment with the requested Debian userspace architecture")
+    if arch=="amd64" and not args.winuae_source_archive:
+        parser.error("modern040 x86-64 requires --winuae-source-archive")
+    label="Unofficial Beta 1" if arch=="amd64" else "Unofficial ARM JIT Test 1"
+    version=VERSION if arch=="amd64" else "1.2.0~unofficial.armjit.test1"
+    package_basename=("aranym-1.2.0-unofficial-beta1-linux-amd64" if arch=="amd64" else
+          "aranym-1.2.0-unofficial-arm-jit-test1-rpi-"+arch)
+    backend={"amd64":"x86-64 modern040 JIT", "arm64":"ARM64 guest JIT", "armhf":"ARM32 guest JIT"}[arch]
     commit = run("git", "-C", str(ROOT), "rev-parse", "HEAD")
     changed = run("git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no")
     if changed:
@@ -48,10 +59,14 @@ def main():
     for macro in ("HAVE_SLIRP", "ETHERNET_SUPPORT"):
         if not re.search(r"^#define " + macro + r" 1$", config, re.M):
             raise RuntimeError("missing build feature: " + macro)
-    if "-DEXPERIMENTAL_UPSTREAM_MODERN040" not in (build / "Makefile").read_text():
-        raise RuntimeError("missing modern040 build profile")
-    if "Advanced Micro Devices X86-64" not in run("readelf", "-h", str(binary)):
-        raise RuntimeError("binary is not x86-64")
+    flags=(build / "Makefile").read_text()
+    required={"amd64":"-DEXPERIMENTAL_UPSTREAM_MODERN040", "arm64":"-DARANYM_ARM64", "armhf":"-DARANYM_ARM32"}[arch]
+    if required not in flags or "-DUSE_JIT=1" not in flags:
+        raise RuntimeError("missing requested guest JIT build profile")
+    elf=run("readelf", "-h", str(binary))
+    machine=re.search(r"^\s*Machine:\s*(.*?)$",elf,re.M).group(1)
+    if machine != {"amd64":"Advanced Micro Devices X86-64", "arm64":"AArch64", "armhf":"ARM"}[arch]:
+        raise RuntimeError("binary machine does not match requested architecture")
     if "libslirp.so.0" not in run("readelf", "-d", str(binary)):
         raise RuntimeError("binary does not link libslirp")
     if "[/usr/lib/aranym-unofficial]" not in run("readelf", "-d", str(binary)):
@@ -95,31 +110,35 @@ def main():
     sources = output / "source"
     sources.mkdir()
     subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar.gz", "-o", str(sources / "aranym-source.tar.gz"), commit], check=True)
-    for source, name in ((args.emutos_source_archive, "emutos-e0f0c233-source.tar.gz"),
+    for source, source_name in ((args.emutos_source_archive, "emutos-e0f0c233-source.tar.gz"),
                          (args.winuae_source_archive, "winuae-d82bc254-source.tar.gz"),
                          (args.slirp_source_archive, "libslirp-v4.9.1.tar.bz2")):
-        shutil.copy2(source, sources / name)
+        if source is not None:
+            shutil.copy2(source, sources / source_name)
     # Resolve system package dependencies from the actual ELF images. The
     # private libslirp is supplied here, so exclude the self dependency only.
     (output / "debian").mkdir()
-    (output / "debian/control").write_text("Source: aranym-unofficial\n\nPackage: aranym-unofficial\nArchitecture: amd64\nDescription: Unofficial ARAnyM beta\n")
+    (output / "debian/control").write_text(f"Source: aranym-unofficial\n\nPackage: aranym-unofficial\nArchitecture: {arch}\nDescription: Unofficial ARAnyM beta\n")
     shlibs = output / "debian/shlibs.local"
     shlibs.write_text("libslirp 0 aranym-unofficial\n")
     dependencies = run("dpkg-shlibdeps", "-O", "-xaranym-unofficial", "-L" + str(shlibs),
                        "-l" + str(lib), "-e" + str(exe), "-e" + str(lib / "libslirp.so.0"), cwd=output)
     depends = next(line.split("=", 1)[1] for line in dependencies.splitlines() if line.startswith("shlibs:Depends="))
     (stage / "DEBIAN/control").write_text(
-        f"Package: {PACKAGE}\nVersion: {VERSION}\nArchitecture: amd64\n"
+        f"Package: {PACKAGE}\nVersion: {version}\nArchitecture: {arch}\n"
         "Maintainer: ARAnyM Unofficial Community\nSection: otherosfs\nPriority: optional\n"
         f"Depends: {depends}\n"
-        "Description: ARAnyM 1.2.0 Unofficial Beta 1\n"
-        " Experimental modern040 x86-64 JIT and SLIRP networking.\n"
+        f"Description: ARAnyM 1.2.0 {label}\n"
+        f" Experimental {backend} and SLIRP networking.\n"
         " Application and EmuTOS firmware only; no guest hard disk.\n")
     (doc / "README.txt").write_text(
-        "ARAnyM 1.2.0 Unofficial Beta 1, Linux x86-64.\n"
-        "Install the .deb with: sudo apt install ./aranym-1.2.0-unofficial-beta1-linux-amd64.deb\n"
-        "Launch aranym-unofficial. Use -c PATH to open your existing configuration.\n"
-        "Default profile: ~/aranym-modern040-beta1; existing profiles are preserved.\n"
+        f"ARAnyM 1.2.0 {label}, Linux {arch}.\n"
+        f"Install the .deb with: sudo apt install ./{package_basename}.deb\n"
+        "Launch aranym-unofficial. Use -c PATH to open your existing configuration.\n"+
+        ("Default profile: ~/aranym-modern040-beta1.\n" if arch=="amd64" else
+         "Use dpkg --print-architecture to select armhf or arm64 for your BeePi OS.\n"
+         "Launch with -c PATH_TO_EXISTING_CONFIG. This package adds aranym-unofficial; point your BeePi launcher to it when ready.\n"
+         "Enable JIT = Yes and JITFPU = No in the JIT config section. Existing guest images/configurations are preserved.\n")+
         "Firmware: /usr/share/aranym-unofficial/aranym/emutos-aranym.img\n"
         "SLIRP: ETH0 Type=slirp, AtariIP=10.0.2.15, HostIP=10.0.2.2, Netmask=255.255.255.0.\n"
         "Guest gateway=10.0.2.2, DNS=10.0.2.3; use the MiNT NatFeat Ethernet driver.\n"
@@ -128,17 +147,17 @@ def main():
     applications = stage / "usr/share/applications"
     applications.mkdir(parents=True)
     (applications / "aranym-unofficial.desktop").write_text(
-        "[Desktop Entry]\nType=Application\nName=ARAnyM Unofficial Beta 1\n"
+        f"[Desktop Entry]\nType=Application\nName=ARAnyM {label}\n"
         "Exec=aranym-unofficial\nIcon=aranym-unofficial\nCategories=System;Emulator;\nTerminal=false\n")
     icons = stage / "usr/share/icons/hicolor/48x48/apps"
     icons.mkdir(parents=True)
     shutil.copy2(ROOT / "contrib/icon-48.png", icons / "aranym-unofficial.png")
-    manifest = {"source_commit": commit, "architecture": "amd64", "guest_jit": "x86-64 modern040; FPU JIT disabled",
+    manifest = {"source_commit": commit, "architecture": arch, "guest_jit": backend+"; FPU JIT disabled",
                 "slirp": "4.9.1 (bundled)", "depends": depends, "emutos": firmware,
                 "files": {str(p.relative_to(stage)): sha(p) for p in sorted(stage.rglob("*")) if p.is_file()},
                 "sources": {p.name: sha(p) for p in sources.iterdir()}}
     (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    package = output / "aranym-1.2.0-unofficial-beta1-linux-amd64.deb"
+    package = output / (package_basename+".deb")
     subprocess.run(["dpkg-deb", "--root-owner-group", "--build", str(stage), str(package)], check=True)
     print(package)
 
