@@ -66,8 +66,15 @@ def main():
             # The emulop negative control intentionally expects JIT enabled.
             for jit in ((True,) if label=='negative' else (False,True)):
                 name=on if jit else off
-                body=bytes.fromhex((HERE/'fixtures'/(name+'.hex')).read_text())
-                if hashlib.sha256(body).hexdigest()!=pins['guest_sha256'][name+'.PRG']:
+                fixture_root=HERE/'fixtures';fixture_pins=pins
+                if args.fpu_jit and name in ('EMUON','EMUOFF','EMUNEG'):
+                    fixture_root=ROOT/'tests/arm-fpu/fixtures'
+                    fixture_pins=json.loads((fixture_root/'provenance.json').read_text())
+                    for source,expected in fixture_pins['source_sha256'].items():
+                        if digest(fixture_root.parent/source)!=expected:raise RuntimeError('FPU guest source changed: '+source)
+                    name={'EMUON':'EMUFON','EMUOFF':'EMUFOFF','EMUNEG':'EMUFNEG'}[name]
+                body=bytes.fromhex((fixture_root/(name+'.hex')).read_text())
+                if hashlib.sha256(body).hexdigest()!=fixture_pins['guest_sha256'][name+'.PRG']:
                     raise RuntimeError('guest binary changed: '+name)
                 arm=label+('-jit' if jit else '-interpreter')
                 with tempfile.TemporaryDirectory(prefix='ARAnyM ARM64 '+arm+' ') as temporary:

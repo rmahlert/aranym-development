@@ -39,3 +39,6 @@ Native Apple Silicon and Linux ARM64 qualification must precede testing
 publication. ARM32 QEMU qualification is explicitly labeled; physical Pi/BeePi
 and FreeMiNT/XaAES/fVDI/GBE application testing remain separate requirements.
 No personal guest drive is used in these tests.
+
+The FPU-enabled EmulOp fixtures explicitly verify its FPU state bit and toggling
+while retaining the original all-CCR/register/privilege/frame/RTE assertions.

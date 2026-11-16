@@ -161,7 +161,7 @@ def main():
         (("Default profile: ~/aranym-modern040-beta1.\n"+
           ("Opt in with JITFPU = Yes in [JIT]. Guarded native arithmetic; other operations use SoftFloat. Enabled FPU exception/FPSP continuation remains unsupported.\n" if args.fpu_jit_test else "")) if arch=="amd64" else
          "Use dpkg --print-architecture to select armhf or arm64 for your BeePi OS.\n"
-         "Launch with -c PATH_TO_EXISTING_CONFIG. This package adds aranym-unofficial; point your BeePi launcher to it when ready.\n"
+         "Launch with -c PATH_TO_EXISTING_CONFIG. This package adds aranym-unofficial; point your BeePi launcher to it when ready.\n"+
          ("Opt in with JIT = Yes,JITSafe = Yes,JITFPU = Yes. ARM native arithmetic retains the existing IEEE64 register profile; other modes/values use the interpreter.\n" if args.arm_fpu_jit_test else
           "Enable JIT = Yes and JITFPU = No in the JIT config section. Existing guest images/configurations are preserved.\n"))+
         "Firmware: /usr/share/aranym-unofficial/aranym/emutos-aranym.img\n"

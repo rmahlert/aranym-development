@@ -32,15 +32,68 @@
       "/home/rob/git/Aranym/build/arm-fpu-guests/probe.o",
       "-o",
       "/home/rob/git/Aranym/build/arm-fpu-guests/FPUBENCH.PRG"
+    ],
+    [
+      "/opt/cross-mint/bin/m68k-atari-mint-gcc",
+      "-m68040",
+      "-c",
+      "/home/rob/git/Aranym/build/arm-fpu-jit-source/tests/modern-jit/guest/emulop-jit.S",
+      "-o",
+      "/home/rob/git/Aranym/build/arm-fpu-guests/emulop.o"
+    ],
+    [
+      "/opt/cross-mint/bin/m68k-atari-mint-gcc",
+      "-m68000",
+      "-msoft-float",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-DEMULOP_EXPECT_JIT=1",
+      "/home/rob/git/Aranym/build/arm-fpu-jit-source/tests/arm-fpu/guest/emulop.c",
+      "/home/rob/git/Aranym/build/arm-fpu-guests/emulop.o",
+      "-o",
+      "/home/rob/git/Aranym/build/arm-fpu-guests/EMUFON.PRG"
+    ],
+    [
+      "/opt/cross-mint/bin/m68k-atari-mint-gcc",
+      "-m68000",
+      "-msoft-float",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-DEMULOP_EXPECT_JIT=0",
+      "/home/rob/git/Aranym/build/arm-fpu-jit-source/tests/arm-fpu/guest/emulop.c",
+      "/home/rob/git/Aranym/build/arm-fpu-guests/emulop.o",
+      "-o",
+      "/home/rob/git/Aranym/build/arm-fpu-guests/EMUFOFF.PRG"
+    ],
+    [
+      "/opt/cross-mint/bin/m68k-atari-mint-gcc",
+      "-m68000",
+      "-msoft-float",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-DEMULOP_EXPECT_JIT=1",
+      "-DEMULOP_EXPECT_PC_DELTA=2",
+      "/home/rob/git/Aranym/build/arm-fpu-jit-source/tests/arm-fpu/guest/emulop.c",
+      "/home/rob/git/Aranym/build/arm-fpu-guests/emulop.o",
+      "-o",
+      "/home/rob/git/Aranym/build/arm-fpu-guests/EMUFNEG.PRG"
     ]
   ],
   "source_sha256": {
     "guest/benchmark.c": "fabb7af24ff586fab1cd8fdb812ab1a0cbfcbd10d26e2a905fccd77f72712e57",
+    "guest/emulop.c": "0f7a7e4dcf89aa9443f5e39a2a0856a61073318f98ad03faa1bcb02b5d1cbac9",
     "guest/probe.S": "4babbdc84587d2a59668b2b9c707f72d3a2c25fecf96145ba4c16e82bcc23354",
-    "guest/probe.c": "57f4a5300c0b407badef652e9bd193547b1007ec90c5a55413b9a926703d3964"
+    "guest/probe.c": "57f4a5300c0b407badef652e9bd193547b1007ec90c5a55413b9a926703d3964",
+    "../modern-jit/guest/emulop-jit.S": "04ec1860275ec258f9fd03cf3131173415bb881bb202537ee3e9ef0525f562e4"
   },
   "guest_sha256": {
-    "FPUBENCH.PRG": "3e75be62c30c57518acf8916b60c5381658f890261b44506624fff1c27550db2",
-    "FPU.PRG": "4efd71ca9daabb852a397abeacedc85d02dc06596535077c5e7f726f11dddb19"
+    "EMUFOFF.PRG": "81ed6167c96fe831d9cb4545f71a1a74954d1df5559092a6196b0dbf7905fa8c",
+    "FPUBENCH.PRG": "e1351479d875b2a24f2736fb1efa044fef83ef32b49e1339804d35a924994f37",
+    "EMUFON.PRG": "ec5198fbf05c6950e234800b9cd41500ae6bd13d2ed3fffa60df0356dfc05d01",
+    "FPU.PRG": "27c5a17145709569545cfd93b196503b6e21c111c8ea20a92d930dca85927529",
+    "EMUFNEG.PRG": "caaa6ec5f01764119bda9fc495ed5e7f049c77a98a4f20ea2b7133a766d14762"
   }
 }
