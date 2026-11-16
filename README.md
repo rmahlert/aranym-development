@@ -1,3 +1,70 @@
+# ARAnyM 1.2.0 — Unofficial development
+
+Community development builds of **ARAnyM (Atari Running on Any Machine)**,
+based on the original ARAnyM project. These are unofficial testing releases.
+Credit for the original emulator belongs to the ARAnyM developers and contributors.
+
+[Original ARAnyM website](https://aranym.github.io/) ·
+[Original source](https://github.com/aranym/aranym) ·
+[Original documentation](https://github.com/aranym/aranym/wiki)
+
+## Recent updates
+
+- **SLIRP networking:** added user-mode networking on Windows, macOS and Linux,
+  with receive-thread, socket polling and shutdown fixes.
+- **MiNTNet / NatFeat Ethernet:** corrected interrupt acknowledgement and receive
+  handling for guest networking.
+- **UAE 68040 / x86-64 JIT:** integrated newer, pinned WinUAE CPU/JIT code,
+  paged-MMU support and SoftFloat FPU handling for Windows and Linux x86-64.
+- **ARM JIT:** added ARM64 guest JIT for Apple Silicon and 64-bit Raspberry Pi,
+  and restored the complete ARM32 JIT for 32-bit Raspberry Pi.
+- **Display:** fixed Windows redraw and high-resolution desktop issues.
+- **CPU performance and stability:** improved JIT warm-up, physical-memory
+  execution, exception handling and NatFeat boundaries.
+- **Windows installer:** preserves existing configurations and boot images,
+  fixes runtime dependencies, and asks before replacing configured EmuTOS firmware.
+- **Packages and testing:** added Mac, Linux and Raspberry Pi application packages,
+  source-paired EmuTOS, checksums, and CPU/network regression checks.
+
+FPU JIT is currently disabled. ARM builds use the IEEE FPU interpreter and do
+not yet include the Windows/Linux x86-64 modern040 paged-MMU integration.
+FreeMiNT/XaAES/GBE and physical BeePi desktop testing is still needed.
+See [platform status and test details](https://github.com/rmahlert/aranym-development/blob/arm-jit-integration-20261115/UNOFFICIAL.md).
+
+## Latest testing downloads
+
+Application installers/packages only; no guest hard disk image is included.
+
+| Platform | Build | Direct download |
+| --- | --- | --- |
+| Windows x86-64 | Unofficial Beta 1 | [Installer (.exe)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta1/aranym-1.2.0-unofficial-beta1-windows-x86_64-setup.exe) |
+| Linux x86-64 — Ubuntu 24.04 | Unofficial Beta 1 | [Debian package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta1/aranym-1.2.0-unofficial-beta1-linux-amd64.deb) |
+| Mac Apple Silicon — macOS 15+ | Unofficial ARM JIT Test 1 | [App bundle (.tar.gz)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-1.2.0-unofficial-arm-jit-test1-macos-arm64.tar.gz) |
+| Raspberry Pi 64-bit — Bookworm or newer | Unofficial ARM JIT Test 1 | [arm64 package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-1.2.0-unofficial-arm-jit-test1-rpi-arm64.deb) |
+| Raspberry Pi 32-bit — Bookworm or newer | Unofficial ARM JIT Test 1 | [armhf package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-1.2.0-unofficial-arm-jit-test1-rpi-armhf.deb) |
+
+On Raspberry Pi/BeePi, use `dpkg --print-architecture` to choose `arm64` or `armhf`.
+The 32-bit build has passed ARM execution tests under QEMU; physical Pi testing
+remains required. The Mac app is ad-hoc signed, not notarized.
+
+[All releases, matching source and checksums](https://github.com/rmahlert/aranym-development/releases).
+The ARM JIT sources are on the
+[ARM JIT development branch](https://github.com/rmahlert/aranym-development/tree/arm-jit-integration-20261115).
+
+## Reporting issues
+
+Please [report problems with these unofficial builds](https://github.com/rmahlert/aranym-development/issues/new)
+in this repository. Include the build/version, host OS and architecture, steps
+to reproduce, relevant configuration settings and console log. For display
+problems, include a screenshot; for networking, say whether you use SLIRP or TAP.
+
+## Original project information
+
+The original project description, features, license and usage information are
+preserved below, including its historical release information.
+
+---
+
 [![Build Status](https://travis-ci.org/aranym/aranym.svg?branch=master)](https://travis-ci.org/aranym/aranym)
 [![Build status](https://ci.appveyor.com/api/projects/status/buvngw1mdtdo28ri/branch/master?svg=true)](https://ci.appveyor.com/project/th-otto/aranym/branch/master)
 
