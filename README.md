@@ -23,7 +23,8 @@ Credit for the original emulator belongs to the ARAnyM developers and contributo
 - **UAE 68040 / x86-64 JIT:** integrated newer, pinned WinUAE CPU/JIT code,
   paged-MMU support and SoftFloat FPU handling for Windows and Linux x86-64.
 - **ARM JIT:** added ARM64 guest JIT for Apple Silicon and 64-bit Raspberry Pi,
-  and restored the complete ARM32 JIT for 32-bit Raspberry Pi.
+  restored ARM32 JIT for 32-bit Pi, and added guarded native FPU arithmetic
+  with interpreter fallback on both ARM architectures.
 - **Display:** fixed Windows redraw and high-resolution desktop issues.
 - **CPU performance and stability:** improved JIT warm-up, physical-memory
   execution, exception handling and NatFeat boundaries.
@@ -38,8 +39,9 @@ native arithmetic to the pinned SoftFloat fallback. Enable `JITFPU = Yes` in
 [its tests and limitations](https://github.com/rmahlert/aranym-development/blob/fpu-jit-x64-20261116/tests/fpu-jit/README.md).
 Native Windows/Linux CPU, installation and SLIRP checks have passed; full
 FPU arithmetic exception/FPSP continuation remains unsupported.
-ARM builds use the IEEE FPU interpreter and do
-not yet include the Windows/Linux x86-64 modern040 paged-MMU integration.
+The new ARM FPU JIT Test 1 builds also offer opt-in native arithmetic with
+`JITFPU = Yes` and `JITSafe = Yes`, retaining the existing ARM IEEE64 precision
+and interpreter fallback. ARM does not include the modern040 paged-MMU core.
 FreeMiNT/XaAES/GBE and physical BeePi desktop testing is still needed.
 See [platform status and test details](https://github.com/rmahlert/aranym-development/blob/macos-arm64-beta-20261115/UNOFFICIAL.md).
 
@@ -51,13 +53,14 @@ Application installers/packages only; no guest hard disk image is included.
 | --- | --- | --- |
 | Windows x86-64 | Unofficial FPU JIT Test 1 | [Installer (.exe)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test1/aranym-1.2.0-unofficial-fpu-jit-test1-windows-x86_64-setup.exe) |
 | Linux x86-64 — Ubuntu 24.04 | Unofficial FPU JIT Test 1 | [Debian package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test1/aranym-1.2.0-unofficial-fpu-jit-test1-linux-amd64.deb) |
-| Mac Apple Silicon — macOS 15+ | Unofficial ARM JIT Test 1 | [App bundle (.tar.gz)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-1.2.0-unofficial-arm-jit-test1-macos-arm64.tar.gz) |
-| Raspberry Pi 64-bit — Bookworm or newer | Unofficial ARM JIT Test 1 | [arm64 package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-1.2.0-unofficial-arm-jit-test1-rpi-arm64.deb) |
-| Raspberry Pi 32-bit — Bookworm or newer | Unofficial ARM JIT Test 1 | [armhf package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-1.2.0-unofficial-arm-jit-test1-rpi-armhf.deb) |
+| Mac Apple Silicon — macOS 15+ | Unofficial ARM FPU JIT Test 1 | [App bundle (.tar.gz)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-fpu-jit-test1/aranym-1.2.0-unofficial-arm-fpu-jit-test1-macos-arm64.tar.gz) |
+| Raspberry Pi 64-bit — Bookworm or newer | Unofficial ARM FPU JIT Test 1 | [arm64 package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-fpu-jit-test1/aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-arm64.deb) |
+| Raspberry Pi 32-bit — Bookworm or newer | Unofficial ARM FPU JIT Test 1 | [armhf package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-fpu-jit-test1/aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-armhf.deb) |
 
 The FPU test build keeps FPU JIT off until you enable it. See its
 [qualification results and known limitations](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test1).
-The earlier [Beta 1 packages](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-beta1) remain available.
+ARM packages have separate [FPU qualification, timing and limits](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-arm-fpu-jit-test1).
+The earlier [ARM integer JIT testing packages](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-arm-jit-test1) and [Beta 1 packages](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-beta1) remain available.
 
 On Raspberry Pi/BeePi, use `dpkg --print-architecture` to choose `arm64` or `armhf`.
 The 32-bit build has passed ARM execution tests under QEMU; physical Pi testing
@@ -67,11 +70,14 @@ remains required. The Mac app is ad-hoc signed, not notarized.
 Corresponding source is available for each current release:
 
 - Windows/Linux FPU JIT Test 1: [source bundle](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test1/aranym-1.2.0-unofficial-fpu-jit-test1-source.tar.gz) and [development branch](https://github.com/rmahlert/aranym-development/tree/fpu-jit-x64-20261116).
-- Mac/Pi ARM64 JIT Test 1: [source archive](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-source-6cdceb01.tar.gz).
-- Pi ARM32 JIT Test 1: [source archive](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-source-6d78d7a4.tar.gz).
+- Mac/Pi ARM FPU JIT Test 1: [source archive](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-fpu-jit-test1/aranym-1.2.0-unofficial-arm-fpu-jit-test1-source.tar.gz).
 
-ARM development continues on the [ARM JIT branch](https://github.com/rmahlert/aranym-development/tree/arm-jit-integration-20261115).
+ARM FPU development continues on the [ARM FPU JIT branch](https://github.com/rmahlert/aranym-development/tree/arm-fpu-jit-20261116).
 See [platform status, native test results and known limitations](https://github.com/rmahlert/aranym-development/blob/macos-arm64-beta-20261115/UNOFFICIAL.md).
+
+Community Raspberry Pi 5 testing of the integer JIT reported a Kronos 2.50 CPU
+score of **6,238**, versus **1,567** for its stored “Rpi5 Std FVDI” reference
+(about **3.98×**). This is a setup-dependent CPU benchmark comparison.
 
 ## Reporting issues
 
