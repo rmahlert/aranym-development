@@ -26,10 +26,16 @@ Credit for the original emulator belongs to the ARAnyM developers and contributo
 - **Packages and testing:** added Mac, Linux and Raspberry Pi application packages,
   source-paired EmuTOS, checksums, and CPU/network regression checks.
 
-FPU JIT is currently disabled. ARM builds use the IEEE FPU interpreter and do
+The experimental Windows/Linux x86-64 FPU JIT profile now connects guarded
+native arithmetic to the pinned SoftFloat fallback. Enable `JITFPU = Yes` in
+`[JIT]` in an FPU JIT testing build; it remains opt-in. See
+[its tests and limitations](https://github.com/rmahlert/aranym-development/blob/fpu-jit-x64-20261116/tests/fpu-jit/README.md).
+Native Windows/Linux CPU, installation and SLIRP checks have passed; full
+FPU arithmetic exception/FPSP continuation remains unsupported.
+ARM builds use the IEEE FPU interpreter and do
 not yet include the Windows/Linux x86-64 modern040 paged-MMU integration.
 FreeMiNT/XaAES/GBE and physical BeePi desktop testing is still needed.
-See [platform status and test details](https://github.com/rmahlert/aranym-development/blob/arm-jit-integration-20261115/UNOFFICIAL.md).
+See [platform status and test details](https://github.com/rmahlert/aranym-development/blob/macos-arm64-beta-20261115/UNOFFICIAL.md).
 
 ## Latest testing downloads
 
@@ -37,19 +43,29 @@ Application installers/packages only; no guest hard disk image is included.
 
 | Platform | Build | Direct download |
 | --- | --- | --- |
-| Windows x86-64 | Unofficial Beta 1 | [Installer (.exe)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta1/aranym-1.2.0-unofficial-beta1-windows-x86_64-setup.exe) |
-| Linux x86-64 — Ubuntu 24.04 | Unofficial Beta 1 | [Debian package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta1/aranym-1.2.0-unofficial-beta1-linux-amd64.deb) |
+| Windows x86-64 | Unofficial FPU JIT Test 1 | [Installer (.exe)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test1/aranym-1.2.0-unofficial-fpu-jit-test1-windows-x86_64-setup.exe) |
+| Linux x86-64 — Ubuntu 24.04 | Unofficial FPU JIT Test 1 | [Debian package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test1/aranym-1.2.0-unofficial-fpu-jit-test1-linux-amd64.deb) |
 | Mac Apple Silicon — macOS 15+ | Unofficial ARM JIT Test 1 | [App bundle (.tar.gz)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-1.2.0-unofficial-arm-jit-test1-macos-arm64.tar.gz) |
 | Raspberry Pi 64-bit — Bookworm or newer | Unofficial ARM JIT Test 1 | [arm64 package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-1.2.0-unofficial-arm-jit-test1-rpi-arm64.deb) |
 | Raspberry Pi 32-bit — Bookworm or newer | Unofficial ARM JIT Test 1 | [armhf package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-1.2.0-unofficial-arm-jit-test1-rpi-armhf.deb) |
+
+The FPU test build keeps FPU JIT off until you enable it. See its
+[qualification results and known limitations](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test1).
+The earlier [Beta 1 packages](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-beta1) remain available.
 
 On Raspberry Pi/BeePi, use `dpkg --print-architecture` to choose `arm64` or `armhf`.
 The 32-bit build has passed ARM execution tests under QEMU; physical Pi testing
 remains required. The Mac app is ad-hoc signed, not notarized.
 
 [All releases, matching source and checksums](https://github.com/rmahlert/aranym-development/releases).
-The ARM JIT sources are on the
-[ARM JIT development branch](https://github.com/rmahlert/aranym-development/tree/arm-jit-integration-20261115).
+Corresponding source is available for each current release:
+
+- Windows/Linux FPU JIT Test 1: [source bundle](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test1/aranym-1.2.0-unofficial-fpu-jit-test1-source.tar.gz) and [development branch](https://github.com/rmahlert/aranym-development/tree/fpu-jit-x64-20261116).
+- Mac/Pi ARM64 JIT Test 1: [source archive](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-source-6cdceb01.tar.gz).
+- Pi ARM32 JIT Test 1: [source archive](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-jit-test1/aranym-source-6d78d7a4.tar.gz).
+
+ARM development continues on the [ARM JIT branch](https://github.com/rmahlert/aranym-development/tree/arm-jit-integration-20261115).
+See [platform status, native test results and known limitations](https://github.com/rmahlert/aranym-development/blob/macos-arm64-beta-20261115/UNOFFICIAL.md).
 
 ## Reporting issues
 
