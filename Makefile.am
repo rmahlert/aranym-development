@@ -411,3 +411,7 @@ EXTRA_DIST += \
 	tests/fpu-jit/guest/probe.c \
 	tests/fpu-jit/guest/traps.c \
 	tests/fpu-jit/run.py
+
+EXTRA_DIST += tests/arm-fpu/README.md tests/arm-fpu/run.py tests/arm-fpu/build-fixtures.py \
+ tests/arm-fpu/guest/probe.S tests/arm-fpu/guest/probe.c tests/arm-fpu/guest/benchmark.c \
+ tests/arm-fpu/fixtures/FPU.hex tests/arm-fpu/fixtures/FPUBENCH.hex tests/arm-fpu/fixtures/provenance.json

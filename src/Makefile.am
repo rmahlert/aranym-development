@@ -348,7 +348,9 @@ libaranym_a_SOURCES += \
 	uae_cpu/cpuemu8_nf.cpp \
 	$(empty)
 if USE_JIT_FPU
+if !ARM_FPU_JIT
 aranym_SOURCES += uae_cpu/compiler/compemu_fpp.cpp
+endif
 endif
 endif
 endif
@@ -697,6 +699,7 @@ EXTRA_DIST += \
 	uae_cpu/compiler/arm64/compemu_arm.cpp \
 	uae_cpu/compiler/arm64/compemu_arm.h \
 	uae_cpu/compiler/arm64/compemu_fpp_arm.cpp \
+	uae_cpu/compiler/arm_fpu.h \
 	uae_cpu/compiler/arm64/compemu_midfunc_arm.h \
 	uae_cpu/compiler/arm64/compemu_midfunc_arm2.h \
 	uae_cpu/compiler/arm64/compemu_midfunc_arm64.cpp \

@@ -34,7 +34,7 @@ def main():
     parser.add_argument('--qemu',type=Path,help='explicitly cross-emulated ARM debug execution')
     parser.add_argument('--qemu-sysroot',type=Path)
     parser.add_argument('--qemu-library-path')
-    parser.add_argument('--fpu-jit',action='store_true',help='exercise networking with the guarded x86-64 FPU JIT profile active')
+    parser.add_argument('--fpu-jit',action='store_true',help='exercise networking with the guarded FPU JIT profile active')
     args = parser.parse_args()
     if args.qemu and (not args.linux_emulator or not args.qemu_sysroot or not args.qemu_library_path):
         parser.error('--qemu requires standalone Linux emulator, target sysroot and library path')
@@ -43,8 +43,9 @@ def main():
         prefix=[str(args.qemu.resolve(strict=True)),'-L',str(args.qemu_sysroot.resolve(strict=True)),
                 '-U','HOME','-E','LD_LIBRARY_PATH='+args.qemu_library_path]
     witness_arch='ARM32' if args.architecture=='arm32' else 'ARM64'
-    if args.fpu_jit and (args.app or args.reference_emulator or args.qemu or args.require_jit):
-        parser.error('--fpu-jit requires a standalone native x86-64 Linux/Windows emulator')
+    arm_fpu=args.fpu_jit and args.require_jit
+    if args.fpu_jit and not arm_fpu and (args.app or args.reference_emulator or args.qemu):
+        parser.error('ARM FPU networking requires --require-jit as well as --fpu-jit')
     native = sys.platform == "darwin" and os.uname().machine == "arm64"
     if args.app and not native:
         parser.error("Mac acceptance requires native Apple Silicon")
@@ -97,7 +98,7 @@ def main():
     udp_thread.start()
     result = {"jit_required": args.require_jit, "fpu_jit":args.fpu_jit, "native_mac_arm64": native and bool(args.app),
               "native_linux": bool(args.linux_emulator) and not bool(args.qemu),
-              "cross_emulated":bool(args.qemu), "execution_arch":"x86_64" if args.fpu_jit else args.architecture,
+              "cross_emulated":bool(args.qemu), "execution_arch":"x86_64" if args.fpu_jit and not arm_fpu else args.architecture,
               "native_windows": bool(args.windows_emulator),
               "reference_only": bool(args.reference_emulator), "profiles": []}
     try:
@@ -139,6 +140,8 @@ def main():
                     environment.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
                 if args.require_jit:
                     environment["ARANYM_"+witness_arch+"_JIT_DIAGNOSTICS"] = "1"
+                if arm_fpu:
+                    environment['ARANYM_ARM_FPU_DIAGNOSTICS']='1'
                 log = args.output / ("slirp-" + label + ".txt")
                 request_start, datagram_start = len(requests), len(datagrams)
                 profile = {"name": label, "router": router, "guest": guest, "passed": False,
@@ -164,7 +167,9 @@ def main():
                                      and all("/aranym-slirp/" + str(i) in profile["http_requests"] for i in range(3))
                                      and all("ARANYM SLIRP UDP " + str(i) in profile["udp_datagrams"] for i in range(3))
                                      and (not args.require_jit or profile["executed_guest_jit"] > 0)
-                                     and (not args.fpu_jit or 'MODERN040_FPU_JIT available=yes enabled=yes frontend=pinned-softfloat' in text))
+                                     and (not args.fpu_jit or
+                                          ('ARM-FPU-JIT available=yes enabled=yes' in text if arm_fpu else
+                                           'MODERN040_FPU_JIT available=yes enabled=yes frontend=pinned-softfloat' in text)))
                 (args.output / "slirp-network.json").write_text(json.dumps(result, indent=2) + "\n")
                 print(text[-10000:])
                 if not profile["passed"]:

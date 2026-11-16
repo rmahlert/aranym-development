@@ -1,0 +1,46 @@
+{
+  "compiler": "m68k-atari-mint-gcc (MiNT 20230719) 4.6.4",
+  "commands": [
+    [
+      "/opt/cross-mint/bin/m68k-atari-mint-gcc",
+      "-m68040",
+      "-c",
+      "/home/rob/git/Aranym/build/arm-fpu-jit-source/tests/arm-fpu/guest/probe.S",
+      "-o",
+      "/home/rob/git/Aranym/build/arm-fpu-guests/probe.o"
+    ],
+    [
+      "/opt/cross-mint/bin/m68k-atari-mint-gcc",
+      "-m68000",
+      "-msoft-float",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "/home/rob/git/Aranym/build/arm-fpu-jit-source/tests/arm-fpu/guest/probe.c",
+      "/home/rob/git/Aranym/build/arm-fpu-guests/probe.o",
+      "-o",
+      "/home/rob/git/Aranym/build/arm-fpu-guests/FPU.PRG"
+    ],
+    [
+      "/opt/cross-mint/bin/m68k-atari-mint-gcc",
+      "-m68000",
+      "-msoft-float",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "/home/rob/git/Aranym/build/arm-fpu-jit-source/tests/arm-fpu/guest/benchmark.c",
+      "/home/rob/git/Aranym/build/arm-fpu-guests/probe.o",
+      "-o",
+      "/home/rob/git/Aranym/build/arm-fpu-guests/FPUBENCH.PRG"
+    ]
+  ],
+  "source_sha256": {
+    "guest/benchmark.c": "fabb7af24ff586fab1cd8fdb812ab1a0cbfcbd10d26e2a905fccd77f72712e57",
+    "guest/probe.S": "4babbdc84587d2a59668b2b9c707f72d3a2c25fecf96145ba4c16e82bcc23354",
+    "guest/probe.c": "57f4a5300c0b407badef652e9bd193547b1007ec90c5a55413b9a926703d3964"
+  },
+  "guest_sha256": {
+    "FPUBENCH.PRG": "3e75be62c30c57518acf8916b60c5381658f890261b44506624fff1c27550db2",
+    "FPU.PRG": "4efd71ca9daabb852a397abeacedc85d02dc06596535077c5e7f726f11dddb19"
+  }
+}

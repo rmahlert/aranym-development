@@ -442,9 +442,6 @@ if test "$WANT_ARM64_JIT" = yes; then
   if ! $HAVE_AARCH64 || test "$WANT_JIT" != yes; then
     AC_MSG_ERROR([arm64-jit requires an AArch64 target and --enable-jit-compiler])
   fi
-  if test "$WANT_JIT_FPU" = yes; then
-    AC_MSG_ERROR([the ARM64 integration currently requires --disable-jit-fpu])
-  fi
   WANT_CXX_EXCEPTIONS=no
 fi
 
@@ -1544,7 +1541,11 @@ if [[ "x$WANT_JIT" = "xyes" -a "x$CAN_JIT" = "xyes" ]]; then
   fi
 
   if [[ "x$WANT_JIT_FPU" = "xyes" ]]; then
-    DEFINES="$DEFINES -DUSE_JIT_FPU=1"
+    if $HAVE_AARCH64 || $HAVE_ARM; then
+      DEFINES="$DEFINES -DARANYM_ARM_FPU_JIT=1"
+    else
+      DEFINES="$DEFINES -DUSE_JIT_FPU=1"
+    fi
   fi
   if test "$OS_TYPE" = mingw && $HAVE_X86_64; then
      # -Ttext-segment is ELF only.  A PE executable defaults to an image
@@ -1599,6 +1600,7 @@ AM_CONDITIONAL([MODERN040_CORE], test "$WANT_MODERN040" = yes)
 AC_SUBST([MODERN040_LIBRARY])
 AM_CONDITIONAL([USE_JIT], test "$WANT_JIT" = "yes")
 AM_CONDITIONAL([USE_JIT_FPU], test "$WANT_JIT_FPU" = "yes")
+AM_CONDITIONAL([ARM_FPU_JIT], test "$WANT_JIT_FPU" = "yes" && { $HAVE_AARCH64 || $HAVE_ARM; })
 AM_CONDITIONAL([USE_JIT2], test "$WANT_JIT2" = "yes")
 
 
