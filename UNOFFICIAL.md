@@ -12,13 +12,30 @@ The Windows modernization and the Mac ARM64 port have different qualification
 status. See each platform's evidence before assuming a feature works there.
 
 The published Beta 1 Mac download is an **interpreter baseline** with SLIRP.
-This integration branch is connecting the complete pinned ARM64 guest compiler
-to ARAnyM. Its separate `ARM64 guest JIT integration` workflow requires actual
-native guest execution witnesses and paired JIT on/off correctness tests on
-Apple Silicon and Linux ARM64. Passing compiler or emitter checks alone does
-not qualify a guest JIT build. No ARM JIT community release has been qualified.
-The remaining acceptance gates are in
-[tests/arm64-platform/README.md](tests/arm64-platform/README.md).
+The separate **Unofficial ARM JIT Test 1** release includes a real complete
+68k-to-ARM64 integer JIT on Apple Silicon and 64-bit Linux. Native run
+[43797819194](https://github.com/rmahlert/aranym-development/actions/runs/43797819194)
+passed all 15 paired guest profiles on Apple Silicon and Linux ARM64, including
+FPU fallback, and packaged Mac/installed Debian Bookworm SLIRP checks with
+translated guest execution witnesses. Its source is `6cdceb01`.
+
+The current Mac package requires macOS 15 or newer because of its bundled
+Homebrew dependencies. It is ad-hoc signed, not notarized.
+
+The 32-bit Pi path restores the complete original ARAnyM ARM32 compiler in
+an isolated architecture path. The same 15 CPU profiles pass under QEMU ARM
+ISA execution. Its separate package workflow passed installed SLIRP
+with translated guest execution in [run 43798991271](https://github.com/rmahlert/aranym-development/actions/runs/43798991271)
+at source `6d78d7a4`; QEMU results are explicitly cross-emulated,
+and do not claim physical Pi acceptance.
+
+These ARM builds use the classic physical CPU core and IEEE FPU interpreter.
+FPU JIT and the Windows modern040 paged-MMU integration are not enabled on ARM.
+FreeMiNT/XaAES/fVDI, GFA Basic/GBE, real Pi display/BeePi integration and measured
+performance still need community hardware testing. This testing prerelease
+does not assert those workload acceptance gates have passed. See
+[guest tests](tests/arm64-guest/README.md) for CPU qualification and
+[platform tests](tests/arm64-platform/README.md) for the remaining workload gates.
 
 Development artifacts identify their source commit and carry an exact source
 archive, license notices and runtime dependency metadata. The bundled official
@@ -46,6 +63,7 @@ identify the installed userspace architecture. Select the package using
 Pi model or kernel architecture. Both package architectures are requested.
 Linux x86-64 comes first; Raspberry Pi packaging follows.
 
-BeePi relies on JIT performance. The ARM64 guest JIT remains an explicit gate
-for a performance replacement; the existing Mac interpreter acceptance and
-ARM64 emitter tests do not establish a working ARM64 guest JIT on Raspberry Pi.
+BeePi relies on JIT performance. Both target packages must prove actual guest
+JIT execution; instruction-emitter and interpreter checks alone are insufficient.
+Select the correct OS ABI and compare the same guest configuration on physical
+Pi hardware before claiming a measured speed improvement.

@@ -50,3 +50,9 @@ Linux acceptance separately from Mac acceptance. `--reference-emulator` remains
 available for explicitly marked development comparisons; those results are
 never package acceptance. Linux now configures the production SLIRP backend
 normally with `--enable-slirp`, without local build overrides.
+
+Guest JIT package qualification adds `--require-jit`. It enables JIT in the owned
+configuration and requires positive executed guest JIT counts in both network
+profiles. Use `--architecture arm32` for the Pi armhf compiler. Cross-emulated
+ARM32 checks explicitly require `--qemu`, `--qemu-sysroot` and
+`--qemu-library-path`, and record `cross_emulated=true`, `native_linux=false`.

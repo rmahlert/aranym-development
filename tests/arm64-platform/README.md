@@ -18,7 +18,14 @@ This is a prerequisite for integrating the guest compiler. It proves neither
 Mac application build remains an interpreter baseline, with guest JIT disabled.
 SLIRP networking is compiled in and bundled for macOS as well as Windows.
 
-Before a community JIT beta:
+The native guest JIT is now integrated and the owned CPU and SLIRP gates pass
+on Apple Silicon and Linux ARM64; see `tests/arm64-guest` and workflow run
+43797819194. The Unofficial ARM JIT Test 1 prerelease invites community desktop
+and hardware acceptance. The list below tracks fuller workload qualification,
+not a claim that the testing download has completed it. Guest paged MMU is not
+yet connected on ARM and is outside the current physical-core test profile.
+
+For full desktop/workload qualification:
 
 1. Connect the AArch64 compiler/midlayer, register state, memory and dispatch.
 2. Require real guest-PC native-execution witnesses for JIT tests; reject a

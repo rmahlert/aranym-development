@@ -1,4 +1,4 @@
-# ARM64 guest JIT acceptance
+# ARM guest JIT correctness
 
 This is native guest acceptance, separate from the standalone instruction
 emitter test. Run the same owned 68k programs with JIT disabled and enabled.
@@ -7,7 +7,7 @@ instructions emitted directly after successfully compiled guest operations.
 The off arms must not report native guest execution. A fallback-only pass fails
 the on gate. All witnesses leave guest flags and allocated registers intact.
 
-The guests assert register/CCR and NatFeat boundaries, user/supervisor/master
+Fifteen profiles include mixed integer/FPU fallback. The guests assert register/CCR and NatFeat boundaries, user/supervisor/master
 exception stacks, real VBL/MFP interrupt frames and RTE, warmed self-modifying
 code with CPUSHA/invalidation, and hot-block trace recovery. A deliberately
 incorrect PC expectation must fail with its expected status and FAIL marker.
@@ -32,3 +32,10 @@ Reports retain input hashes, config hashes, host status, exact guest marker and
 native execution witnesses. Native Mac and Linux results remain distinct. The
 Linux CI host proves ARM64 execution, not Raspberry Pi display/performance or
 BeePi integration. GFA Basic/GBE and desktop testing are still required.
+
+On native Linux ARM32, add `--architecture arm32`. For explicit cross-emulated
+ARM32 debug/CI execution, also provide `--qemu PATH/qemu-arm-static`,
+`--qemu-sysroot PATH` and `--qemu-library-path TARGET_LIBRARY_PATH`. Such reports
+set `native=false` and `cross_emulated=true`; they do not establish Pi hardware
+performance or display acceptance. The ARM32 and ARM64 counters count executed
+translated guest operations, not cache dispatches or compilation requests.
