@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/aranym/aranym",
+  "commit": "5f4ebed6b039ddf42eef1122a315ad9608d20f6e",
+  "license": "GPL-2.0-or-later; original notices retained",
+  "files": {
+    "compemu.h": {
+      "upstream_path": "src/uae_cpu/compiler/compemu.h",
+      "upstream_sha256": "eb8752d2d19692d67306123c64411ce8c54ea85d0e1e7b01bf75782d85bfb3ff",
+      "integrated_sha256": "bfd98d67372150ba4d1007379ada534d52fd7449b76caa6e2b10e2a545fc105a"
+    },
+    "compemu_support.cpp": {
+      "upstream_path": "src/uae_cpu/compiler/compemu_support.cpp",
+      "upstream_sha256": "ca25066ec7a06c7a280fce614790cbdc31c4ed26c670c7fb971efd1ca950c8b5",
+      "integrated_sha256": "4eaf864db110a52ffd29c51744f8abe57987f10f0d8cfdcaab11e989611456f6"
+    }
+  },
+  "status": "Restored complete original ARM32 engine; 15 paired owned guests pass ARM ISA execution under QEMU; physical Pi hardware acceptance pending."
+}

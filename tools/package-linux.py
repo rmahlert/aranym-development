@@ -34,11 +34,14 @@ def main():
     parser.add_argument("--winuae-source-archive", type=Path)
     parser.add_argument("--architecture", choices=("amd64", "arm64", "armhf"), default="amd64")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument('--cross-armhf',action='store_true',help='cross-build ARM32 package; requires explicit QEMU qualification separately')
     args = parser.parse_args()
     if sys.platform != "linux":
         parser.error("Debian packaging requires Linux")
     arch=args.architecture
-    if run("dpkg", "--print-architecture") != arch:
+    if args.cross_armhf and arch!='armhf':
+        parser.error('--cross-armhf is only for ARM32')
+    if not args.cross_armhf and run("dpkg", "--print-architecture") != arch:
         parser.error("use a packaging environment with the requested Debian userspace architecture")
     if arch=="amd64" and not args.winuae_source_archive:
         parser.error("modern040 x86-64 requires --winuae-source-archive")
@@ -85,7 +88,7 @@ def main():
     for path in (data, doc, lib, exe.parent, stage / "DEBIAN"):
         path.mkdir(parents=True, exist_ok=True)
     shutil.copy2(binary, exe)
-    subprocess.run(["strip", str(exe)], check=True)
+    subprocess.run(["arm-linux-gnueabihf-strip" if args.cross_armhf else "strip", str(exe)], check=True)
     shutil.copy2(args.slirp_library.resolve(strict=True), lib / "libslirp.so.0")
     # Fixed, reviewed allowlist: no guest hard disk, user config or applications.
     for name in ("logo.bmp", "wm_icon.bmp"):
@@ -122,7 +125,7 @@ def main():
     shlibs = output / "debian/shlibs.local"
     shlibs.write_text("libslirp 0 aranym-unofficial\n")
     dependencies = run("dpkg-shlibdeps", "-O", "-xaranym-unofficial", "-L" + str(shlibs),
-                       "-l" + str(lib), "-e" + str(exe), "-e" + str(lib / "libslirp.so.0"), cwd=output)
+                       "-l" + str(lib), *( ["-l/usr/lib/arm-linux-gnueabihf"] if args.cross_armhf else [] ), "-e" + str(exe), "-e" + str(lib / "libslirp.so.0"), cwd=output)
     depends = next(line.split("=", 1)[1] for line in dependencies.splitlines() if line.startswith("shlibs:Depends="))
     (stage / "DEBIAN/control").write_text(
         f"Package: {PACKAGE}\nVersion: {version}\nArchitecture: {arch}\n"
@@ -153,7 +156,7 @@ def main():
     icons.mkdir(parents=True)
     shutil.copy2(ROOT / "contrib/icon-48.png", icons / "aranym-unofficial.png")
     manifest = {"source_commit": commit, "architecture": arch, "guest_jit": backend+"; FPU JIT disabled",
-                "slirp": "4.9.1 (bundled)", "depends": depends, "emutos": firmware,
+                "slirp": "4.9.1 (bundled)", "cross_compiled":args.cross_armhf, "depends": depends, "emutos": firmware,
                 "files": {str(p.relative_to(stage)): sha(p) for p in sorted(stage.rglob("*")) if p.is_file()},
                 "sources": {p.name: sha(p) for p in sources.iterdir()}}
     (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")

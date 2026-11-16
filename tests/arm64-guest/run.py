@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run identical owned 68k correctness guests with native ARM64 JIT on and off.
+"""Run identical owned 68k correctness guests with ARM JIT on and off.
 SPDX-License-Identifier: GPL-2.0-or-later
 """
 import argparse
@@ -27,11 +27,23 @@ def main():
     mode.add_argument('--emulator',type=Path)
     parser.add_argument('--firmware',type=Path)
     parser.add_argument('--output',required=True,type=Path)
+    parser.add_argument('--architecture', choices=('arm64','arm32'), default='arm64')
+    parser.add_argument('--qemu',type=Path,help='explicitly marked cross-emulated debug execution only')
+    parser.add_argument('--qemu-sysroot',type=Path)
+    parser.add_argument('--qemu-library-path')
     args=parser.parse_args()
+    if args.qemu and (not args.emulator or not args.qemu_sysroot or not args.qemu_library_path):
+        parser.error('--qemu needs standalone emulator, sysroot and target library path')
+    witness_arch='ARM32' if args.architecture=='arm32' else 'ARM64'
+    prefix=[]
+    if args.qemu:
+        prefix=[str(args.qemu.resolve(strict=True)),'-L',str(args.qemu_sysroot.resolve(strict=True)),
+                '-U','HOME','-E','LD_LIBRARY_PATH='+args.qemu_library_path]
     if args.app:
         if sys.platform!='darwin' or platform.machine()!='arm64': parser.error('native Apple Silicon required')
-    elif sys.platform!='linux' or platform.machine() not in ('aarch64','arm64'):
-        parser.error('native Linux ARM64 required')
+    elif not args.qemu and (sys.platform!='linux' or platform.machine() not in
+            (('armv7l','armv8l','armv6l') if args.architecture=='arm32' else ('aarch64','arm64'))):
+        parser.error('matching native Linux ARM userspace required, or explicitly use --qemu for debug')
     if args.emulator and not args.firmware: parser.error('--emulator needs --firmware')
     output=args.output.resolve();output.mkdir(parents=True,exist_ok=True)
     pins=json.loads((HERE/'fixtures/provenance.json').read_text())
@@ -45,7 +57,8 @@ def main():
            ('invalidate','INVALID','INVALID','JIT INVALIDATION GUEST PASS',0),
            ('trace','TRACE','TRACE','JIT TRACE GUEST PASS',0),
            ('negative','EMUNEG','EMUNEG','EMULOP JIT GUEST FAIL',3)]
-    report={'native_arch':platform.machine(),'platform':sys.platform,'profiles':[], 'passed':False}
+    report={'host_arch':platform.machine(),'execution_arch':args.architecture,'native':not bool(args.qemu),
+            'cross_emulated':bool(args.qemu),'platform':sys.platform,'profiles':[], 'passed':False}
     report_path=output/'arm64-guests.json'
     try:
         for label,on,off,marker,status in cases:
@@ -71,19 +84,19 @@ def main():
                         f'[JIT]\nJIT = {"Yes" if jit else "No"}\nJITFPU = No\nJITCacheSize = 8192\nJITInline = No\n'
                         '[ETH0]\nType = none\n[STARTUP]\nGrabMouse = No\n[AUDIO]\nEnabled = No\n')
                     env={k:v for k,v in os.environ.items() if not k.startswith(('ARANYM_','DYLD_','SDL_'))}
-                    env['ARANYM_ARM64_JIT_DIAGNOSTICS']='1'
+                    env['ARANYM_'+witness_arch+'_JIT_DIAGNOSTICS']='1'
                     if args.emulator: env.update(SDL_VIDEODRIVER='dummy',SDL_AUDIODRIVER='dummy')
                     log=output/(arm+'.txt')
                     record={'name':arm,'jit':jit,'guest_sha256':digest(program),'binary_sha256':digest(binary),
                             'firmware_sha256':digest(rom),'config_sha256':digest(config),'passed':False}
                     report['profiles'].append(record)
                     with log.open('w') as stream:
-                        process=subprocess.Popen([str(binary),'-c',str(config)],cwd=work,env=env,stdout=stream,stderr=subprocess.STDOUT)
+                        process=subprocess.Popen(prefix+[str(binary),'-c',str(config)],cwd=work,env=env,stdout=stream,stderr=subprocess.STDOUT)
                         try: record['exit']=process.wait(timeout=90)
                         except subprocess.TimeoutExpired:
                             process.kill();process.wait();record['failure']='guest timed out'
                     text=log.read_text(errors='replace')
-                    witness=re.search(r'ARM64-JIT executed-native=(\d+) executed-guest=(\d+) last-guest-pc=([0-9a-f]+)',text)
+                    witness=re.search(witness_arch+r'-JIT executed-native=(\d+) executed-guest=(\d+) last-guest-pc=([0-9a-f]+)',text)
                     record['witness']=None if not witness else {'native':int(witness[1]),'guest':int(witness[2]),'last_pc':int(witness[3],16)}
                     record['marker_found']=marker in text
                     native_guest=record['witness'] and record['witness']['guest']>0

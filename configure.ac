@@ -407,8 +407,6 @@ case "$host_cpu" in
   sparc* ) CPU_TYPE=sparc HAVE_SPARC=true;;
   aarch64* | arm64* ) CPU_TYPE=aarch64 HAVE_AARCH64=true;;
   arm* ) CPU_TYPE=arm HAVE_ARM=true
-         CFLAGS="$CFLAGS -ffast-math"
-         CXXFLAGS="$CXXFLAGS -ffast-math"          
   	;;
   powerpc* )
 	CPU_TYPE=powerpc
@@ -1510,6 +1508,7 @@ elif test "$GCC" = yes && $HAVE_ARM; then
            esac
 	   ;;
     esac
+    DEFINES="$DEFINES -DARANYM_ARM32"
     GENCOMP_ARCH=arm
     CAN_JIT=yes
   fi

@@ -320,8 +320,12 @@ aranym_SOURCES += \
 	uae_cpu/compiler/compemu.h \
 	uae_cpu/compiler/flags_arm.h \
 	uae_cpu/compiler/flags_x86.h \
-	uae_cpu/compiler/compemu_support.cpp \
 	$(empty)
+if CPU_TYPE_arm
+aranym_SOURCES += uae_cpu/compiler/arm32/compemu_support.cpp
+else
+aranym_SOURCES += uae_cpu/compiler/compemu_support.cpp
+endif
 libaranym_a_SOURCES += \
 	uae_cpu/compiler/compstbla.cpp \
 	uae_cpu/cpustbl_nf.cpp \
@@ -704,3 +708,5 @@ EXTRA_DIST += \
 	uae_cpu/compiler/arm64/jit_trap_policy.h \
 	uae_cpu/compiler/arm64/native_flags.h \
 	$(empty)
+
+EXTRA_DIST += uae_cpu/compiler/arm32/compemu.h uae_cpu/compiler/arm32/compemu_support.cpp uae_cpu/compiler/arm32/SOURCE.json

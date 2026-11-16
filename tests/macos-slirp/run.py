@@ -29,8 +29,19 @@ def main():
     mode.add_argument("--windows-emulator", type=Path)
     parser.add_argument("--firmware", type=Path)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--require-jit", action="store_true", help="require executed ARM64 guest JIT instructions")
+    parser.add_argument("--require-jit", action="store_true", help="require executed ARM guest JIT instructions")
+    parser.add_argument('--architecture',choices=('arm64','arm32'),default='arm64')
+    parser.add_argument('--qemu',type=Path,help='explicitly cross-emulated ARM debug execution')
+    parser.add_argument('--qemu-sysroot',type=Path)
+    parser.add_argument('--qemu-library-path')
     args = parser.parse_args()
+    if args.qemu and (not args.linux_emulator or not args.qemu_sysroot or not args.qemu_library_path):
+        parser.error('--qemu requires standalone Linux emulator, target sysroot and library path')
+    prefix=[]
+    if args.qemu:
+        prefix=[str(args.qemu.resolve(strict=True)),'-L',str(args.qemu_sysroot.resolve(strict=True)),
+                '-U','HOME','-E','LD_LIBRARY_PATH='+args.qemu_library_path]
+    witness_arch='ARM32' if args.architecture=='arm32' else 'ARM64'
     native = sys.platform == "darwin" and os.uname().machine == "arm64"
     if args.app and not native:
         parser.error("Mac acceptance requires native Apple Silicon")
@@ -82,7 +93,8 @@ def main():
     http_thread.start()
     udp_thread.start()
     result = {"jit_required": args.require_jit, "native_mac_arm64": native and bool(args.app),
-              "native_linux": bool(args.linux_emulator),
+              "native_linux": bool(args.linux_emulator) and not bool(args.qemu),
+              "cross_emulated":bool(args.qemu), "execution_arch":args.architecture,
               "native_windows": bool(args.windows_emulator),
               "reference_only": bool(args.reference_emulator), "profiles": []}
     try:
@@ -123,14 +135,14 @@ def main():
                 if args.reference_emulator or args.linux_emulator or args.windows_emulator:
                     environment.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
                 if args.require_jit:
-                    environment["ARANYM_ARM64_JIT_DIAGNOSTICS"] = "1"
+                    environment["ARANYM_"+witness_arch+"_JIT_DIAGNOSTICS"] = "1"
                 log = args.output / ("slirp-" + label + ".txt")
                 request_start, datagram_start = len(requests), len(datagrams)
                 profile = {"name": label, "router": router, "guest": guest, "passed": False,
                            "guest_sha256": hashlib.sha256(code).hexdigest()}
                 result["profiles"].append(profile)
                 with log.open("w") as stream:
-                    process = subprocess.Popen([str(emulator), "-c", str(config)], cwd=root, env=environment,
+                    process = subprocess.Popen(prefix+[str(emulator), "-c", str(config)], cwd=root, env=environment,
                                                stdout=stream, stderr=subprocess.STDOUT)
                     try:
                         profile["host_status"] = process.wait(timeout=50)
@@ -142,7 +154,7 @@ def main():
                 profile["http_requests"] = requests[request_start:]
                 profile["udp_datagrams"] = datagrams[datagram_start:]
                 profile["guest_checks"] = {marker: "SLIRP_GUEST " + marker in text for marker in REQUIRED}
-                witness = re.search(r"ARM64-JIT executed-native=(\d+) executed-guest=(\d+)", text)
+                witness = re.search(witness_arch+r"-JIT executed-native=(\d+) executed-guest=(\d+)", text)
                 profile["executed_guest_jit"] = int(witness[2]) if witness else 0
                 profile["passed"] = (profile.get("host_status") == 0 and all(profile["guest_checks"].values())
                                      and "SLIRP_GUEST FAIL" not in text

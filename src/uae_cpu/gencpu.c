@@ -2422,7 +2422,7 @@ static void gen_opcode (unsigned long int opcode)
      case i_EMULOP:
 	printf ("\n");
 	swap_opcode ();
-	printf ("#if defined(CPU_aarch64)\n");
+	printf ("#if defined(CPU_aarch64) || defined(CPU_arm)\n");
 	printf ("\tif (!m68k_emulop_checked(opcode)) return;\n");
 	printf ("#else\n");
 	printf ("\tm68k_emulop(opcode);\n");

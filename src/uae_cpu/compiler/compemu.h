@@ -34,6 +34,8 @@
 
 #if defined(CPU_aarch64)
 #include "arm64/compemu_arm.h"
+#elif defined(CPU_arm)
+#include "arm32/compemu.h"
 #else
 #include "sysconfig.h"
 #include "newcpu.h"
