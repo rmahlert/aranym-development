@@ -120,6 +120,8 @@ extern void compiler_init(void);
 extern void compiler_exit(void);
 extern void build_comp(void);
 extern void set_cache_state(int enabled);
+extern int get_cache_state(void);
+extern uae_u32 get_jitted_size(void);
 #ifdef JIT
 extern void (*flush_icache)(int);
 #endif

@@ -26,7 +26,7 @@
     "compemu_arm.h": {
       "upstream_path": "src/jit/arm/compemu_arm.h",
       "upstream_sha256": "eea9fd95b4faa5dd6d945cfaffc49495fa3f848c6355b804ebe5df0ed8455ee5",
-      "integrated_sha256": "1c9f11d0a8a3c40347f3d8a6bc156f94b5e2ad50c0c48fc650d5475abb8b709f"
+      "integrated_sha256": "25e742cabca84484bac2292d85a1e63f22fa4865f1f8b4f097ce722076e5eb98"
     },
     "compemu_fpp_arm.cpp": {
       "upstream_path": "src/jit/arm/compemu_fpp_arm.cpp",
