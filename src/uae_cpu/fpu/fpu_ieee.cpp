@@ -436,10 +436,11 @@ PRIVATE inline void FFPU extract_extended(fpu_register const & src,
 	uae_u32 * wrd1, uae_u32 * wrd2, uae_u32 * wrd3
 )
 {
-	if (src == 0.0) {
-		*wrd1 = *wrd2 = *wrd3 = 0;
-		return;
-	}
+    if (src == 0.0) {
+        *wrd1 = isneg(src) ? 0x80000000u : 0;
+        *wrd2 = *wrd3 = 0;
+        return;
+    }
 #if defined(USE_QUAD_DOUBLE)
 	// FIXME: deal with denormals?
 	fp_declare_init_shape(srp, extended);
@@ -2440,6 +2441,7 @@ PUBLIC void FFPU fpu_init (bool integral_68040)
 	FPU is_integral = integral_68040;
 	FPU instruction_address = 0;
 	FPU fpsr.quotient = 0;
+    FPU fpsr.condition_codes = 0;
 	set_fpcr(0);
 	set_fpsr(0);
 

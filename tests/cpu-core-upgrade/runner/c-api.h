@@ -85,6 +85,9 @@ struct m040_exception_event {
 int m040_reset(const struct m040_options *);
 int m040_get_state(struct m040_state *);
 int m040_get_fpu_state(struct m040_fpu_state *);
+/* Additive null/idle state interchange for a native FPU compiler. */
+int m040_get_fpu_activity(uint32_t *);
+int m040_set_fpu_activity(uint32_t);
 /* Requires canonical active-bank/A7 consistency. Retains nonarchitectural
  * helper state and any fault/capability latch; reset is required after faults.
  */

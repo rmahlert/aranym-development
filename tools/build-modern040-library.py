@@ -56,7 +56,7 @@ def main():
         commands.append(cmd);subprocess.run(cmd,check=True);objects.append(obj)
     lib=out/'libmodern040.a';cmd=[*shlex.split(a.ar),'rcs',str(lib),*map(str,objects)]
     commands.append(cmd);subprocess.run(cmd,check=True)
-    local_sources=[source/'integer.cpp',source/'restart.cpp',source/'RESTART-SOURCE.json',source/'include/uae/types.h',runner/'core.cpp',runner/'core.hpp',runner/'restart.hpp',runner/'c-api.cpp',runner/'c-api.h',runner/'fpu-frontend.cpp',runner/'softfloat-adapter.cpp',runner/'softfloat-adapter.hpp',runner/'mmu-walk.cpp',runner/'mmu-walk.hpp']
+    local_sources=[source/'integer.cpp',source/'restart.cpp',source/'RESTART-SOURCE.json',source/'include/uae/types.h',runner/'core.cpp',runner/'core.hpp',runner/'restart.hpp',runner/'c-api.cpp',runner/'c-api.h',runner/'fpu-frontend.cpp',runner/'softfloat-adapter.cpp',runner/'softfloat-adapter.hpp',runner/'mmu-walk.cpp',runner/'mmu-walk.hpp',source/'fpu-constants.hpp',source/'FPU-CONSTANTS-SOURCE.json']
     if mingw:local_sources += [source/'softfloat-mingw/sysconfig.h',source/'softfloat-mingw/target.h']
     record={'source_pin':pins['upstream_pin'],'target':target,'compiler':subprocess.check_output([*cxx_command,'--version'],text=True).splitlines()[0],'commands':commands,'library_sha256':sha(lib),'sources':{str(s.relative_to(ROOT)):sha(s) for s in local_sources},'upstream_softfloat':{str(s.relative_to(upstream)):sha(s) for s in softfloat_sources},'objects':{o.name:sha(o) for o in objects},'scope':pins['scope']}
     (out/'provenance.json').write_text(json.dumps(record,indent=2)+'\n')

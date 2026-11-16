@@ -1,0 +1,140 @@
+name: Windows and Linux x86-64 FPU JIT qualification
+on:
+  push:
+    branches: [fpu-jit-x64-20261116]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Public testing prerelease containing the candidate Windows installer
+        default: v1.2.0-unofficial-fpu-jit-test1
+        required: true
+      installer_sha256:
+        description: Exact candidate Windows installer SHA-256; omit for Linux-only qualification
+        required: false
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: tonioni/WinUAE
+          ref: d82bc2549f27943d11dc59482d5388daf1c0f337
+          path: build/winuae
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake build-essential clang python3 meson ninja-build pkg-config libsdl2-dev libjpeg-dev libglib2.0-dev libudev-dev libusb-1.0-0-dev dpkg-dev
+      - name: Pinned SLIRP runtime
+        run: |
+          mkdir -p build/dependency-source
+          curl -L --fail --retry 3 -o build/dependency-source/libslirp-v4.9.1.tar.bz2 https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v4.9.1/libslirp-v4.9.1.tar.bz2
+          echo '3caff6e2de445f4995629d4929c55419f661b2b1d14f12481e155a71c1e8f811  build/dependency-source/libslirp-v4.9.1.tar.bz2' | sha256sum -c -
+          tar -xjf build/dependency-source/libslirp-v4.9.1.tar.bz2 -C build
+          meson setup build/slirp-build build/libslirp-v4.9.1 --prefix="$RUNNER_TEMP/slirp" --libdir=lib --buildtype=release
+          ninja -C build/slirp-build
+          meson test -C build/slirp-build --print-errorlogs
+          ninja -C build/slirp-build install
+          echo "PKG_CONFIG_PATH=$RUNNER_TEMP/slirp/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/slirp/lib" >> "$GITHUB_ENV"
+      - name: Build exact modern040 CPU and SoftFloat source
+        run: python3 tools/build-modern040-library.py --output "$RUNNER_TEMP/modern040" --upstream build/winuae --cxx clang++
+      - name: Build connected FPU JIT application
+        run: |
+          NO_CONFIGURE=1 ./autogen.sh
+          mkdir -p build/fpu-linux
+          cd build/fpu-linux
+          ../../configure --prefix=/usr --datadir=/usr/share/aranym-unofficial --disable-opengl --enable-jit-compiler --enable-jit-fpu --enable-addressing=normal --enable-modern040-core --with-modern040-profile=aranym-modern040-beta1 --with-modern040-library="$RUNNER_TEMP/modern040/libmodern040.a" --enable-slirp --enable-nfjpeg --enable-disasm=builtin --disable-flightrecorder --disable-fullhistory CFLAGS='-O3 -fno-pie' CXXFLAGS='-O3 -fno-pie' LDFLAGS='-no-pie -Wl,-rpath,/usr/lib/aranym-unofficial'
+          grep -q -- '-DMODERN040_FPU_JIT' Makefile
+          make -j3
+      - name: Native FPU on/off oracle, CPU regressions and measured arithmetic
+        run: python3 tests/fpu-jit/run.py --emulator build/fpu-linux/src/aranym --firmware data/emutos-macos-reference.img --output build/fpu-results --cpu-regression --benchmark
+      - name: Exact firmware and dependency sources
+        run: |
+          curl -L --fail --retry 3 -o build/dependency-source/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
+          git -C build/winuae archive --format=tar.gz --prefix=winuae-d82bc254/ -o "$GITHUB_WORKSPACE/build/dependency-source/winuae-source.tar.gz" HEAD
+      - name: Package application only
+        run: python3 tools/package-linux.py --fpu-jit-test --build-dir build/fpu-linux --slirp-library "$RUNNER_TEMP/slirp/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --winuae-source-archive build/dependency-source/winuae-source.tar.gz --output build/fpu-package
+      - name: Installed FPU JIT and SLIRP
+        run: |
+          sudo apt-get install -y ./build/fpu-package/aranym-1.2.0-unofficial-fpu-jit-test1-linux-amd64.deb
+          env -u LD_LIBRARY_PATH ldd /usr/bin/aranym-unofficial
+          env -u LD_LIBRARY_PATH python3 tests/fpu-jit/run.py --emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --output build/fpu-installed
+          env -u LD_LIBRARY_PATH python3 tests/macos-slirp/run.py --linux-emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --fpu-jit --output build/fpu-network
+      - name: Archive package and evidence
+        run: |
+          cp -a build/fpu-results build/fpu-package/cpu-validation
+          cp -a build/fpu-installed build/fpu-package/installed-validation
+          cp -a build/fpu-network build/fpu-package/network-validation
+          tar -czf aranym-1.2.0-unofficial-fpu-jit-test1-linux-x86_64.tar.gz -C build/fpu-package --exclude=deb-root --exclude=debian .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aranym-fpu-jit-linux-${{ github.sha }}
+          path: aranym-1.2.0-unofficial-fpu-jit-test1-linux-x86_64.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fpu-jit-linux-evidence-${{ github.sha }}
+          path: |
+            build/fpu-linux/config.log
+            build/fpu-results
+            build/fpu-installed
+            build/fpu-network
+            build/fpu-package/build-manifest.json
+  windows:
+    if: inputs.installer_sha256 != ''
+    runs-on: windows-2022
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      EXPECTED_SHA256: ${{ inputs.installer_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify exact installer
+        shell: pwsh
+        run: |
+          if ($env:EXPECTED_SHA256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Invalid installer hash' }
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'aranym-1.2.0-unofficial-fpu-jit-test1-windows-x86_64-setup.exe' --dir build/windows-dist
+          if ($LASTEXITCODE -ne 0) { throw 'Installer download failed' }
+          $installer = Get-Item build/windows-dist/*-setup.exe
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne $env:EXPECTED_SHA256) { throw 'Installer hash mismatch' }
+      - name: Native clean install
+        shell: pwsh
+        run: |
+          $installer = Get-Item build/windows-dist/*-setup.exe
+          $p = Start-Process $installer.FullName -ArgumentList '/S', '/D=C:\ARAnyMFpuTest' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Installer failed' }
+          Get-Content C:\ARAnyMFpuTest\ARAnyM-runtime-verification.txt
+      - name: Native Windows FPU oracle, CPU boundaries and arithmetic timing
+        shell: pwsh
+        run: |
+          python tests/fpu-jit/run.py --emulator C:/ARAnyMFpuTest/aranym.exe --firmware C:/ARAnyMFpuTest/aranym/emutos-aranym.img --output build/fpu-results --cpu-regression --benchmark
+          if ($LASTEXITCODE -ne 0) { throw 'FPU JIT qualification failed' }
+          python tests/macos-slirp/run.py --windows-emulator C:/ARAnyMFpuTest/aranym.exe --firmware C:/ARAnyMFpuTest/aranym/emutos-aranym.img --fpu-jit --output build/fpu-network
+          if ($LASTEXITCODE -ne 0) { throw 'FPU JIT plus SLIRP failed' }
+      - name: Preserving upgrade check
+        shell: pwsh
+        run: |
+          $config = Join-Path $env:USERPROFILE 'aranym\config'
+          $firmware = 'C:\ARAnyMFpuTest\aranym\emutos-aranym.img'
+          $beforeConfig = (Get-FileHash $config -Algorithm SHA256).Hash
+          $beforeFirmware = (Get-FileHash $firmware -Algorithm SHA256).Hash
+          $installer = Get-Item build/windows-dist/*-setup.exe
+          $p = Start-Process $installer.FullName -ArgumentList '/S', '/D=C:\ARAnyMFpuTest' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Upgrade failed' }
+          if ((Get-FileHash $config -Algorithm SHA256).Hash -ne $beforeConfig) { throw 'Upgrade changed config' }
+          if ((Get-FileHash $firmware -Algorithm SHA256).Hash -ne $beforeFirmware) { throw 'Upgrade changed firmware' }
+          Copy-Item C:\ARAnyMFpuTest\ARAnyM-runtime-verification.txt build/fpu-results/runtime-verification.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fpu-jit-windows-evidence-${{ github.sha }}
+          path: |
+            build/fpu-results
+            build/fpu-network

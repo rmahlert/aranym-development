@@ -8,6 +8,14 @@ The owner has approved public development source and build diagnostics.
 Builds remain experimental until their platform acceptance gates pass;
 this workflow does not automatically publish community releases.
 
+The `fpu-jit-x64-20261116` branch adds an experimental, opt-in x86-64 FPU JIT
+profile for Windows and Linux. It preserves 80-bit registers across native and
+SoftFloat execution, carries FPSR/FPIAR and null/idle state across MMU boundaries,
+and guards unsupported modes/operands before native execution. See
+[tests/fpu-jit/README.md](tests/fpu-jit/README.md). Enabled arithmetic exception
+and full FPSP continuation remain explicitly unsupported; this is not full
+68040 FPU pipeline qualification. Existing profiles retain `JITFPU = No`.
+
 The Windows modernization and the Mac ARM64 port have different qualification
 status. See each platform's evidence before assuming a feature works there.
 

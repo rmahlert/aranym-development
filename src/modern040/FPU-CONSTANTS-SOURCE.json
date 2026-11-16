@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/tonioni/WinUAE",
+  "commit": "d82bc2549f27943d11dc59482d5388daf1c0f337",
+  "upstream_file": "fpp.cpp",
+  "original_table_sha256": "b790b0fc1ce77995788d5706e71dcb7b75e2a863f9d320db858819e43cb473af",
+  "integrated_header_sha256": "b96de2bc5c030dbe49078439f31b864c8d923516e6e0d09ff86fc67664c85ceb",
+  "adaptation": "Only fixed-width type spelling and namespace; constant values and rounding offsets unchanged."
+}

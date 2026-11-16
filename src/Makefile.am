@@ -199,6 +199,7 @@ if MODERN040_CORE
 # Do not mutate libaranym.a with externally injected objects.
 aranym_SOURCES += ../tests/modern-jit/modern-fallback.cpp
 aranym_LDADD += $(MODERN040_LIBRARY)
+EXTRA_aranym_DEPENDENCIES = $(MODERN040_LIBRARY)
 endif
 
 
@@ -710,3 +711,5 @@ EXTRA_DIST += \
 	$(empty)
 
 EXTRA_DIST += uae_cpu/compiler/arm32/compemu.h uae_cpu/compiler/arm32/compemu_support.cpp uae_cpu/compiler/arm32/SOURCE.json
+
+EXTRA_DIST += modern040/fpu-constants.hpp modern040/FPU-CONSTANTS-SOURCE.json

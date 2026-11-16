@@ -34,11 +34,14 @@ def main():
     parser.add_argument("--winuae-source-archive", type=Path)
     parser.add_argument("--architecture", choices=("amd64", "arm64", "armhf"), default="amd64")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument('--fpu-jit-test',action='store_true',help='package the qualified x86-64 FPU JIT testing profile')
     parser.add_argument('--cross-armhf',action='store_true',help='cross-build ARM32 package; requires explicit QEMU qualification separately')
     args = parser.parse_args()
     if sys.platform != "linux":
         parser.error("Debian packaging requires Linux")
     arch=args.architecture
+    if args.fpu_jit_test and arch!='amd64':
+        parser.error('--fpu-jit-test requires amd64')
     if args.cross_armhf and arch!='armhf':
         parser.error('--cross-armhf is only for ARM32')
     if not args.cross_armhf and run("dpkg", "--print-architecture") != arch:
@@ -50,6 +53,11 @@ def main():
     package_basename=("aranym-1.2.0-unofficial-beta1-linux-amd64" if arch=="amd64" else
           "aranym-1.2.0-unofficial-arm-jit-test1-rpi-"+arch)
     backend={"amd64":"x86-64 modern040 JIT", "arm64":"ARM64 guest JIT", "armhf":"ARM32 guest JIT"}[arch]
+    if args.fpu_jit_test:
+        label="Unofficial FPU JIT Test 1"
+        version="1.2.0~unofficial.fpujit.test1"
+        package_basename="aranym-1.2.0-unofficial-fpu-jit-test1-linux-amd64"
+    fpu_description="guarded native FPU JIT available; opt-in" if args.fpu_jit_test else "FPU JIT disabled"
     commit = run("git", "-C", str(ROOT), "rev-parse", "HEAD")
     changed = run("git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no")
     if changed:
@@ -66,6 +74,8 @@ def main():
     required={"amd64":"-DEXPERIMENTAL_UPSTREAM_MODERN040", "arm64":"-DARANYM_ARM64", "armhf":"-DARANYM_ARM32"}[arch]
     if required not in flags or "-DUSE_JIT=1" not in flags:
         raise RuntimeError("missing requested guest JIT build profile")
+    if args.fpu_jit_test and not all(x in flags for x in ('-DUSE_JIT_FPU=1','-DMODERN040_FPU_JIT')):
+        raise RuntimeError('FPU JIT testing package requires the actual connected FPU build')
     elf=run("readelf", "-h", str(binary))
     machine=re.search(r"^\s*Machine:\s*(.*?)$",elf,re.M).group(1)
     if machine != {"amd64":"Advanced Micro Devices X86-64", "arm64":"AArch64", "armhf":"ARM"}[arch]:
@@ -138,14 +148,15 @@ def main():
         f"ARAnyM 1.2.0 {label}, Linux {arch}.\n"
         f"Install the .deb with: sudo apt install ./{package_basename}.deb\n"
         "Launch aranym-unofficial. Use -c PATH to open your existing configuration.\n"+
-        ("Default profile: ~/aranym-modern040-beta1.\n" if arch=="amd64" else
+        (("Default profile: ~/aranym-modern040-beta1.\n"+
+          ("Opt in with JITFPU = Yes in [JIT]. Guarded native arithmetic; other operations use SoftFloat. Enabled FPU exception/FPSP continuation remains unsupported.\n" if args.fpu_jit_test else "")) if arch=="amd64" else
          "Use dpkg --print-architecture to select armhf or arm64 for your BeePi OS.\n"
          "Launch with -c PATH_TO_EXISTING_CONFIG. This package adds aranym-unofficial; point your BeePi launcher to it when ready.\n"
          "Enable JIT = Yes and JITFPU = No in the JIT config section. Existing guest images/configurations are preserved.\n")+
         "Firmware: /usr/share/aranym-unofficial/aranym/emutos-aranym.img\n"
         "SLIRP: ETH0 Type=slirp, AtariIP=10.0.2.15, HostIP=10.0.2.2, Netmask=255.255.255.0.\n"
         "Guest gateway=10.0.2.2, DNS=10.0.2.3; use the MiNT NatFeat Ethernet driver.\n"
-        "FPU interpretation is supported; FPU JIT is disabled. Full desktop testing remains required.\n"
+        f"FPU: {fpu_description}. Full desktop testing remains required.\n"
         "Corresponding source archives accompany this package.\n")
     applications = stage / "usr/share/applications"
     applications.mkdir(parents=True)
@@ -155,7 +166,7 @@ def main():
     icons = stage / "usr/share/icons/hicolor/48x48/apps"
     icons.mkdir(parents=True)
     shutil.copy2(ROOT / "contrib/icon-48.png", icons / "aranym-unofficial.png")
-    manifest = {"source_commit": commit, "architecture": arch, "guest_jit": backend+"; FPU JIT disabled",
+    manifest = {"source_commit": commit, "architecture": arch, "guest_jit": backend+"; "+fpu_description, "fpu_jit_available":args.fpu_jit_test, "fpu_jit_default":False,
                 "slirp": "4.9.1 (bundled)", "cross_compiled":args.cross_armhf, "depends": depends, "emutos": firmware,
                 "files": {str(p.relative_to(stage)): sha(p) for p in sorted(stage.rglob("*")) if p.is_file()},
                 "sources": {p.name: sha(p) for p in sources.iterdir()}}

@@ -94,6 +94,16 @@ int m040_get_fpu_state(m040_fpu_state *out) {
         out->fpcr=state.fpcr;out->fpsr=state.fpsr;out->fpiar=state.fpiar;return M040_OK;
     }catch(...){return failed();}
 }
+int m040_get_fpu_activity(uint32_t *out) {
+    if(busy)return M040_BUSY;
+    if(!out)return M040_BAD_ARGUMENT;
+    try{Boundary guard;*out=modern040::regs.fpu_state;return M040_OK;}catch(...){return failed();}
+}
+int m040_set_fpu_activity(uint32_t value) {
+    if(busy)return M040_BUSY;
+    if(value>1)return M040_BAD_ARGUMENT;
+    try{Boundary guard;modern040::regs.fpu_state=value;return M040_OK;}catch(...){return failed();}
+}
 int m040_set_state(const m040_state *in) {
     if(busy)return M040_BUSY;
     if(!in||in->abi_version!=M040_ABI_VERSION||in->stopped>2||in->sfc>7||in->dfc>7)return M040_BAD_ARGUMENT;

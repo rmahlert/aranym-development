@@ -26,7 +26,11 @@ Credit for the original emulator belongs to the ARAnyM developers and contributo
 - **Packages and testing:** added Mac, Linux and Raspberry Pi application packages,
   source-paired EmuTOS, checksums, and CPU/network regression checks.
 
-FPU JIT is currently disabled. ARM builds use the IEEE FPU interpreter and do
+The experimental Windows/Linux x86-64 FPU JIT profile now connects guarded
+native arithmetic to the pinned SoftFloat fallback. Enable `JITFPU = Yes` in
+`[JIT]` in an FPU JIT testing build; it remains opt-in. See
+[its tests and limitations](tests/fpu-jit/README.md).
+ARM builds use the IEEE FPU interpreter and do
 not yet include the Windows/Linux x86-64 modern040 paged-MMU integration.
 FreeMiNT/XaAES/GBE and physical BeePi desktop testing is still needed.
 See [platform status and test details](https://github.com/rmahlert/aranym-development/blob/arm-jit-integration-20261115/UNOFFICIAL.md).

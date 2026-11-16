@@ -1127,6 +1127,23 @@ static const fpu_register power10[]		= {
 
 void comp_fpp_opp(uae_u32 opcode, uae_u16 extra)
 {
+#ifdef MODERN040_FPU_JIT
+    // Admit only operations whose native x87 result/status semantics have
+    // paired coverage. All remaining encodings use the pinned SoftFloat body.
+    const unsigned opclass=extra>>13,operation=extra&0x7f,format=(extra>>10)&7;
+    bool allowed=false;
+    if(opclass==0 || opclass==2) {
+        switch(operation) {
+        case 0x00:case 0x04:case 0x18:case 0x1a:
+        case 0x20:case 0x22:case 0x23:case 0x28:case 0x38:case 0x3a:
+            allowed=true;break;
+        default:break;
+        }
+        if(opclass==2 && ((format!=0 && format!=4 && format!=6) ||
+                !((opcode&0x38)==0 || (opcode&0x3f)==0x3c)))allowed=false;
+    } else if(opclass==3)allowed=format==2;
+    if(!allowed){FAIL(1);return;}
+#endif
 	int reg;
 	int src;
 

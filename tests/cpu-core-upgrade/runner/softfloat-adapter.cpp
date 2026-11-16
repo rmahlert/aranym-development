@@ -10,6 +10,7 @@
 #include "newcpu.h"
 #include "fpp.h"
 #include <stdexcept>
+#include "../../../src/modern040/fpu-constants.hpp"
 
 /* Storage normally owned by fpp.cpp.  The isolated core intentionally links
  * only the arithmetic backend, so keep its function-vector storage here.
@@ -147,6 +148,24 @@ bool softfloat_execute_040(std::uint8_t opmode,const Extended96&destination_word
     }
     if(out.write_quotient)out.quotient=((std::uint32_t(quotient)<<16)&0x007f0000u)|(quotient_sign?0x00800000u:0);
     out.value=encode(destination);return true;
+}
+bool softfloat_constant(std::uint8_t code,std::uint32_t fpcr,FpuValue&out) {
+    unsigned index;
+    if(code==0)index=0;
+    else if(code>=0x0b && code<=0x0f)index=code-0x0a;
+    else if(code>=0x30 && code<=0x3f)index=code-0x2a;
+    else return false;
+    begin(fpcr);
+    const auto &entry=fpp_cr[index];
+    Extended96 words={entry.val[0],entry.val[1],entry.val[2]};
+    if(entry.inexact)words[2]+=entry.rndoff[(fpcr>>4)&3];
+    auto value=decode(words);
+    const unsigned precision=(fpcr>>6)&3;
+    if(precision==1)fpp_round32(&value);
+    else if(precision>=2)fpp_round64(&value);
+    out=encode(value);
+    if(entry.inexact)out.status|=0x0200;
+    return true;
 }
 FpuValue softfloat_from_integer(std::int32_t source) {
     begin(0);fpdata value{};fpp_from_int(&value,source);return encode(value);

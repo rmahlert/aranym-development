@@ -1,0 +1,31 @@
+ARAnyM 1.2.0 Unofficial FPU JIT Test 1 (Windows/Linux x86-64)
+
+This is an experimental community testing build of ARAnyM.
+Original project: https://aranym.github.io/
+
+Use your existing configuration, firmware and boot drive image.
+The installer does not update FreeMiNT or install guest applications.
+FPU JIT is available but remains off by default. To try it, enable FPU JIT in
+Setup or set the following in your existing configuration:
+
+[JIT]
+JIT = Yes
+JITSafe = Yes
+JITFPU = Yes
+
+The checked native path handles ordinary extended-precision arithmetic and
+moves. Other rounding modes, explicit single/double operations, transcendentals,
+quotient operations and exceptional values use the pinned WinUAE SoftFloat
+frontend. Paging and tracing remain on the modern interpreter path.
+
+Enabled arithmetic exception/FPSP pending-state continuation, packed-decimal
+and undefined encodings remain outside the connected frontend. These cases
+are not claimed as complete FPU coverage. ARM FPU JIT is not enabled.
+
+Set JITFPU = No to retain the classic-compatible physical FPU path.
+CPU/network tests are separate from real FreeMiNT/XaAES/GBE application testing.
+Benchmark evidence describes its exact workload, not overall emulator speed.
+
+Source, checksums, platform validation and issue reporting:
+https://github.com/rmahlert/aranym-development/releases
+https://github.com/rmahlert/aranym-development/issues

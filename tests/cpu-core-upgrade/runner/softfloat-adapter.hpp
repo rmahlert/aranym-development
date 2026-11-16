@@ -25,6 +25,7 @@ FpuValue softfloat_sqrt(const Extended96&,std::uint32_t fpcr);
 bool softfloat_execute_040(std::uint8_t opmode,const Extended96&destination,
                           const Extended96&source,std::uint32_t fpcr,
                           std::uint32_t fpsr,FpuExecution&);
+bool softfloat_constant(std::uint8_t,std::uint32_t,FpuValue&);
 FpuValue softfloat_from_integer(std::int32_t);
 FpuValue softfloat_from_single(std::uint32_t);
 FpuValue softfloat_from_double(std::uint32_t high,std::uint32_t low);

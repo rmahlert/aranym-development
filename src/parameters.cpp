@@ -753,7 +753,11 @@ static void preset_jit()
 {
 	bx_options.jit.jit = true;
 	bx_options.jit.jitsafe = true;
-	bx_options.jit.jitfpu = true;
+#ifdef MODERN040_FPU_JIT
+    bx_options.jit.jitfpu = false;
+#else
+    bx_options.jit.jitfpu = true;
+#endif
 	bx_options.jit.jitcachesize = 8192;
 	bx_options.jit.jitlazyflush = 1;
 	bx_options.jit.jit_update_pc = false;
@@ -763,8 +767,10 @@ static void preset_jit()
 static void postload_jit()
 {
 	if (bx_options.jit.jitsafe) {
-		bx_options.jit.jitfpu = false;
-		bx_options.jit.jitlazyflush = 0;
+#ifndef MODERN040_FPU_JIT
+        bx_options.jit.jitfpu = false;
+#endif
+        bx_options.jit.jitlazyflush = 0;
 		bx_options.jit.jitinline = false;
 		bx_options.jit.jit_update_pc = true;
 	}

@@ -344,7 +344,15 @@ bool execute_modern_fpu(uae_u16 opcode) {
         regs.fpu_state=1;return true;
     }
     if(opclass!=0&&opclass!=2)return false;
-    if((extra&0xfc00)==0x5c00)return false; // FMOVECR constant ROM.
+    if((extra&0xfc00)==0x5c00) {
+        FpuValue value;if(!softfloat_constant(extra&0x7f,regs.fpcr,value))return false;
+        regs.fpiar=regs.instruction_pc;regs.fpu_state=1;regs.pc=regs.instruction_pc+4;
+        const auto status=value.status&0xff00;
+        regs.fpsr=(regs.fpsr&0x00ff0000u)|condition(value.words)|status|accrued(status);
+        if(const auto vector=arithmetic_vector(status)){Exception(vector);return true;}
+        regs.fp[(extra>>7)&7]=value.words;
+        return true;
+    }
     const unsigned source=(extra>>10)&7,destination=(extra>>7)&7;
     Source operand;
     if(extra&0x4000) {

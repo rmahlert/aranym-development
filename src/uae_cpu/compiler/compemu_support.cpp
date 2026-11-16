@@ -90,6 +90,12 @@
 #include "compiler/compemu.h"
 #include "fpu/fpu.h"
 #include "fpu/flags.h"
+#if !defined(UAE) && defined(USE_LONG_DOUBLE)
+// ARAnyM stores 80-bit extended values, including on Win64. The imported
+// allocator must spill/reload all ten payload bytes, not eight-byte doubles.
+#define SUPPORT_LONG_DOUBLE 1
+static constexpr bool use_long_double = true;
+#endif
 #include "parameters.h"
 #include "modern040_qualified_jit.h"
 #include "modern040_execution_mode.h"
@@ -769,6 +775,7 @@ static uae_u32 aranym_jit_executed_rmw_insns=0;
 static uae_u32 aranym_jit_executed_movem_insns=0;
 static uae_u32 aranym_jit_executed_rom_memory_insns=0;
 static uae_u32 aranym_jit_executed_control_insns=0;
+static uae_u32 aranym_jit_executed_guest_fpu_insns=0;
 static uintptr aranym_jit_observed_memstart=0;
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 void aranym_modern_perf_native_snapshot(Uint64 *out) {
@@ -904,6 +911,93 @@ static bool aranym_checked_move_opcode(uae_u32 canonical) {
     return aranym_checked_move_enabled() &&
         ((in.mnemo==i_MOVE && ((source&&in.dmode==Dreg)||(in.smode==Dreg&&destination))) ||
          (in.mnemo==i_MOVEA && source && in.dmode==Areg));
+}
+#ifdef MODERN040_FPU_JIT
+bool aranym_modern_fpu_mode() {
+    static const bool reference=getenv("ARANYM_FPU_SOFTFLOAT_REFERENCE")!=nullptr;
+    static bool previous=false;
+    const bool enabled=bx_options.jit.jitfpu || reference;
+    if(enabled && !previous)
+        fpu.fpsr.condition_codes=fpu_get_fpsr()&0x0f000000u;
+    previous=enabled;
+    return enabled;
+}
+extern void aranym_modern_fpu_native_completed();
+static uae_u16 aranym_fpu_native_status;
+static bool fpu_normal_register(unsigned reg) {
+    uae_u32 bits[4]={};memcpy(bits,fpu_register_address(reg),10);
+    const unsigned exponent=bits[2]&0x7fff;
+    // Bound both operands away from underflow/overflow and reject every
+    // exceptional or noncanonical encoding before native arithmetic.
+    return exponent>=0x3000 && exponent<=0x4fff && (bits[1]&0x80000000u);
+}
+static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
+    (void)opcode;
+    if(fpu.fpcr!=0)return 0;
+    const unsigned opclass=extra>>13,source=(extra>>10)&7,destination=(extra>>7)&7,op=extra&0x7f;
+    bool safe=false;
+    if(opclass==0) {
+        safe=fpu_normal_register(source);
+        if(op==0x20 || op==0x22 || op==0x23 || op==0x28 || op==0x38)
+            safe=safe&&fpu_normal_register(destination);
+        if(op==0x04) {
+            uae_u32 bits[4]={};memcpy(bits,fpu_register_address(source),10);
+            safe=safe&&!(bits[2]&0x8000);
+        }
+    } else if(opclass==2) {
+        // The compiler admits only integer Dn/immediate inputs.
+        safe=op==0x00 || op==0x18 || op==0x1a || op==0x3a || fpu_normal_register(destination);
+        // SQRT of a dynamic signed integer is left to SoftFloat for now.
+        if(op==0x04)safe=false;
+    } else if(opclass==3)safe=fpu_normal_register(destination);
+    if(safe) {
+        // Guest rounding defaults are exact x87 extended/nearest. Mask host
+        // traps; guest exceptions remain architectural software decisions.
+        const uae_u16 control=0x037f;
+        __asm__ volatile("fldcw %0"::"m"(control));
+    }
+    return safe;
+}
+static void REGPARAM2 aranym_fpu_native_commit(uae_u32 extra) {
+    if((extra>>13)==3)
+        memcpy(&fpu.result,fpu_register_address((extra>>7)&7),10);
+    uae_u32 bits[4]={};memcpy(bits,&fpu.result,10);
+    const unsigned exponent=bits[2]&0x7fff;
+    const bool zero=exponent==0 && bits[1]==0 && bits[0]==0;
+    const bool special=exponent==0x7fff;
+    const bool nan=special && ((bits[1]&0x7fffffffu)||bits[0]);
+    fpu.fpsr.condition_codes=((bits[2]&0x8000)?0x08000000u:0)|
+        (zero?0x04000000u:0)|(special&&!nan?0x02000000u:0)|(nan?0x01000000u:0);
+    const unsigned sw=aranym_fpu_native_status;
+    uae_u32 status=0;
+    if(sw&1)status|=0x2000; // operand error; special inputs already deoptimize
+    if(sw&4)status|=0x0400;
+    if(sw&8)status|=0x1000;
+    if(sw&16)status|=0x0800;
+    if(sw&32)status|=0x0200;
+    // An exact extended store preserves the preceding arithmetic status.
+    // The paired SoftFloat frontend retains INEX2 across this transfer.
+    if((extra>>13)!=3)fpu.fpsr.exception_status=status;
+    if(status&0x6000)fpu.fpsr.accrued_exception|=0x80;
+    if(status&0x1000)fpu.fpsr.accrued_exception|=0x40;
+    if(status&0x0800)fpu.fpsr.accrued_exception|=0x20;
+    if(status&0x0400)fpu.fpsr.accrued_exception|=0x10;
+    if(status&0x0300)fpu.fpsr.accrued_exception|=0x08;
+    fpu.instruction_address=regs.fault_pc;
+    aranym_modern_fpu_native_completed();
+}
+static void aranym_fpu_native_deopt() {
+    aranym_upstream_hybrid_step(GET_OPCODE);
+    cpu_check_ticks();
+}
+#endif
+
+static bool canonical_fpu_opcode(uae_u32 opcode) {
+    switch(table68k[opcode].mnemo) {
+    case i_FPP:case i_FDBcc:case i_FScc:case i_FTRAPcc:case i_FBcc:
+    case i_FSAVE:case i_FRESTORE:return true;
+    default:return false;
+    }
 }
 static bool aranym_jit_diagnostics() {
     // Process launch controls are immutable during an emulation run. In
@@ -1045,6 +1139,9 @@ static void* popall_exec_nostats=NULL;
 static void* popall_execute_normal=NULL;
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 static void* popall_memory_deopt=NULL;
+#ifdef MODERN040_FPU_JIT
+static void* popall_fpu_deopt=NULL;
+#endif
 #endif
 static void* popall_cache_miss=NULL;
 static void* popall_recompile_block=NULL;
@@ -3764,9 +3861,12 @@ void compiler_init(void)
 {
 	static bool initialized = false;
 	if (initialized)
-		return;
+        return;
+    if(aranym_jit_diagnostics()) atexit([](){
+        fprintf(stderr,"FPU-JIT executed-guest=%u\n",aranym_jit_executed_guest_fpu_insns);
+    });
 
-	flush_icache = flush_icache_none;
+    flush_icache = flush_icache_none;
 
 #ifdef UAE
 	flush_icache = lazy_flush ? flush_icache_lazy : flush_icache_hard;
@@ -5191,6 +5291,12 @@ static inline void create_popalls(void)
     raw_inc_sp(stack_space);
     raw_pop_preserved_regs();
     compemu_raw_jmp(uae_p32(aranym_upstream_memory_deopt));
+#ifdef MODERN040_FPU_JIT
+    align_target(align_jumps);
+    popall_fpu_deopt=get_target();
+    raw_inc_sp(stack_space);raw_pop_preserved_regs();
+    compemu_raw_jmp(uae_p32(aranym_fpu_native_deopt));
+#endif
 #endif
 
 	align_target(align_jumps);
@@ -5384,7 +5490,7 @@ static bool read_fpu_opcode(const char *p, size_t len)
 	
 	for (i = 0; i < (sizeof(jit_opcodes) / sizeof(jit_opcodes[0])); i++)
 	{
-		if (len == strlen(jit_opcodes[i].name) && _strnicmp(jit_opcodes[i].name, p, len) == 0)
+		if (len == strlen(jit_opcodes[i].name) && _tcsnicmp(jit_opcodes[i].name, p, len) == 0)
 		{
 			*jit_opcodes[i].disabled = true;
 			jit_log("<JIT compiler> : disabled %s", jit_opcodes[i].name);
@@ -5568,7 +5674,7 @@ void build_comp(void)
 
 	int jit_unavail_count = 0;
 	for (i = 0; nftbl[i].opcode < 65536; i++) {
-		bool uses_fpu = (tbl[i].specific & COMP_OPCODE_USES_FPU) != 0;
+		bool uses_fpu = (nftbl[i].specific & COMP_OPCODE_USES_FPU) != 0;
 		if (uses_fpu && avoid_fpu)
 			nfcompfunctbl[cft_map(nftbl[i].opcode)] = NULL;
 		else
@@ -5648,8 +5754,14 @@ void build_comp(void)
 		 * translation/trace execution mode.  They are rare; all other physical
 		 * instructions use the original one-call interpreter hot path. */
 		switch (table68k[cft_map(opcode)].mnemo) {
-		case i_MMUOP:
-			aranym_modern_dispatch[opcode]=1;
+#ifdef MODERN040_FPU_JIT
+        case i_FPP:case i_FDBcc:case i_FScc:case i_FTRAPcc:case i_FBcc:
+        case i_FSAVE:case i_FRESTORE:
+            aranym_modern_dispatch[opcode]=4;
+            break;
+#endif
+        case i_MMUOP:
+            aranym_modern_dispatch[opcode]=1;
 			break;
 		case i_EMULOP_RETURN:
 		case i_EMULOP:
@@ -5703,6 +5815,12 @@ void build_comp(void)
     const bool fallback_only=getenv("ARANYM_UPSTREAM_JIT_FALLBACK_ONLY")!=nullptr;
     for (opcode=0;opcode<65536;++opcode) {
         const instr &in=table68k[opcode];
+#ifdef MODERN040_FPU_JIT
+        if(canonical_fpu_opcode(opcode) && in.mnemo!=i_FPP) {
+            compfunctbl[cft_map(opcode)]=nullptr;
+            nfcompfunctbl[cft_map(opcode)]=nullptr;
+        }
+#endif
         bool register_family=false;
         switch(in.mnemo) {
         case i_OR:case i_AND:case i_EOR:case i_ADD:case i_ADDA:case i_ADDX:
@@ -6422,7 +6540,48 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                         comp_pc_p=(uae_u8*)pc_hist[i].location;init_comp();
                     }
 #endif
+#ifdef MODERN040_FPU_JIT
+                    if(checked_instruction.mnemo==i_FPP) {
+                        flush(1);const uintptr native_pc=(uintptr)pc_hist[i].location;
+                        raw_mov_q_mi((uintptr)&regs.pc_p,native_pc);
+                        raw_mov_q_mi((uintptr)&regs.pc_oldp,native_pc);
+                        compemu_raw_mov_l_mi((uintptr)&regs.pc,instruction_guest_pc);
+                        compemu_raw_mov_l_mi((uintptr)&regs.fault_pc,instruction_guest_pc);
+                        compemu_raw_mov_l_ri(REG_PAR1,cft_map(opcode));
+                        compemu_raw_mov_l_ri(REG_PAR2,do_get_mem_word(pc_hist[i].location+1));
+                        raw_dec_sp(STACK_SHADOW_SPACE);
+                        compemu_raw_call((uintptr)aranym_fpu_native_guard);
+                        raw_inc_sp(STACK_SHADOW_SPACE);
+                        compemu_raw_test_l_rr(REG_RESULT,REG_RESULT);
+                        compemu_raw_jcc_l_oponly(NATIVE_CC_NE);
+                        uae_u32 *safe_fpu=(uae_u32*)get_target();skip_long();
+                        compemu_raw_jmp((uintptr)popall_fpu_deopt);
+                        *safe_fpu=get_target()-(uae_u8*)(safe_fpu+1);
+                        comp_pc_p=(uae_u8*)pc_hist[i].location;init_comp();
+                        emit_byte(0xdb);emit_byte(0xe2); // FNCLEX, before the op
+                    }
+#endif
                     comptbl[opcode](opcode);
+#ifdef MODERN040_FPU_JIT
+                    if(!failure && checked_instruction.mnemo==i_FPP) {
+                        // Capture x87 exceptions before any host call or next op.
+                        raw_push_l_r(EAX_INDEX);
+                        emit_byte(0xdf);emit_byte(0xe0); // FNSTSW AX
+                        raw_mov_w_mr((uintptr)&aranym_fpu_native_status,EAX_INDEX);
+                        raw_pop_l_r(EAX_INDEX);
+                        const uae_u8 *next_pc=comp_pc_p+m68k_pc_offset;
+                        const uae_u32 next_guest_pc=get_virtual_compile_pc((uintptr)next_pc);
+                        flush(1);
+                        raw_mov_q_mi((uintptr)&regs.pc_p,(uintptr)next_pc);
+                        raw_mov_q_mi((uintptr)&regs.pc_oldp,(uintptr)next_pc);
+                        compemu_raw_mov_l_mi((uintptr)&regs.pc,next_guest_pc);
+                        compemu_raw_mov_l_ri(REG_PAR1,do_get_mem_word(pc_hist[i].location+1));
+                        raw_dec_sp(STACK_SHADOW_SPACE);
+                        compemu_raw_call((uintptr)aranym_fpu_native_commit);
+                        raw_inc_sp(STACK_SHADOW_SPACE);
+                        comp_pc_p=(uae_u8*)next_pc;init_comp();
+                    }
+#endif
 #ifndef UAE
                     if(aranym_jit_emit_diagnostics() && aranym_jit_alu_family(cft_map(opcode))==0 && instruction_guest_pc>=FastRAMBase) {
                         static unsigned dumps=0;
@@ -6519,6 +6678,8 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                         const uae_u32 guest_pc=get_virtual_compile_pc((uintptr)pc_hist[i].location);
                         if(guest_pc>=FastRAMBase && uint64(guest_pc)<uint64(FastRAMBase)+FastRAMSize)
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_guest_insns,1);
+                        if(guest_pc>=FastRAMBase && uint64(guest_pc)<uint64(FastRAMBase)+FastRAMSize && (canonical_fpu_opcode(cft_map(opcode))))
+                            compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_guest_fpu_insns,1);
                         if(aranym_checked_move_opcode(cft_map(opcode)))
                             compemu_raw_add_l_mi((uintptr)&aranym_jit_executed_memory_insns,1);
                         if(complex_ea)
@@ -6969,7 +7130,11 @@ static inline void aranym_upstream_warmup_step(uae_u32 opcode)
      * direct cpufunctbl path.  Keep the classic owner around the whole loop and
      * cross the full hybrid boundary only for the small predecoded set. */
     const uae_u8 dispatch=aranym_modern_dispatch[opcode];
-    if(dispatch==1||(dispatch==3&&!regs.s)) {
+    if(dispatch==1||(dispatch==3&&!regs.s)
+#ifdef MODERN040_FPU_JIT
+       ||(dispatch==4&&aranym_modern_fpu_mode())
+#endif
+      ) {
         aranym_hybrid_classic_active=false;
         aranym_upstream_modern_step(opcode);
         aranym_hybrid_classic_active=true;
@@ -6992,7 +7157,11 @@ void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode)
      * entering this physical block.  Only the small predecoded set below can
      * change that mode, and each such opcode ends the block. */
     const uae_u8 dispatch=aranym_modern_dispatch[opcode];
-    if(dispatch==1||(dispatch==3&&!regs.s)) {
+    if(dispatch==1||(dispatch==3&&!regs.s)
+#ifdef MODERN040_FPU_JIT
+       ||(dispatch==4&&aranym_modern_fpu_mode())
+#endif
+      ) {
         aranym_upstream_modern_step(opcode);
         if(aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,
            regs.dtt0,regs.dtt1)||regs.t1||regs.t0||modern040_restart_pending())

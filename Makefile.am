@@ -397,3 +397,17 @@ EXTRA_DIST += tests/modern-jit/windows-hotpath-20261115.txt
 
 EXTRA_DIST += tests/modern-jit/guest/master-bridge.c tests/modern-jit/guest/master-bridge.S \
  tests/modern-jit/master-stack-validation-20261115.txt
+
+EXTRA_DIST += \
+	doc/FPU-JIT-Test1.txt \
+	tests/fpu-jit/README.md \
+	tests/fpu-jit/build-fixtures.py \
+	tests/fpu-jit/fixtures/FPU.hex \
+	tests/fpu-jit/fixtures/FPUBENCH.hex \
+	tests/fpu-jit/fixtures/FPUTRAP.hex \
+	tests/fpu-jit/fixtures/provenance.json \
+	tests/fpu-jit/guest/benchmark.c \
+	tests/fpu-jit/guest/probe.S \
+	tests/fpu-jit/guest/probe.c \
+	tests/fpu-jit/guest/traps.c \
+	tests/fpu-jit/run.py

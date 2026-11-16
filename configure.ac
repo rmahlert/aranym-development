@@ -1566,8 +1566,8 @@ else
   GENJITSRCS=""
 fi
 if test "x$WANT_MODERN040" = xyes; then
- if ! $HAVE_X86_64 || test "x$WANT_JIT" != xyes || test "x$WANT_MMU" != xno || test "x$WANT_JIT_FPU" != xno; then
-  AC_MSG_ERROR([modern040 requires x86-64 JIT, no legacy FULLMMU and no JIT-FPU; its core owns guest paging and FPU execution])
+ if ! $HAVE_X86_64 || test "x$WANT_JIT" != xyes || test "x$WANT_MMU" != xno; then
+  AC_MSG_ERROR([modern040 requires x86-64 JIT and no legacy FULLMMU; its core owns guest paging])
  fi
  if test "$OS_TYPE" != linux && test "$OS_TYPE" != mingw; then
   AC_MSG_ERROR([modern040 currently supports Linux and MinGW x86-64 only])
@@ -1585,6 +1585,9 @@ if test "x$WANT_MODERN040" = xyes; then
  AC_LANG_POP([C++])
  LIBS=$modern040_save_LIBS
  DEFINES="$DEFINES -DEXPERIMENTAL_UPSTREAM_X86_JIT -DEXPERIMENTAL_UPSTREAM_MODERN040"
+ if test "x$WANT_JIT_FPU" = xyes; then
+  DEFINES="$DEFINES -DMODERN040_FPU_JIT"
+ fi
  FPE_CORE_TEST_ORDER=ieee
  if test "$OS_TYPE" = linux; then
   CFLAGS="$CFLAGS -fno-pie"

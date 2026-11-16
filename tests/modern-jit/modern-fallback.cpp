@@ -30,6 +30,9 @@
 #include "modern040_performance.h"
 #include "modern040_qualified_jit.h"
 #include "modern040_execution_mode.h"
+#ifdef MODERN040_FPU_JIT
+extern bool aranym_modern_fpu_mode();
+#endif
 extern uae_u32 aranym_jit_alu_probe_begin,aranym_jit_alu_probe_end;
 extern uae_u32 aranym_upstream_alu_count(unsigned);
 extern uae_u32 aranym_jit_ea_probe_begin,aranym_jit_ea_probe_end;
@@ -40,6 +43,9 @@ extern uae_u32 aranym_upstream_native_pc_noflags_count(uae_u32);
 namespace {
 bool initialized=false;unsigned depth=0;unsigned long long attempted=0;
 bool modern_guest_started=false;
+#ifdef MODERN040_FPU_JIT
+bool native_fpu_active=false;
+#endif
 // ABI1 imports overwrite every field except BUSCR/PCR and, for legacy FPU,
 // instruction_pc. Reuse the last exact export; no guest access is skipped.
 static_assert(sizeof(m040_state)==152,"audit cached import when state ABI changes");
@@ -72,6 +78,36 @@ void fail(const char *where,const m040_result *result=0) {
     std::fputc('\n',stderr);std::fflush(stderr);QuitEmulator(3);
 }
 void checked(int status,const char *where){if(status!=M040_OK)fail(where);}
+#ifdef MODERN040_FPU_JIT
+static_assert(sizeof(fpu_register)>=10,"native FPU bridge requires extended precision");
+void import_native_fpu() {
+    m040_fpu_state state{};state.abi_version=M040_FPU_STATE_VERSION;
+    for(unsigned i=0;i<8;++i) {
+        uint32_t bits[4]={};std::memcpy(bits,fpu_register_address(i),10);
+        state.fp[i][0]=(bits[2]&0xffff)<<16;
+        state.fp[i][1]=bits[1];state.fp[i][2]=bits[0];
+    }
+    state.fpcr=fpu_get_fpcr();
+    state.fpsr=aranym_modern_fpu_mode()?
+        ((fpu.fpsr.condition_codes&0x0f000000u)|fpu.fpsr.quotient|fpu.fpsr.exception_status|fpu.fpsr.accrued_exception):
+        fpu_get_fpsr();
+    state.fpiar=fpu.instruction_address;
+    checked(m040_set_fpu_state(&state),"import exact native FPU state");
+    checked(m040_set_fpu_activity(aranym_modern_fpu_mode()?native_fpu_active:true),"import FPU null/idle state");
+}
+void export_native_fpu() {
+    m040_fpu_state state{};checked(m040_get_fpu_state(&state),"export exact modern FPU state");
+    for(unsigned i=0;i<8;++i) {
+        uint32_t bits[4]={state.fp[i][2],state.fp[i][1],state.fp[i][0]>>16,0};
+        std::memcpy(fpu_register_address(i),bits,10);
+    }
+    fpu_set_fpcr(state.fpcr);fpu_set_fpsr(state.fpsr);
+    fpu.fpsr.condition_codes=state.fpsr&0x0f000000u;
+    fpu.instruction_address=state.fpiar;
+    uint32_t active=0;checked(m040_get_fpu_activity(&active),"export FPU null/idle state");
+    native_fpu_active=active!=0;
+}
+#endif
 void from_old(bool preserve_instruction=false) {
     AranymModernPerfScope sample(0);
     m040_state state;
@@ -95,6 +131,9 @@ void from_old(bool preserve_instruction=false) {
     state.cacr=regs.cacr;state.caar=regs.caar;state.itt0=regs.itt0;state.itt1=regs.itt1;state.dtt0=regs.dtt0;state.dtt1=regs.dtt1;
     state.tcr=regs.tc;state.mmusr=regs.mmusr;state.urp=regs.urp;state.srp=regs.srp;
     checked(profiled_set_state(&state),"import original architectural state");
+#ifdef MODERN040_FPU_JIT
+    import_native_fpu();
+#endif
     if(cached_import_enabled()){import_snapshot.abi_version=state.abi_version;import_snapshot.buscr=state.buscr;
         import_snapshot.pcr=state.pcr;import_snapshot.instruction_pc=state.instruction_pc;import_snapshot_valid=true;}
 }
@@ -110,6 +149,9 @@ void to_old() {
     regs.cacr=state.cacr;regs.caar=state.caar;regs.itt0=state.itt0;regs.itt1=state.itt1;regs.dtt0=state.dtt0;regs.dtt1=state.dtt1;
     regs.tc=state.tcr;regs.mmusr=state.mmusr;regs.urp=state.urp;regs.srp=state.srp;
     m68k_setpc(state.pc);regs.fault_pc=state.instruction_pc;
+#ifdef MODERN040_FPU_JIT
+    export_native_fpu();
+#endif
     SPCFLAGS_CLEAR(SPCFLAG_TRACE|SPCFLAG_DOTRACE);
     if(state.stopped)SPCFLAGS_SET(SPCFLAG_STOP);else SPCFLAGS_CLEAR(SPCFLAG_STOP);
 }
@@ -403,6 +445,10 @@ void initialize() {
     checked(m040_modern_fpu_operations(!legacy_fpu),"select pinned modern FPU frontend");
     checked(m040_private_operations(1),"enable ARAnyM extension decoder");initialized=true;
     std::fprintf(stderr,"MODERN040_EXPERIMENTAL source=d82bc254 profile=%s paged-MMU native-JIT-boundary fault-restart=precise-physical-bus\n",legacy_fpu?"modern-integer-original-ieee-fpu":"modern-integer-pinned-softfloat-fpu");
+#ifdef MODERN040_FPU_JIT
+    std::fprintf(stderr,"MODERN040_FPU_JIT available=yes enabled=%s frontend=%s\n",
+        bx_options.jit.jitfpu?"yes":"no",aranym_modern_fpu_mode()?"pinned-softfloat":"classic-compatible");
+#endif
     std::fprintf(stderr,"MODERN040_FALLBACK physical=classic natfeat=noMMU-classic emulop=supervisor-classic/user-modern fpu=noMMU-classic modern=MMU/translation/trace/restart\n");
 }
 bool acceptable(const m040_result &result){return result.exit==M040_BUDGET||result.exit==M040_STOPPED||result.exit==M040_HOST_RETURN;}
@@ -462,7 +508,14 @@ void modern040_memory_barrier() {
     // barrier touches only same-thread provenance, with no resolver/reentry.
     if(initialized&&frame_irq_profile)checked(m040_frame_barrier(),"invalidate direct hardware RAM write provenance");
 }
-void modern040_reset_requested(){initialized=false;import_snapshot_valid=false;modern_guest_started=false;}
+void modern040_reset_requested(){initialized=false;import_snapshot_valid=false;modern_guest_started=false;
+#ifdef MODERN040_FPU_JIT
+    native_fpu_active=false;
+#endif
+}
+#ifdef MODERN040_FPU_JIT
+void aranym_modern_fpu_native_completed(){native_fpu_active=true;}
+#endif
 bool modern040_restart_pending() {
     if(!initialized)return false;
     int pending=0;checked(m040_native_restart_pending(&pending),"read native restart boundary");return pending;

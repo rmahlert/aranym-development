@@ -1,0 +1,60 @@
+{
+  "compiler": "m68k-atari-mint-gcc (MiNT 20230719) 4.6.4",
+  "commands": [
+    [
+      "/opt/cross-mint/bin/m68k-atari-mint-gcc",
+      "-m68040",
+      "-c",
+      "/home/rob/git/Aranym/build/fpu-jit-source/tests/fpu-jit/guest/probe.S",
+      "-o",
+      "/home/rob/git/Aranym/build/fpu-jit-guests/probe.o"
+    ],
+    [
+      "/opt/cross-mint/bin/m68k-atari-mint-gcc",
+      "-m68000",
+      "-msoft-float",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "/home/rob/git/Aranym/build/fpu-jit-source/tests/fpu-jit/guest/probe.c",
+      "/home/rob/git/Aranym/build/fpu-jit-guests/probe.o",
+      "-o",
+      "/home/rob/git/Aranym/build/fpu-jit-guests/FPU.PRG"
+    ],
+    [
+      "/opt/cross-mint/bin/m68k-atari-mint-gcc",
+      "-m68000",
+      "-msoft-float",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "/home/rob/git/Aranym/build/fpu-jit-source/tests/fpu-jit/guest/benchmark.c",
+      "/home/rob/git/Aranym/build/fpu-jit-guests/probe.o",
+      "-o",
+      "/home/rob/git/Aranym/build/fpu-jit-guests/FPUBENCH.PRG"
+    ],
+    [
+      "/opt/cross-mint/bin/m68k-atari-mint-gcc",
+      "-m68000",
+      "-msoft-float",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "/home/rob/git/Aranym/build/fpu-jit-source/tests/fpu-jit/guest/traps.c",
+      "/home/rob/git/Aranym/build/fpu-jit-guests/probe.o",
+      "-o",
+      "/home/rob/git/Aranym/build/fpu-jit-guests/FPUTRAP.PRG"
+    ]
+  ],
+  "source_sha256": {
+    "guest/benchmark.c": "fabb7af24ff586fab1cd8fdb812ab1a0cbfcbd10d26e2a905fccd77f72712e57",
+    "guest/probe.S": "53140e246a934b6b374e00fb7c098b17bac36923e686fef02f2e231f6ca1c2ed",
+    "guest/probe.c": "5deb1a378a7565f337418aa109adbaf030b9f8b425cf9005b49faf9077796608",
+    "guest/traps.c": "afab2485fef8eb235e2f9ce76c6e6677da1ac7db1254bea2cb0e219c11191003"
+  },
+  "guest_sha256": {
+    "FPUTRAP.PRG": "58d02fd2353c70ed6a36127dfe447be8caba198cec6521490ce5e3a9460e50a7",
+    "FPUBENCH.PRG": "0555793a6a59c1de9793b75bfd77843687cd5e96e9714661de8157f7a56c8abe",
+    "FPU.PRG": "37ecf38734dd87c9097fa7c08bfa5577c8ec796a8fc4c7c3f1f8572ba5ec6a77"
+  }
+}
