@@ -56,7 +56,7 @@
     "compemu_support_arm.cpp": {
       "upstream_path": "src/jit/arm/compemu_support_arm.cpp",
       "upstream_sha256": "b697188dcb3d4df9a7959f93d3c03942a2c8b273a793b438cfd7d0ae22391ad6",
-      "integrated_sha256": "6cb6f453826ce1a3b22dd34ea49712d58d68d562c4c57799c2366736da0ca244"
+      "integrated_sha256": "8ffc1a7a9419027e27b51ff014e39d42e0f42835954c5f1bc17f99d67c5bd871"
     },
     "compstbl_arm.cpp": {
       "upstream_path": "src/jit/arm/compstbl_arm.cpp",

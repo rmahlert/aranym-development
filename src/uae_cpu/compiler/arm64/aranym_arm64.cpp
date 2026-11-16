@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "aranym_arm64.h"
 #include "compemu_arm.h"
-void (*flush_icache)(int)=nullptr;
+static void flush_icache_none(int);
+void (*flush_icache)(int)=flush_icache_none;
 static inline void create_popalls();
 
 static uae_u32 bank_lget(uae_u32 address) { return get_long(address); }

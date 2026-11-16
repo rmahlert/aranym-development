@@ -2123,8 +2123,10 @@ static void prepare_for_call_2(void)
 
 #ifdef __MACH__
 void cache_invalidate(void) {
-        // Invalidate cache on the JIT cache
-        sys_icache_invalidate(popallspace, POPALLSPACE_SIZE + MAX_JIT_CACHE * 1024);
+        if(popallspace)
+            sys_icache_invalidate(popallspace,popall_combined_alloc_size?popall_combined_alloc_size:POPALLSPACE_SIZE);
+        if(compiled_code&&compiled_code!=popall_combined_cache_start)
+            sys_icache_invalidate(compiled_code,(size_t)cache_size*1024);
 }
 #endif
 
