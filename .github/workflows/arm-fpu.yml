@@ -7,6 +7,10 @@ on:
         description: Validate the already qualified37fb6f49 packages with the current timing oracle
         type: boolean
         default: false
+      linux_only:
+        description: Run only the remaining Debian native validation
+        type: boolean
+        default: false
   push:
     branches: [arm-fpu-jit-20261116]
 
@@ -178,7 +182,7 @@ jobs:
             build/rpi64-package/build-manifest.json
 
   validation:
-    if: inputs.validation_only == true
+    if: inputs.validation_only == true && inputs.linux_only != true
     strategy:
       fail-fast: false
       matrix:
@@ -186,9 +190,6 @@ jobs:
           - runner: macos-15
             artifact: aranym-macos-arm64-guest-jit-37fb6f4916dbd8186007e751f18027907dc75099
             archive: aranym-1.2.0-unofficial-arm-fpu-jit-test1-macos-arm64.tar.gz
-          - runner: ubuntu-24.04-arm
-            artifact: aranym-rpi-arm64-guest-jit-37fb6f4916dbd8186007e751f18027907dc75099
-            archive: aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-arm64.tar.gz
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
@@ -224,4 +225,43 @@ jobs:
         if: always()
         with:
           name: arm-fpu-final-validation-${{ runner.os }}-${{ github.sha }}
+          path: build/validation
+
+  validation_linux:
+    if: inputs.validation_only == true
+    runs-on: ubuntu-24.04-arm
+    container: debian:bookworm
+    timeout-minutes: 20
+    steps:
+      - name: Prepare native Debian validation userspace
+        run: |
+          apt-get update
+          apt-get install -y git ca-certificates python3
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: aranym-rpi-arm64-guest-jit-37fb6f4916dbd8186007e751f18027907dc75099
+          run-id: 43980153821
+          github-token: ${{ github.token }}
+          path: build/candidate-archive
+      - name: Extract and install exact qualified Pi64 package
+        run: |
+          test '${{ runner.arch }}' = ARM64
+          test "$(dpkg --print-architecture)" = arm64
+          mkdir -p build/candidate
+          tar -xzf build/candidate-archive/aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-arm64.tar.gz -C build/candidate
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+          j=json.loads(Path('build/candidate/build-manifest.json').read_text())
+          assert j['source_commit']=='37fb6f4916dbd8186007e751f18027907dc75099'
+          assert j['fpu_jit_available']
+          PYCODE
+          apt-get install -y ./build/candidate/aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-arm64.deb
+      - name: Native Linux exact FPU results and counted arithmetic
+        run: python3 tests/arm-fpu/run.py --emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --output build/validation --benchmark
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm-fpu-final-validation-Linux-${{ github.sha }}
           path: build/validation
