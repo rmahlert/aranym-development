@@ -55,6 +55,8 @@ jobs:
           make -j3
       - name: Native FPU on/off oracle, CPU regressions and measured arithmetic
         run: python3 tests/fpu-jit/run.py --emulator build/fpu-linux/src/aranym --firmware data/emutos-macos-reference.img --output build/fpu-results --cpu-regression --benchmark
+      - name: Counted native FPU arithmetic timing
+        run: python3 tests/fpu-jit/benchmark.py --emulator build/fpu-linux/src/aranym --firmware data/emutos-macos-reference.img --output build/fpu-counted
       - name: Hardware probe recovery and NOP boundary regression
         run: python3 tests/jit-hardware-probe/run.py --emulator build/fpu-linux/src/aranym --firmware data/emutos-macos-reference.img --output build/hardware-probes --strict-frame
       - name: Exact firmware and dependency sources
@@ -73,6 +75,7 @@ jobs:
         run: |
           cp -a build/hardware-probes build/fpu-package/hardware-validation
           cp -a build/fpu-results build/fpu-package/cpu-validation
+          cp -a build/fpu-counted build/fpu-package/counted-fpu-validation
           cp -a build/fpu-installed build/fpu-package/installed-validation
           cp -a build/fpu-network build/fpu-package/network-validation
           tar -czf aranym-1.2.0-unofficial-fpu-jit-test2-linux-x86_64.tar.gz -C build/fpu-package --exclude=deb-root --exclude=debian .
@@ -88,6 +91,7 @@ jobs:
             build/fpu-linux/config.log
             build/hardware-probes
             build/fpu-results
+            build/fpu-counted
             build/fpu-installed
             build/fpu-network
             build/fpu-package/build-manifest.json
@@ -123,6 +127,10 @@ jobs:
         run: |
           python tests/fpu-jit/run.py --emulator C:/ARAnyMFpuTest/aranym.exe --firmware C:/ARAnyMFpuTest/aranym/emutos-aranym.img --output build/fpu-results --cpu-regression --benchmark
           if ($LASTEXITCODE -ne 0) { throw 'FPU JIT qualification failed' }
+          python tests/jit-hardware-probe/run.py --emulator C:/ARAnyMFpuTest/aranym.exe --firmware C:/ARAnyMFpuTest/aranym/emutos-aranym.img --output build/hardware-probes --strict-frame
+          if ($LASTEXITCODE -ne 0) { throw 'Hardware fault qualification failed' }
+          python tests/fpu-jit/benchmark.py --emulator C:/ARAnyMFpuTest/aranym.exe --firmware C:/ARAnyMFpuTest/aranym/emutos-aranym.img --output build/fpu-counted
+          if ($LASTEXITCODE -ne 0) { throw 'Counted FPU benchmark failed' }
           python tests/macos-slirp/run.py --windows-emulator C:/ARAnyMFpuTest/aranym.exe --firmware C:/ARAnyMFpuTest/aranym/emutos-aranym.img --fpu-jit --output build/fpu-network
           if ($LASTEXITCODE -ne 0) { throw 'FPU JIT plus SLIRP failed' }
       - name: Preserving upgrade check
@@ -144,4 +152,6 @@ jobs:
           name: fpu-jit-windows-evidence-${{ github.sha }}
           path: |
             build/fpu-results
+            build/fpu-counted
             build/fpu-network
+            build/hardware-probes
