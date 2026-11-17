@@ -55,6 +55,8 @@ jobs:
           make -j3
       - name: Native FPU on/off oracle, CPU regressions and measured arithmetic
         run: python3 tests/fpu-jit/run.py --emulator build/fpu-linux/src/aranym --firmware data/emutos-macos-reference.img --output build/fpu-results --cpu-regression --benchmark
+      - name: Hardware probe recovery and NOP boundary regression
+        run: python3 tests/jit-hardware-probe/run.py --emulator build/fpu-linux/src/aranym --firmware data/emutos-macos-reference.img --output build/hardware-probes
       - name: Exact firmware and dependency sources
         run: |
           curl -L --fail --retry 3 -o build/dependency-source/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
@@ -69,6 +71,7 @@ jobs:
           env -u LD_LIBRARY_PATH python3 tests/macos-slirp/run.py --linux-emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --fpu-jit --output build/fpu-network
       - name: Archive package and evidence
         run: |
+          cp -a build/hardware-probes build/fpu-package/hardware-validation
           cp -a build/fpu-results build/fpu-package/cpu-validation
           cp -a build/fpu-installed build/fpu-package/installed-validation
           cp -a build/fpu-network build/fpu-package/network-validation
@@ -83,6 +86,7 @@ jobs:
           name: fpu-jit-linux-evidence-${{ github.sha }}
           path: |
             build/fpu-linux/config.log
+            build/hardware-probes
             build/fpu-results
             build/fpu-installed
             build/fpu-network
