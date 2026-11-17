@@ -21,10 +21,11 @@ def main():
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    if sys.platform != "darwin" or os.uname().machine != "arm64":
-        parser.error("this acceptance gate requires native Apple Silicon macOS")
+    if sys.platform != "darwin" or os.uname().machine not in ("arm64", "x86_64"):
+        parser.error("this acceptance gate requires native macOS")
     args.output.mkdir(parents=True, exist_ok=True)
-    report = {"native_mac_arm64": True, "guest_boot": False, "host_exit0": False,
+    report = {"native_mac_arm64": os.uname().machine == "arm64",
+              "native_mac_x86_64": os.uname().machine == "x86_64", "guest_boot": False, "host_exit0": False,
               "guest_jit": False, "guest_desktop": "not tested"}
     log = args.output / "firmware-boot.txt"
     report_path = args.output / "firmware-boot.json"
@@ -66,7 +67,7 @@ def main():
         print(text[-8000:])
         if not (report["host_exit0"] and report["guest_boot"] and report["cocoa_video"]):
             raise RuntimeError("firmware guest did not boot with Cocoa and terminate the host cleanly")
-    print("PASS: relocated ARM64 app, EmuTOS, owned 68k supervisor guest and clean NF_SHUTDOWN0")
+    print("PASS: relocated native Mac app, EmuTOS, owned 68k supervisor guest and clean NF_SHUTDOWN0")
 
 
 if __name__ == "__main__":

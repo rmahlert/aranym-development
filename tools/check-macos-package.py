@@ -21,11 +21,13 @@ def main():
     app = args.app.resolve(strict=True)
     output = app.parent
     with (app / "Contents/Info.plist").open("rb") as stream:
-        jit_enabled = bool(plistlib.load(stream).get("ARAnyMGuestJIT"))
+        info = plistlib.load(stream)
+        jit_enabled = bool(info.get("ARAnyMGuestJIT"))
+        architecture = info.get("ARAnyMArchitecture", "arm64")
     report = {"native_arch": os.uname().machine, "relocated_cli": False,
               "guest_boot": "not tested", "guest_jit": "enabled; execution tested separately" if jit_enabled else "disabled"}
-    if os.uname().machine != "arm64":
-        raise RuntimeError("native Apple Silicon runner required")
+    if architecture not in ("arm64", "x86_64") or os.uname().machine != architecture:
+        raise RuntimeError("native runner matching the app architecture required")
     with tempfile.TemporaryDirectory(prefix="ARAnyM relocated package ") as directory:
         root = Path(directory)
         relocated = root / app.name
@@ -39,7 +41,7 @@ def main():
                 raise RuntimeError(f"missing/escaping library alias {alias.name}")
         images = [executable] + [p for p in libraries if not p.is_symlink()]
         for image in images:
-            subprocess.run(["lipo", str(image), "-verify_arch", "arm64"], check=True)
+            subprocess.run(["lipo", str(image), "-verify_arch", architecture], check=True)
             subprocess.run(["codesign", "--verify", "--strict", str(image)], check=True)
             loads = subprocess.check_output(["otool", "-L", str(image)], text=True)
             for line in loads.splitlines()[1:]:

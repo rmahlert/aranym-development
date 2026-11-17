@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a relocatable ARM64 interpreter development bundle on macOS."""
+"""Build a relocatable native macOS development bundle."""
 import argparse
 import hashlib
 import json
@@ -38,20 +38,32 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--emutos-source-archive", type=Path, required=True)
-    parser.add_argument("--jit-build-dir", type=Path, help="require and package the experimental ARM64 JIT build")
+    parser.add_argument("--jit-build-dir", type=Path, help="require the actual guest JIT build")
+    parser.add_argument("--architecture", choices=("arm64", "x86_64"), default="arm64")
+    parser.add_argument("--x64-fpu-jit-test", action="store_true")
     parser.add_argument("--arm-fpu-jit-test",action="store_true")
     args = parser.parse_args()
     if sys.platform != "darwin":
         parser.error("packaging requires native macOS tools")
     binary = args.binary.resolve(strict=True)
+    architecture = args.architecture
+    if os.uname().machine != architecture:
+        parser.error("packaging requires a native runner matching --architecture")
+    if args.arm_fpu_jit_test and architecture != "arm64":
+        parser.error("ARM FPU packaging requires arm64")
+    if args.x64_fpu_jit_test and architecture != "x86_64":
+        parser.error("x64 FPU packaging requires x86_64")
+    fpu_jit = args.arm_fpu_jit_test or args.x64_fpu_jit_test
     guest_jit = args.jit_build_dir is not None
     if guest_jit:
         build = args.jit_build_dir.resolve(strict=True)
         flags = (build / "Makefile").read_text()
-        if binary != (build / "src/aranym").resolve() or not all(flag in flags for flag in ("-DUSE_JIT=1", "-DARANYM_ARM64")):
-            parser.error("JIT packaging requires the actual ARM64 JIT build binary and flags")
+        if binary != (build / "src/aranym").resolve() or not all(flag in flags for flag in ("-DUSE_JIT=1", "-DARANYM_ARM64" if architecture == "arm64" else "-DCPU_x86_64")):
+            parser.error("JIT packaging requires the actual target JIT build binary and flags")
     if args.arm_fpu_jit_test and (not guest_jit or '-DARANYM_ARM_FPU_JIT=1' not in flags):
         parser.error('ARM FPU packaging requires the connected native FPU build')
+    if args.x64_fpu_jit_test and (not guest_jit or '-DMODERN040_FPU_JIT' not in flags):
+        parser.error('x64 FPU packaging requires the connected modern040 FPU build')
     output = args.output.resolve()
     app = output / "ARAnyM-Unofficial.app"
     if app.exists():
@@ -71,15 +83,16 @@ def main():
     info.update({
         "CFBundleExecutable": "aranym",
         "CFBundleName": "ARAnyM Unofficial",
-        "CFBundleDisplayName": "ARAnyM Unofficial ARM FPU JIT Test 1" if args.arm_fpu_jit_test else "ARAnyM Unofficial ARM64 JIT Integration" if guest_jit else "ARAnyM 1.2.0 Unofficial Beta 1 ARM64 Interpreter",
-        "CFBundleIdentifier": "org.aranym.unofficial.arm64",
+        "CFBundleDisplayName": "ARAnyM Unofficial Intel FPU JIT Test 1" if args.x64_fpu_jit_test else "ARAnyM Unofficial ARM FPU JIT Test 1" if args.arm_fpu_jit_test else "ARAnyM Unofficial ARM64 JIT Integration" if guest_jit else "ARAnyM 1.2.0 Unofficial Beta 1 ARM64 Interpreter",
+        "CFBundleIdentifier": "org.aranym.unofficial." + architecture,
         "CFBundleShortVersionString": "1.2.0",
         "CFBundleVersion": "1.2.0",
         "ARAnyMSourceCommit": sha,
-        "ARAnyMBuildLabel": "ARM64 JIT integration" if guest_jit else "1.2.0 Unofficial Beta 1",
+        "ARAnyMBuildLabel": architecture + " JIT integration" if guest_jit else "1.2.0 Unofficial Beta 1",
         "ARAnyMGuestJIT": guest_jit,
-        "ARAnyMFPUJITAvailable":args.arm_fpu_jit_test,
-        "LSMinimumSystemVersion": "15.0" if args.arm_fpu_jit_test else os.environ.get("MACOSX_DEPLOYMENT_TARGET", "11.0"),
+        "ARAnyMFPUJITAvailable":fpu_jit,
+        "ARAnyMArchitecture": architecture,
+        "LSMinimumSystemVersion": "15.0" if fpu_jit else os.environ.get("MACOSX_DEPLOYMENT_TARGET", "11.0"),
     })
     info.pop("LSMinimumSystemVersionByArchitecture", None)
     with (contents / "Info.plist").open("wb") as stream:
@@ -137,7 +150,7 @@ def main():
 
     while queue:
         original, packaged = queue.pop(0)
-        run("lipo", str(packaged), "-verify_arch", "arm64")
+        run("lipo", str(packaged), "-verify_arch", architecture)
         search = rpaths(original) + main_rpaths
 
         def expand(name):
@@ -175,25 +188,39 @@ def main():
         for path in rpaths(packaged):
             run("install_name_tool", "-delete_rpath", path, str(packaged))
 
+    minimum = tuple(int(part) for part in info["LSMinimumSystemVersion"].split("."))
+    for image in [executable] + [p for p in frameworks.iterdir() if not p.is_symlink()]:
+        commands = run("otool", "-l", str(image))
+        versions = re.findall(r"cmd LC_BUILD_VERSION\s+cmdsize \d+\s+platform \S+\s+minos ([0-9.]+)", commands)
+        versions += re.findall(r"cmd LC_VERSION_MIN_MACOSX\s+cmdsize \d+\s+version ([0-9.]+)", commands)
+        for version in versions:
+            minimum = max(minimum, tuple(int(part) for part in version.split(".")))
+    info["LSMinimumSystemVersion"] = ".".join(map(str, minimum))
+    with (contents / "Info.plist").open("wb") as stream:
+        plistlib.dump(info, stream)
+
     for library in frameworks.iterdir():
         if not library.is_symlink():
             run("codesign", "--force", "--sign", "-", str(library))
     if not any(name.startswith("libslirp") for name in copied):
         raise RuntimeError("Mac networking package requires a linked and bundled libslirp")
-    signing_args = ["--entitlements", str(ROOT / "tests/arm64-platform/entitlements.plist")] if guest_jit else []
+    entitlements = "tests/arm64-platform/entitlements.plist" if architecture == "arm64" else "tests/macos-intel/entitlements.plist"
+    signing_args = ["--entitlements", str(ROOT / entitlements)] if guest_jit else []
     run("codesign", "--force", "--sign", "-", "--options", "runtime", *signing_args, str(app))
     run("codesign", "--verify", "--deep", "--strict", str(app))
-    manifest = {"source_commit": sha, "architecture": "arm64", "guest_jit": guest_jit,
-                "fpu_jit_available":args.arm_fpu_jit_test,"fpu_jit_default":False,
+    manifest = {"source_commit": sha, "architecture": architecture, "guest_jit": guest_jit,
+                "fpu_jit_available":fpu_jit,"fpu_jit_default":False,
+                "minimum_macos":info["LSMinimumSystemVersion"],
                 "slirp": True, "signing": "ad-hoc; not notarized", "libraries": records,
                 "dynamic_libraries": dynamic_libraries,
                 "emutos": firmware}
     (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (output / "homebrew-dependencies.json").write_text(run("brew", "info", "--json=v2", "--installed") + "\n")
-    introduction = ("ARAnyM ARM64 JIT integration build; guest correctness gates remain required. SLIRP is included.\n" if guest_jit else
+    introduction = ("ARAnyM " + architecture + " JIT integration build; guest correctness gates remain required. SLIRP is included.\n" if guest_jit else
                     "ARAnyM 1.2.0 Unofficial Beta 1 - ARM64 interpreter.\nGuest ARM64 JIT is not connected in this baseline. SLIRP is included.\n")
     (output / "README.txt").write_text(
         introduction +
+        ("Intel FPU JIT Test1: opt in with JITFPU = Yes and JITSafe = Yes. Guarded native x87 arithmetic uses extended precision and the pinned SoftFloat fallback. Enabled FPSP arithmetic exception continuation remains unsupported.\n" if args.x64_fpu_jit_test else "")+
         ("ARM FPU JIT Test1: opt in with JITFPU = Yes and JITSafe = Yes. Native arithmetic retains the existing ARM IEEE64 precision; other modes/values use the interpreter. Requires macOS15+.\n" if args.arm_fpu_jit_test else "")+
         "Select SLIRP in Network settings or use the bundled slirp.config.example ETH0 settings.\n"
         "Guest: 10.0.2.15/24, gateway 10.0.2.2, DNS 10.0.2.3; requires the MiNT NatFeat Ethernet driver.\n"

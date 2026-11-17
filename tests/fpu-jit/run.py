@@ -13,8 +13,8 @@ def main():
  p.add_argument('--benchmark',action='store_true')
  p.add_argument('--cpu-regression',action='store_true')
  a=p.parse_args()
- if sys.platform not in ('linux','win32') or platform.machine().lower() not in ('x86_64','amd64'):
-  p.error('native Linux or Windows x86-64 is required')
+ if sys.platform not in ('linux','win32','darwin') or platform.machine().lower() not in ('x86_64','amd64'):
+  p.error('native Linux, Windows or Intel macOS x86-64 is required')
  binary=a.emulator.resolve(strict=True);rom=a.firmware.resolve(strict=True)
  out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
  pins=json.loads((HERE/'fixtures/provenance.json').read_text())
@@ -34,6 +34,7 @@ def main():
   if hashlib.sha256(body).hexdigest()!=fixture_pins['guest_sha256'][fixture+'.PRG']:raise RuntimeError('guest hash mismatch')
   with tempfile.TemporaryDirectory(prefix='ARAnyM FPU '+label+' ') as directory:
    work=Path(directory);program=work/'CHECK.PRG';program.write_bytes(body)
+   if sys.platform=='darwin':(work/'Aranym_files').mkdir()
    config=work/'config'
    config.write_text(f'[GLOBAL]\nFastRAM = 64\nFixedMemoryOffset = 60000000\nEmuTOS = {rom.as_posix()}\nBootstrap = {program.as_posix()}\nTOS =\nFloppy =\n'
      f'[JIT]\nJIT = Yes\nJITSafe = Yes\nJITFPU = {"Yes" if fpu else "No"}\nJITInline = No\nJITLazyFlush = 0\nJITUpdatePC = Yes\n'

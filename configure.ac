@@ -1553,7 +1553,9 @@ if [[ "x$WANT_JIT" = "xyes" -a "x$CAN_JIT" = "xyes" ]]; then
      # globals and helpers with 32-bit displacements.  Pin it low instead.
      # Stay large-address-aware so big TT-RAM sizes still fit.
      LDFLAGS="$LDFLAGS -Wl,--image-base=0x10000000 -Wl,--disable-dynamicbase -Wl,--disable-high-entropy-va"
-  elif test "$OS_TYPE" != darwin && $HAVE_X86_64; then
+  elif test "$OS_TYPE" = darwin && $HAVE_X86_64; then
+     LDFLAGS="$LDFLAGS -Wl,-no_pie -Wl,-pagezero_size,0x1000 -Wl,-segaddr,__TEXT,0x10000000"
+  elif $HAVE_X86_64; then
      # Force text address; needed at least on ArchLinux
      # where it is otherwise set to a high memory address
      # which is not in the range for the JIT addressing scheme
@@ -1570,8 +1572,8 @@ if test "x$WANT_MODERN040" = xyes; then
  if ! $HAVE_X86_64 || test "x$WANT_JIT" != xyes || test "x$WANT_MMU" != xno; then
   AC_MSG_ERROR([modern040 requires x86-64 JIT and no legacy FULLMMU; its core owns guest paging])
  fi
- if test "$OS_TYPE" != linux && test "$OS_TYPE" != mingw; then
-  AC_MSG_ERROR([modern040 currently supports Linux and MinGW x86-64 only])
+ if test "$OS_TYPE" != linux && test "$OS_TYPE" != mingw && test "$OS_TYPE" != darwin; then
+  AC_MSG_ERROR([modern040 requires Linux, MinGW or Darwin x86-64])
  fi
  AS_CASE([$MODERN040_LIBRARY], [/*], [], [AC_MSG_ERROR([provide an absolute target library path with --with-modern040-library])])
  AS_CASE([$MODERN040_LIBRARY], [*[[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./+-]]*], [AC_MSG_ERROR([unsupported character in modern040 library path])])
