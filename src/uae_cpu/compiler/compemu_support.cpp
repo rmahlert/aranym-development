@@ -975,6 +975,9 @@ static void REGPARAM2 aranym_fpu_native_commit(uae_u32 extra) {
     if(sw&8)status|=0x1000;
     if(sw&16)status|=0x0800;
     if(sw&32)status|=0x0200;
+    // FCMP publishes a relation, without the rounding exception of the
+    // native subtraction used to compute it for finite admitted operands.
+    if((extra>>13)!=3 && (extra&0x7f)==0x38)status=0;
     // An exact extended store preserves the preceding arithmetic status.
     // The paired SoftFloat frontend retains INEX2 across this transfer.
     if((extra>>13)!=3)fpu.fpsr.exception_status=status;
