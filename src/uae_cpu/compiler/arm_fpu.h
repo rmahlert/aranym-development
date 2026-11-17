@@ -76,6 +76,50 @@ static void arm_fpu_address(uintptr address) {
     compemu_raw_mov_l_ri(REG_WORK1,address);
 #endif
 }
+#if defined(ARANYM_ARM64)
+static bool arm_fpu_inline_guard_enabled() {
+    static const bool enabled=getenv("ARANYM_ARM_FPU_C_GUARD")==nullptr;
+    return enabled;
+}
+static void arm_fpu_inline_guard(unsigned extra) {
+    const unsigned source=(extra>>10)&7,destination=(extra>>7)&7;
+    const int op=arm_fpu_operation(extra);
+    uae_u32 *failures[8];unsigned count=0;
+    arm_fpu_address((uintptr)&bx_options.jit.jitfpu);LDRB_wXi(REG_WORK2,REG_WORK1,0);
+    failures[count++]=(uae_u32*)get_target();CBZ_wi(REG_WORK2,0);
+    LOAD_U64(REG_WORK4,(uintptr)&fpu);LDR_wXi(REG_WORK2,REG_WORK4,offsetof(fpu_t,fpcr));
+    failures[count++]=(uae_u32*)get_target();CBNZ_wi(REG_WORK2,0);
+    MRS_FPCR_x(REG_WORK2);
+    failures[count++]=(uae_u32*)get_target();CBNZ_xi(REG_WORK2,0);
+    auto bounded=[&](unsigned reg,unsigned bits) {
+        LDR_xXi(bits,REG_WORK4,offsetof(fpu_t,registers)+reg*sizeof(fpu_register));
+        UBFX_xxii(REG_WORK2,bits,52,11);SUB_wwi(REG_WORK2,REG_WORK2,0x300);
+        CMP_wi(REG_WORK2,0x1ff);
+        uae_u32 *normal=(uae_u32*)get_target();BLS_i(0);
+        LSL_xxi(REG_WORK2,bits,1);
+        failures[count++]=(uae_u32*)get_target();CBNZ_xi(REG_WORK2,0);
+        write_jmp_target(normal,(uintptr)get_target());
+    };
+    bounded(source,0);
+    if(op==0x20 || op==0x22 || op==0x23 || op==0x28 || op==0x38)
+        bounded(destination,1);
+    if(op==0x20) {
+        LSL_xxi(REG_WORK2,0,1);
+        failures[count++]=(uae_u32*)get_target();CBZ_xi(REG_WORK2,0);
+    }
+    if(op==0x04) {
+        failures[count++]=(uae_u32*)get_target();TBNZ_xii(0,63,0);
+    }
+    uae_u32 *ready=(uae_u32*)get_target();B_i(0);
+    for(unsigned i=0;i<count;++i)write_jmp_target(failures[i],(uintptr)get_target());
+    if(arm_fpu_diagnostics()) {
+        arm_fpu_address((uintptr)&arm_fpu_deoptimized);LDR_wXi(REG_WORK2,REG_WORK1,0);
+        ADD_wwi(REG_WORK2,REG_WORK2,1);STR_wXi(REG_WORK2,REG_WORK1,0);
+    }
+    compemu_raw_jmp((uintptr)popall_arm_fpu_deopt);
+    write_jmp_target(ready,(uintptr)get_target());
+}
+#endif
 static void arm_fpu_emit(uae_u8 *pc) {
     const unsigned extra=arm_fpu_word(pc+2),raw_op=extra&127;
     const unsigned source=(extra>>10)&7,destination=(extra>>7)&7;
@@ -91,15 +135,22 @@ static void arm_fpu_emit(uae_u8 *pc) {
     compemu_raw_mov_l_mi((uintptr)&regs.pc,(uintptr)pc-MEMBaseDiff);
     compemu_raw_mov_l_mi((uintptr)&regs.fault_pc,(uintptr)pc-MEMBaseDiff);
 #endif
-    compemu_raw_mov_l_ri(REG_PAR1,extra);
-    compemu_raw_call((uintptr)arm_fpu_guard);
-    uae_u32 *ready=(uae_u32*)get_target();
 #if defined(ARANYM_ARM64)
-    CBNZ_wi(REG_RESULT,0);
-    compemu_raw_jmp((uintptr)popall_arm_fpu_deopt);
-    write_jmp_target(ready,(uintptr)get_target());
-    arm_fpu_address((uintptr)&fpu.registers[source]);LDR_dXi(1,REG_WORK1,0);
-    arm_fpu_address((uintptr)&fpu.registers[destination]);LDR_dXi(0,REG_WORK1,0);
+    if(arm_fpu_inline_guard_enabled())arm_fpu_inline_guard(extra);
+    else {
+        compemu_raw_mov_l_ri(REG_PAR1,extra);
+        compemu_raw_call((uintptr)arm_fpu_guard);
+        uae_u32 *ready=(uae_u32*)get_target();CBNZ_wi(REG_RESULT,0);
+        compemu_raw_jmp((uintptr)popall_arm_fpu_deopt);
+        write_jmp_target(ready,(uintptr)get_target());
+    }
+    if(arm_fpu_inline_guard_enabled()) {
+        FMOV_dx(1,0);
+        if(op==0x20 || op==0x22 || op==0x23 || op==0x28 || op==0x38)FMOV_dx(0,1);
+    } else {
+        arm_fpu_address((uintptr)&fpu.registers[source]);LDR_dXi(1,REG_WORK1,0);
+        arm_fpu_address((uintptr)&fpu.registers[destination]);LDR_dXi(0,REG_WORK1,0);
+    }
     switch(op) {
     case 0x00:case 0x3a:FMOV_dd(0,1);break;
     case 0x04:FSQRT_dd(0,1);break;
@@ -111,8 +162,13 @@ static void arm_fpu_emit(uae_u8 *pc) {
     case 0x28:case 0x38:FSUB_ddd(0,0,1);break;
     }
     if(single){FCVT_sd(0,0);FCVT_ds(0,0);}
-    if(op!=0x38 && op!=0x3a){arm_fpu_address((uintptr)&fpu.registers[destination]);STR_dXi(0,REG_WORK1,0);}
-    arm_fpu_address((uintptr)&fpu.result);STR_dXi(0,REG_WORK1,0);
+    if(arm_fpu_inline_guard_enabled()) {
+        if(op!=0x38 && op!=0x3a)STR_dXi(0,REG_WORK4,offsetof(fpu_t,registers)+destination*sizeof(fpu_register));
+        STR_dXi(0,REG_WORK4,offsetof(fpu_t,result));
+    } else {
+        if(op!=0x38 && op!=0x3a){arm_fpu_address((uintptr)&fpu.registers[destination]);STR_dXi(0,REG_WORK1,0);}
+        arm_fpu_address((uintptr)&fpu.result);STR_dXi(0,REG_WORK1,0);
+    }
     if(op==0x38 || op==0x3a) {
         compemu_raw_mov_l_mi((uintptr)&fpu.fpsr.quotient,0);
         compemu_raw_mov_l_mi((uintptr)&fpu.fpsr.exception_status,0);
@@ -124,8 +180,10 @@ static void arm_fpu_emit(uae_u8 *pc) {
     }
     compemu_raw_set_pc_i((uintptr)(pc+4));
 #else
+    compemu_raw_mov_l_ri(REG_PAR1,extra);
+    compemu_raw_call((uintptr)arm_fpu_guard);
     CMP_ri(REG_RESULT,0);
-    ready=(uae_u32*)get_target();BNE_i(0);
+    uae_u32 *ready=(uae_u32*)get_target();BNE_i(0);
     compemu_raw_jmp((uintptr)popall_arm_fpu_deopt);
     *ready=(*ready&0xff000000u)|((((uintptr)get_target()-(uintptr)ready-8)>>2)&0xffffffu);
     arm_fpu_address((uintptr)&fpu.registers[source]);emit_long(0xed921b00u);

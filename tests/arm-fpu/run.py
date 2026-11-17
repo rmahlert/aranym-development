@@ -16,6 +16,7 @@ def main():
  p.add_argument('--qemu-sysroot',type=Path)
  p.add_argument('--qemu-library-path')
  p.add_argument('--benchmark',action='store_true')
+ p.add_argument('--c-guard-reference',action='store_true',help='Use the previous ARM64 C operand guard for paired optimization measurements')
  a=p.parse_args()
  if a.qemu and not all([a.emulator,a.qemu_sysroot,a.qemu_library_path]):p.error('QEMU requires emulator,sysroot and target libraries')
  if not a.qemu:
@@ -33,7 +34,7 @@ def main():
  for name,digest in pins['source_sha256'].items():assert sha(HERE/name)==digest,('source',name)
  report={'platform':sys.platform,'host_arch':platform.machine(),'execution_arch':a.architecture,
    'native':not bool(a.qemu),'cross_emulated':bool(a.qemu),'binary_sha256':sha(binary),
-   'firmware_sha256':sha(rom),'precision':'existing ARM IEEE64 profile','profiles':[],'passed':False}
+   'firmware_sha256':sha(rom),'precision':'existing ARM IEEE64 profile','guard':'c-reference' if a.c_guard_reference else 'native-default','profiles':[],'passed':False}
  prefix=[]
  if a.qemu:prefix=[str(a.qemu.resolve(strict=True)),'-L',str(a.qemu_sysroot.resolve(strict=True)),
                    '-U','HOME','-E','LD_LIBRARY_PATH='+a.qemu_library_path]
@@ -52,6 +53,7 @@ def main():
    env={k:v for k,v in os.environ.items() if k!='HOME' and not k.startswith(('ARANYM_','SDL_','DYLD_'))}
    if a.emulator:env.update(SDL_VIDEODRIVER='dummy',SDL_AUDIODRIVER='dummy')
    if diagnostics:env['ARANYM_ARM_FPU_DIAGNOSTICS']='1'
+   if a.c_guard_reference:env['ARANYM_ARM_FPU_C_GUARD']='1'
    command=prefix+[str(run_binary),'-c',str(config)]
    elapsed=None
    if fixture=='FPUBENCH':
@@ -94,7 +96,7 @@ def main():
    for mode,case,words in re.findall(r'FPU-DATA mode=(\w+) case=(\w+) words=(\w+)',text):
     key=int(mode,16),int(case,16);assert key not in values
     values[key]=[int(words[i:i+8],16) for i in range(0,len(words),8)]
-   assert len(values)==221 and len(re.findall('difference=00000000',text))==221
+   assert len(values)==266 and len(re.findall('difference=00000000',text))==266
    normal=values[0,0]
    golden=[(0x40020000,0x80000000,0),(0x40010000,0xa0000000,0),
            (0x40030000,0xa0000000,0),(0x40010000,0x80000000,0),(0x40000000,0xc0000000,0)]
@@ -103,7 +105,7 @@ def main():
    assert normal[37*5]&0x00ffffff==0 and normal[37*5+1]&0x00ffffff==0,(label,'compare/test status not reset')
    assert normal[-1]==0x12345678,(label,'FPIAR changed')
    if previous is not None:assert values==previous,(label,'register/status outputs differ from interpreter')
-   previous=values;record['exact_profiles']=221
+   previous=values;record['exact_profiles']=266
   if a.benchmark:
    text,witness=run('benchmark-witness','FPUBENCH',True,True)
    assert witness['executed_native_fpu']>=40000000,'benchmark lacks native FP execution'

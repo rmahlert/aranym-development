@@ -78,6 +78,12 @@ jobs:
       - name: Native Mac FPU oracle and arithmetic timing
         if: runner.os == 'macOS'
         run: python3 tests/arm-fpu/run.py --app build/arm-jit-package/ARAnyM-Unofficial.app --output build/arm-fpu-results --benchmark
+      - name: Native Linux previous C guard reference
+        if: runner.os == 'Linux'
+        run: python3 tests/arm-fpu/run.py --emulator build/arm-jit/src/aranym --firmware data/emutos-macos-reference.img --c-guard-reference --output build/arm-fpu-reference --benchmark
+      - name: Native Mac previous C guard reference
+        if: runner.os == 'macOS'
+        run: python3 tests/arm-fpu/run.py --app build/arm-jit-package/ARAnyM-Unofficial.app --c-guard-reference --output build/arm-fpu-reference --benchmark
       - name: Native Mac guest JIT with SLIRP
         if: runner.os == 'macOS'
         run: python3 tests/macos-slirp/run.py --app build/arm-jit-package/ARAnyM-Unofficial.app --require-jit --fpu-jit --output build/arm-jit-network
@@ -87,6 +93,7 @@ jobs:
           git archive --format=tar.gz -o build/arm-jit-package/aranym-source.tar.gz HEAD
           cp -a build/arm-jit-results build/arm-jit-package/guest-validation
           cp -a build/arm-fpu-results build/arm-jit-package/fpu-validation
+          cp -a build/arm-fpu-reference build/arm-jit-package/fpu-guard-reference
           cp -a build/arm-jit-network build/arm-jit-package/network-validation
           tar -czf aranym-1.2.0-unofficial-arm-fpu-jit-test1-macos-arm64.tar.gz -C build/arm-jit-package .
           shasum -a 256 aranym-1.2.0-unofficial-arm-fpu-jit-test1-macos-arm64.tar.gz
@@ -104,6 +111,7 @@ jobs:
             build/arm-jit/config.log
             build/arm-jit-results
             build/arm-fpu-results
+            build/arm-fpu-reference
             build/arm-jit-network
             build/arm-jit-package/*.json
             build/arm-jit-package/*.txt

@@ -17,7 +17,9 @@ static const unsigned long special[][3]={
  {0x7fff0000,0x80000000,0}, {0xffff0000,0x80000000,0},
  {0x7fff0000,0xc0123456,0x789abcde}, {0x7fff0000,0x80123456,0x789abcde},
  {0,0,1}, {0x7ffe0000,0xffffffff,0xffffffff},
- {0x00010000,0x80000000,0}, {0x3fff0000,0xffffffff,0xffffffff}};
+ {0x00010000,0x80000000,0}, {0x3fff0000,0xffffffff,0xffffffff},
+ {0x3eff0000,0x80000000,0}, {0x3f000000,0x80000000,0},
+ {0x40ff0000,0x80000000,0}, {0x41000000,0x80000000,0}};
 static void hex(char *s,unsigned long value){static const char d[]="0123456789abcdef";int i;for(i=7;i>=0;--i){s[i]=d[value&15];value>>=4;}}
 static void data(unsigned long mode,unsigned long index){
  char line[48+WORDS*8];unsigned long i;
@@ -32,21 +34,31 @@ static void report(unsigned long mode,unsigned long index,unsigned long hash,uns
  hex(line+16,mode);hex(line+30,index);hex(line+44,hash);hex(line+64,difference);
  nf_call(nf_id("NF_STDERR"),line);
 }
+static long check_case(unsigned long control,unsigned long index){
+ unsigned long repeat,i,hash,difference;
+ memset(reference,0,sizeof reference);fpu_probe(control,inputs,reference);
+ for(repeat=0;repeat<64;++repeat){
+  memset(output,0,sizeof output);fpu_probe(control,inputs,output);
+  if(memcmp(output,reference,sizeof output))break;
+ }
+ hash=2166136261UL;difference=0;
+ for(i=0;i<WORDS;++i){hash=(hash^output[i])*16777619UL;if(output[i]!=reference[i]&&!difference)difference=i+1;}
+ report(control,index,hash,difference);data(control,index);
+ return difference?1:0;
+}
 static long run(void){
- unsigned long mode,index,repeat,i,hash,difference,control;long result=0;
+ unsigned long mode,index,i,hash,control,group;long result=0;
+ static const unsigned targets[]={1,4,5};
  for(mode=0;mode<17;++mode)for(index=0;index<12;++index){
   control=mode==16?0x400:mode<<4;
   memcpy(inputs,normal,sizeof inputs);
   if(index)memcpy(inputs,special[index-1],12);
-  memset(reference,0,sizeof reference);fpu_probe(control,inputs,reference);
-  for(repeat=0;repeat<64;++repeat){
-   memset(output,0,sizeof output);fpu_probe(control,inputs,output);
-   if(memcmp(output,reference,sizeof output))break;
-  }
-  hash=2166136261UL;difference=0;
-  for(i=0;i<WORDS;++i){hash=(hash^output[i])*16777619UL;if(output[i]!=reference[i]&&!difference)difference=i+1;}
-  report(control,index,hash,difference);data(control,index);
-  if(difference)result=1;
+  result|=check_case(control,index);
+ }
+ for(group=0;group<3;++group)for(index=0;index<sizeof(special)/sizeof(special[0]);++index){
+  memcpy(inputs,normal,sizeof inputs);
+  memcpy(inputs+targets[group]*3,special[index],12);
+  result|=check_case(0,0x20000+group*0x100+index);
  }
  for(mode=0;mode<17;++mode){
   control=mode==16?0x400:mode<<4;

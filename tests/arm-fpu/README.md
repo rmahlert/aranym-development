@@ -27,8 +27,9 @@ paged-MMU JIT. Floating-point operations outside native admission still work
 through the same interpreter as the previous ARM release.
 
 `run.py` compares identical source-paired guests with interpretation, integer
-JIT and FPU JIT. It checks 221 complete raw output profiles: 17 FPCR settings,
-12 normal/special/extreme inputs and 17 constant-ROM modes. Every result,
+JIT and FPU JIT. It checks 266 complete raw output profiles: the original 221 FPCR,
+normal/special/extreme and constant-ROM cases, plus 45 source-operand cases
+covering finite guard boundaries, signed zero, division and square root. Every result,
 register, status word and saved integer CCR is compared across cold/hot runs,
 with independent exact arithmetic, FPIAR and compare/test status checks.
 `ARANYM_ARM_FPU_DIAGNOSTICS=1` requires positive executed native FP operations
@@ -47,3 +48,9 @@ Timing uses host monotonic timestamps between guest markers, outside boot.
 The loop performs ten million iterations and independently accumulates the
 iteration count in an FPU register even with diagnostic counters disabled.
 Guest 200Hz ticks are retained for diagnosis, not used as the timing oracle.
+
+ARM64 emits operand and control checks directly into native blocks and reuses
+the checked operand bits for arithmetic. The previous C guard remains available
+for paired qualification with `--c-guard-reference`; both paths must match the
+interpreter output. Compare `--benchmark` host-time results on the same native
+host before claiming an optimization gain.
