@@ -74,16 +74,16 @@ jobs:
         run: python3 tests/arm64-guest/run.py --fpu-jit --app build/arm-jit-package/ARAnyM-Unofficial.app --output build/arm-jit-results
       - name: Native Linux FPU oracle and arithmetic timing
         if: runner.os == 'Linux'
-        run: python3 tests/arm-fpu/run.py --emulator build/arm-jit/src/aranym --firmware data/emutos-macos-reference.img --output build/arm-fpu-results --benchmark
+        run: python3 tests/arm-fpu/run.py --emulator build/arm-jit/src/aranym --firmware data/emutos-macos-reference.img --output build/arm-fpu-results --benchmark --compare-guards
       - name: Native Mac FPU oracle and arithmetic timing
         if: runner.os == 'macOS'
-        run: python3 tests/arm-fpu/run.py --app build/arm-jit-package/ARAnyM-Unofficial.app --output build/arm-fpu-results --benchmark
+        run: python3 tests/arm-fpu/run.py --app build/arm-jit-package/ARAnyM-Unofficial.app --output build/arm-fpu-results --benchmark --compare-guards
       - name: Native Linux previous C guard reference
         if: runner.os == 'Linux'
-        run: python3 tests/arm-fpu/run.py --emulator build/arm-jit/src/aranym --firmware data/emutos-macos-reference.img --c-guard-reference --output build/arm-fpu-reference --benchmark
+        run: python3 tests/arm-fpu/run.py --emulator build/arm-jit/src/aranym --firmware data/emutos-macos-reference.img --c-guard-reference --output build/arm-fpu-reference
       - name: Native Mac previous C guard reference
         if: runner.os == 'macOS'
-        run: python3 tests/arm-fpu/run.py --app build/arm-jit-package/ARAnyM-Unofficial.app --c-guard-reference --output build/arm-fpu-reference --benchmark
+        run: python3 tests/arm-fpu/run.py --app build/arm-jit-package/ARAnyM-Unofficial.app --c-guard-reference --output build/arm-fpu-reference
       - name: Native Mac guest JIT with SLIRP
         if: runner.os == 'macOS'
         run: python3 tests/macos-slirp/run.py --app build/arm-jit-package/ARAnyM-Unofficial.app --require-jit --fpu-jit --output build/arm-jit-network

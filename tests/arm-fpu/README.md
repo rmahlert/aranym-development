@@ -49,8 +49,23 @@ The loop performs ten million iterations and independently accumulates the
 iteration count in an FPU register even with diagnostic counters disabled.
 Guest 200Hz ticks are retained for diagnosis, not used as the timing oracle.
 
-ARM64 and ARM32 emit operand and control checks directly into native blocks and reuses
+ARM64 and ARM32 emit operand and control checks directly into native blocks and reuse
 the checked operands for arithmetic. The previous C guard remains available
 for paired qualification with `--c-guard-reference`; both paths must match the
 interpreter output. Compare `--benchmark` host-time results on the same native
 host before claiming an optimization gain.
+
+For the optimization comparison, use `--benchmark --compare-guards`. The same
+binary first witnesses native execution with both guards, then measures four
+pairs with diagnostic counters disabled. Pair order alternates between inline
+first and C reference first. Each pair has integer-only runs before and after
+to expose host timing drift. Every sample checks the independently accumulated
+ten million iterations and arithmetic result.
+
+The `guard_comparison` JSON retains execution order, raw host samples, medians,
+each C-reference/inline paired ratio, the median paired ratio, and integer-only
+drift. A ratio above one favors inline admission. Timing gains are observations,
+not pass criteria; noisy or drifting runs must remain visible. The separate
+`--c-guard-reference` corpus run still checks all 266 profiles against its
+interpreter. Cross-emulated timings are diagnostics, not native performance
+evidence.

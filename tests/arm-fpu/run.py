@@ -16,8 +16,10 @@ def main():
  p.add_argument('--qemu-sysroot',type=Path)
  p.add_argument('--qemu-library-path')
  p.add_argument('--benchmark',action='store_true')
+ p.add_argument('--compare-guards',action='store_true',help='Benchmark four alternating inline/C guard pairs with integer-only drift controls')
  p.add_argument('--c-guard-reference',action='store_true',help='Use the previous ARM C operand guard for paired optimization measurements')
  a=p.parse_args()
+ if a.compare_guards and (not a.benchmark or a.c_guard_reference):p.error('--compare-guards requires --benchmark and cannot use --c-guard-reference')
  if a.qemu and not all([a.emulator,a.qemu_sysroot,a.qemu_library_path]):p.error('QEMU requires emulator,sysroot and target libraries')
  if not a.qemu:
   allowed=['aarch64','arm64'] if a.architecture=='arm64' else ['armv6l','armv7l','armv8l']
@@ -38,7 +40,8 @@ def main():
  prefix=[]
  if a.qemu:prefix=[str(a.qemu.resolve(strict=True)),'-L',str(a.qemu_sysroot.resolve(strict=True)),
                    '-U','HOME','-E','LD_LIBRARY_PATH='+a.qemu_library_path]
- def run(label,fixture,jit,fpu,diagnostics=True):
+ def run(label,fixture,jit,fpu,diagnostics=True,guard_reference=None):
+  guard_reference=a.c_guard_reference if guard_reference is None else guard_reference
   body=bytes.fromhex((HERE/'fixtures'/str(fixture+'.hex')).read_text())
   assert hashlib.sha256(body).hexdigest()==pins['guest_sha256'][fixture+'.PRG']
   with tempfile.TemporaryDirectory(prefix='ARAnyM ARM FP '+label+' ') as temporary:
@@ -53,7 +56,7 @@ def main():
    env={k:v for k,v in os.environ.items() if k!='HOME' and not k.startswith(('ARANYM_','SDL_','DYLD_'))}
    if a.emulator:env.update(SDL_VIDEODRIVER='dummy',SDL_AUDIODRIVER='dummy')
    if diagnostics:env['ARANYM_ARM_FPU_DIAGNOSTICS']='1'
-   if a.c_guard_reference:env['ARANYM_ARM_FPU_C_GUARD']='1'
+   if guard_reference:env['ARANYM_ARM_FPU_C_GUARD']='1'
    command=prefix+[str(run_binary),'-c',str(config)]
    elapsed=None
    if fixture=='FPUBENCH':
@@ -76,7 +79,7 @@ def main():
     status=result.returncode;text=result.stdout.decode(errors='replace')
    (out/(label+'.log')).write_text(text)
    witness=re.search(r'ARM-FPU-JIT available=yes enabled=(yes|no) executed-native=(\d+) deoptimized=(\d+) precision=ieee64',text)
-   record={'label':label,'jit':jit,'fpu_jit':fpu,'exit':status,'diagnostics':diagnostics,
+   record={'label':label,'jit':jit,'fpu_jit':fpu,'exit':status,'diagnostics':diagnostics,'guard':'c-reference' if guard_reference else 'native-default',
       'guest_sha256':hashlib.sha256(body).hexdigest(),'config_sha256':sha(config),
       'executed_native_fpu':int(witness[2]) if witness else 0,'deoptimized':int(witness[3]) if witness else 0}
    if elapsed is not None:record['host_seconds']=elapsed
@@ -106,17 +109,50 @@ def main():
    assert normal[-1]==0x12345678,(label,'FPIAR changed')
    if previous is not None:assert values==previous,(label,'register/status outputs differ from interpreter')
    previous=values;record['exact_profiles']=266
-  if a.benchmark:
-   text,witness=run('benchmark-witness','FPUBENCH',True,True)
-   assert witness['executed_native_fpu']>=40000000,'benchmark lacks native FP execution'
+  def benchmark_run(label,fpu,diagnostics=False,guard_reference=None):
+   text,record=run(label,'FPUBENCH',True,fpu,diagnostics,guard_reference)
+   m=re.search(r'FPU-BENCH ticks=(\w+) result=(\w+)',text);assert m and int(m[2],16)==3
+   assert 'iterations=00989680' in text,(label,'counter-free iteration count mismatch')
+   assert record['host_seconds']>0,(label,'nonpositive elapsed time')
+   record['ticks_200hz']=int(m[1],16)
+   if diagnostics and fpu:
+    assert record['executed_native_fpu']>=40000000,'benchmark lacks native FP execution'
+    assert record['deoptimized']==0,'benchmark unexpectedly deoptimized'
+   return record
+  if a.compare_guards:
+   comparison={'binary_sha256':sha(binary),'pairs':[],'integer_controls':[],
+     'samples_host_seconds':{'inline':[],'c-reference':[]},'witnesses':[],
+     'scope':'Four counter-off pairs, alternating inline/C reference order, with integer-only controls before and after. Same binary and independently counted ten million iterations. Host monotonic time between guest markers; no whole-system claim.'}
+   report['guard_comparison']=comparison
+   for guard in ['inline','c-reference']:
+    witness=benchmark_run('guard-witness-'+guard,True,True,guard=='c-reference')
+    comparison['witnesses'].append(witness['label'])
+   for repeat in range(4):
+    comparison['integer_controls'].append(benchmark_run('guard-control-before-'+str(repeat),False,guard_reference=False))
+    order=['inline','c-reference'] if repeat%2==0 else ['c-reference','inline']
+    pair={'order':order,'host_seconds':{}}
+    comparison['pairs'].append(pair)
+    for guard in order:
+     record=benchmark_run('guard-pair-'+str(repeat)+'-'+guard,True,guard_reference=guard=='c-reference')
+     seconds=record['host_seconds'];pair['host_seconds'][guard]=seconds
+     comparison['samples_host_seconds'][guard].append(seconds)
+    pair['c_reference_over_inline']=pair['host_seconds']['c-reference']/pair['host_seconds']['inline']
+    comparison['integer_controls'].append(benchmark_run('guard-control-after-'+str(repeat),False,guard_reference=False))
+   comparison['medians_host_seconds']={k:statistics.median(v) for k,v in comparison['samples_host_seconds'].items()}
+   comparison['median_paired_c_reference_over_inline']=statistics.median(pair['c_reference_over_inline'] for pair in comparison['pairs'])
+   controls=[r['host_seconds'] for r in comparison['integer_controls']]
+   comparison['integer_control_drift']={'samples_host_seconds':controls,'last_over_first':controls[-1]/controls[0],
+     'maximum_over_minimum':max(controls)/min(controls)}
+   comparison['passed']=True
+   print(json.dumps(comparison),flush=True)
+  elif a.benchmark:
+   benchmark_run('benchmark-witness',True,True)
    samples={};host_samples={}
    for label,fpu in [('integer-jit',False),('fpu-jit',True)]:
     samples[label]=[];host_samples[label]=[]
     for repeat in range(3):
-     text,record=run('timing-'+label+'-'+str(repeat),'FPUBENCH',True,fpu,False)
-     m=re.search(r'FPU-BENCH ticks=(\w+) result=(\w+)',text);assert m and int(m[2],16)==3
-     assert 'iterations=00989680' in text,(label,'counter-free iteration count mismatch')
-     record['ticks_200hz']=int(m[1],16);samples[label].append(record['ticks_200hz']);host_samples[label].append(record['host_seconds'])
+     record=benchmark_run('timing-'+label+'-'+str(repeat),fpu)
+     samples[label].append(record['ticks_200hz']);host_samples[label].append(record['host_seconds'])
    medians={k:statistics.median(v) for k,v in host_samples.items()};assert all(x>0 for v in host_samples.values() for x in v)
    report['benchmark']={'samples_ticks_200hz':samples,'samples_host_seconds':host_samples,'medians_host_seconds':medians,
       'integer_jit_over_fpu_jit':medians['integer-jit']/medians['fpu-jit'],
