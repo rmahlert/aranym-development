@@ -716,3 +716,20 @@ EXTRA_DIST += \
 EXTRA_DIST += uae_cpu/compiler/arm32/compemu.h uae_cpu/compiler/arm32/compemu_support.cpp uae_cpu/compiler/arm32/SOURCE.json
 
 EXTRA_DIST += modern040/fpu-constants.hpp modern040/FPU-CONSTANTS-SOURCE.json
+
+if OS_TYPE_darwin
+if CPU_TYPE_x86_64
+BUILT_SOURCES = mach_excServer.c mach_excUser.c mach_exc.h
+CLEANFILES += $(BUILT_SOURCES) mach_exc.stamp
+
+mach_exc.stamp:
+	$(AM_V_GEN)sdk_root=`xcrun --sdk macosx --show-sdk-path`; \
+	SDKROOT="$$sdk_root" xcrun --sdk macosx mig -arch x86_64 \
+		-server mach_excServer.c -user mach_excUser.c -header mach_exc.h \
+		"$$sdk_root/usr/include/mach/mach_exc.defs"
+	$(AM_V_at)touch $@
+
+$(BUILT_SOURCES): mach_exc.stamp
+	$(AM_V_at)test -f $@ || { rm -f mach_exc.stamp; $(MAKE) mach_exc.stamp; }
+endif
+endif
