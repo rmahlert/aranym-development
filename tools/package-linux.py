@@ -57,13 +57,13 @@ def main():
           "aranym-1.2.0-unofficial-arm-jit-test1-rpi-"+arch)
     backend={"amd64":"x86-64 modern040 JIT", "arm64":"ARM64 guest JIT", "armhf":"ARM32 guest JIT"}[arch]
     if args.fpu_jit_test:
-        label="Unofficial FPU JIT Test 1"
-        version="1.2.0~unofficial.fpujit.test1"
-        package_basename="aranym-1.2.0-unofficial-fpu-jit-test1-linux-amd64"
+        label="Unofficial FPU JIT Test 2"
+        version="1.2.0~unofficial.fpujit.test2"
+        package_basename="aranym-1.2.0-unofficial-fpu-jit-test2-linux-amd64"
     if args.arm_fpu_jit_test:
-        label="Unofficial ARM FPU JIT Test 1"
-        version="1.2.0~unofficial.armjit.test2"
-        package_basename="aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-"+arch
+        label="Unofficial ARM FPU JIT Test 2"
+        version="1.2.0~unofficial.fpujit.test2"
+        package_basename="aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-"+arch
     fpu_available=args.fpu_jit_test or args.arm_fpu_jit_test
     fpu_description="guarded native FPU JIT available; opt-in" if fpu_available else "FPU JIT disabled"
     commit = run("git", "-C", str(ROOT), "rev-parse", "HEAD")

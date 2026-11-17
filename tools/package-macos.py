@@ -83,12 +83,12 @@ def main():
     info.update({
         "CFBundleExecutable": "aranym",
         "CFBundleName": "ARAnyM Unofficial",
-        "CFBundleDisplayName": "ARAnyM Unofficial Intel FPU JIT Test 1" if args.x64_fpu_jit_test else "ARAnyM Unofficial ARM FPU JIT Test 1" if args.arm_fpu_jit_test else "ARAnyM Unofficial ARM64 JIT Integration" if guest_jit else "ARAnyM 1.2.0 Unofficial Beta 1 ARM64 Interpreter",
+        "CFBundleDisplayName": "ARAnyM Unofficial Intel FPU JIT Test 2" if args.x64_fpu_jit_test else "ARAnyM Unofficial ARM FPU JIT Test 2" if args.arm_fpu_jit_test else "ARAnyM Unofficial ARM64 JIT Integration" if guest_jit else "ARAnyM 1.2.0 Unofficial Beta 1 ARM64 Interpreter",
         "CFBundleIdentifier": "org.aranym.unofficial." + architecture,
         "CFBundleShortVersionString": "1.2.0",
         "CFBundleVersion": "1.2.0",
         "ARAnyMSourceCommit": sha,
-        "ARAnyMBuildLabel": architecture + " JIT integration" if guest_jit else "1.2.0 Unofficial Beta 1",
+        "ARAnyMBuildLabel": "1.2.0 Unofficial FPU JIT Test 2" if fpu_jit else architecture + " JIT integration" if guest_jit else "1.2.0 Unofficial Beta 1",
         "ARAnyMGuestJIT": guest_jit,
         "ARAnyMFPUJITAvailable":fpu_jit,
         "ARAnyMArchitecture": architecture,
@@ -220,8 +220,8 @@ def main():
                     "ARAnyM 1.2.0 Unofficial Beta 1 - ARM64 interpreter.\nGuest ARM64 JIT is not connected in this baseline. SLIRP is included.\n")
     (output / "README.txt").write_text(
         introduction +
-        ("Intel FPU JIT Test1: opt in with JITFPU = Yes and JITSafe = Yes. Guarded native x87 arithmetic uses extended precision and the pinned SoftFloat fallback. Enabled FPSP arithmetic exception continuation remains unsupported.\n" if args.x64_fpu_jit_test else "")+
-        ("ARM FPU JIT Test1: opt in with JITFPU = Yes and JITSafe = Yes. Native arithmetic retains the existing ARM IEEE64 precision; other modes/values use the interpreter. Requires macOS15+.\n" if args.arm_fpu_jit_test else "")+
+        ("Intel FPU JIT Test2: opt in with JITFPU = Yes and JITSafe = Yes. Guarded native x87 arithmetic uses extended precision and the pinned SoftFloat fallback. Enabled FPSP arithmetic exception continuation remains unsupported.\n" if args.x64_fpu_jit_test else "")+
+        ("ARM FPU JIT Test2: opt in with JITFPU = Yes and JITSafe = Yes. Native arithmetic retains the existing ARM IEEE64 precision; other modes/values use the interpreter. Requires macOS15+.\n" if args.arm_fpu_jit_test else "")+
         "Select SLIRP in Network settings or use the bundled slirp.config.example ETH0 settings.\n"
         "Guest: 10.0.2.15/24, gateway 10.0.2.2, DNS 10.0.2.3; requires the MiNT NatFeat Ethernet driver.\n"
         "Ad-hoc signed, not notarized. No guest desktop acceptance yet.\n"

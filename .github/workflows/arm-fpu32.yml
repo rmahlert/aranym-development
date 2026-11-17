@@ -70,7 +70,7 @@ jobs:
           DEB_HOST_ARCH=armhf python3 tools/package-linux.py --arm-fpu-jit-test --architecture armhf --cross-armhf --build-dir build/rpi32 --slirp-library "$RUNNER_TEMP/slirp-armhf/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --output build/rpi32-package
       - name: Installed ARM32 package SLIRP with guest JIT under QEMU
         run: |
-          apt-get install -y ./build/rpi32-package/aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-armhf.deb
+          apt-get install -y ./build/rpi32-package/aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-armhf.deb
           python3 tests/arm-fpu/run.py --architecture arm32 --emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --qemu /usr/bin/qemu-arm-static --qemu-sysroot / --qemu-library-path /usr/lib/aranym-unofficial:/usr/lib/arm-linux-gnueabihf --output build/rpi32-fpu --benchmark
           python3 tests/arm-fpu/run.py --architecture arm32 --emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --qemu /usr/bin/qemu-arm-static --qemu-sysroot / --qemu-library-path /usr/lib/aranym-unofficial:/usr/lib/arm-linux-gnueabihf --c-guard-reference --output build/rpi32-fpu-reference --benchmark
           python3 tests/macos-slirp/run.py --linux-emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --architecture arm32 --require-jit --fpu-jit --qemu /usr/bin/qemu-arm-static --qemu-sysroot / --qemu-library-path /usr/lib/aranym-unofficial:/usr/lib/arm-linux-gnueabihf --output build/rpi32-network
@@ -81,12 +81,12 @@ jobs:
           cp -a build/rpi32-fpu build/rpi32-package/fpu-validation
           cp -a build/rpi32-fpu-reference build/rpi32-package/fpu-guard-reference
           cp -a build/rpi32-network build/rpi32-package/network-validation
-          tar -czf aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-armhf.tar.gz -C build/rpi32-package --exclude=deb-root --exclude=debian .
-          sha256sum aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-armhf.tar.gz
+          tar -czf aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-armhf.tar.gz -C build/rpi32-package --exclude=deb-root --exclude=debian .
+          sha256sum aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-armhf.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: aranym-rpi-armhf-guest-jit-${{ github.sha }}
-          path: aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-armhf.tar.gz
+          path: aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-armhf.tar.gz
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -95,13 +95,13 @@ jobs:
           cp -a build/arm-fpu-results build/arm-jit-package/fpu-validation
           cp -a build/arm-fpu-reference build/arm-jit-package/fpu-guard-reference
           cp -a build/arm-jit-network build/arm-jit-package/network-validation
-          tar -czf aranym-1.2.0-unofficial-arm-fpu-jit-test1-macos-arm64.tar.gz -C build/arm-jit-package .
-          shasum -a 256 aranym-1.2.0-unofficial-arm-fpu-jit-test1-macos-arm64.tar.gz
+          tar -czf aranym-1.2.0-unofficial-arm-fpu-jit-test2-macos-arm64.tar.gz -C build/arm-jit-package .
+          shasum -a 256 aranym-1.2.0-unofficial-arm-fpu-jit-test2-macos-arm64.tar.gz
       - uses: actions/upload-artifact@v4
         if: runner.os == 'macOS'
         with:
           name: aranym-macos-arm64-guest-jit-${{ github.sha }}
-          path: aranym-1.2.0-unofficial-arm-fpu-jit-test1-macos-arm64.tar.gz
+          path: aranym-1.2.0-unofficial-arm-fpu-jit-test2-macos-arm64.tar.gz
       - name: Retain integration diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -164,7 +164,7 @@ jobs:
           python3 tools/package-linux.py --arm-fpu-jit-test --architecture arm64 --build-dir build/rpi64 --slirp-library "$RUNNER_TEMP/slirp/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --output build/rpi64-package
       - name: Install and require guest JIT plus SLIRP
         run: |
-          apt-get install -y ./build/rpi64-package/aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-arm64.deb
+          apt-get install -y ./build/rpi64-package/aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-arm64.deb
           env -u LD_LIBRARY_PATH python3 tests/arm-fpu/run.py --emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --output build/rpi64-fpu
           env -u LD_LIBRARY_PATH python3 tests/macos-slirp/run.py --linux-emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --require-jit --fpu-jit --output build/rpi64-network
       - name: Archive Pi package, sources and validation
@@ -172,12 +172,12 @@ jobs:
           cp -a build/rpi64-guests build/rpi64-package/guest-validation
           cp -a build/rpi64-fpu build/rpi64-package/fpu-validation
           cp -a build/rpi64-network build/rpi64-package/network-validation
-          tar -czf aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-arm64.tar.gz -C build/rpi64-package --exclude=deb-root --exclude=debian .
-          sha256sum aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-arm64.tar.gz
+          tar -czf aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-arm64.tar.gz -C build/rpi64-package --exclude=deb-root --exclude=debian .
+          sha256sum aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-arm64.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: aranym-rpi-arm64-guest-jit-${{ github.sha }}
-          path: aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-arm64.tar.gz
+          path: aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-arm64.tar.gz
       - uses: actions/upload-artifact@v4
         if: always()
         with:

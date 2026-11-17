@@ -67,12 +67,12 @@ jobs:
         run: python3 tests/macos-slirp/run.py --app build/macos-intel-package/ARAnyM-Unofficial.app --architecture x86_64 --require-jit --fpu-jit --output build/macos-intel-package/network-validation
       - name: Archive qualified application without a personal drive image
         run: |
-          tar -czf aranym-1.2.0-unofficial-fpu-jit-test1-macos-x86_64.tar.gz -C build/macos-intel-package .
-          shasum -a 256 aranym-1.2.0-unofficial-fpu-jit-test1-macos-x86_64.tar.gz
+          tar -czf aranym-1.2.0-unofficial-fpu-jit-test2-macos-x86_64.tar.gz -C build/macos-intel-package .
+          shasum -a 256 aranym-1.2.0-unofficial-fpu-jit-test2-macos-x86_64.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: aranym-macos-x86_64-${{ github.sha }}
-          path: aranym-1.2.0-unofficial-fpu-jit-test1-macos-x86_64.tar.gz
+          path: aranym-1.2.0-unofficial-fpu-jit-test2-macos-x86_64.tar.gz
       - name: Retain Intel build and qualification diagnostics
         if: always()
         uses: actions/upload-artifact@v4
