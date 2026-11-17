@@ -65,6 +65,8 @@ jobs:
           python3 tests/jit-hardware-probe/run.py --emulator build/macos-intel-package/ARAnyM-Unofficial.app/Contents/MacOS/aranym --firmware build/macos-intel-package/ARAnyM-Unofficial.app/Contents/Resources/emutos-aranym.img --output build/macos-intel-package/hardware-validation --strict-frame
       - name: Native integer JIT and SLIRP on default and custom subnets
         run: python3 tests/macos-slirp/run.py --app build/macos-intel-package/ARAnyM-Unofficial.app --architecture x86_64 --require-jit --fpu-jit --output build/macos-intel-package/network-validation
+      - name: Native counted arithmetic timing with counters disabled
+        run: python3 tests/fpu-jit/benchmark.py --emulator build/macos-intel-package/ARAnyM-Unofficial.app/Contents/MacOS/aranym --firmware build/macos-intel-package/ARAnyM-Unofficial.app/Contents/Resources/emutos-aranym.img --output build/macos-intel-package/counted-fpu-validation
       - name: Archive qualified application without a personal drive image
         run: |
           tar -czf aranym-1.2.0-unofficial-fpu-jit-test2-macos-x86_64.tar.gz -C build/macos-intel-package .
