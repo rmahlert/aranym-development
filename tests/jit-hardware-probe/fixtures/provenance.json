@@ -1,0 +1,50 @@
+{
+  "compiler": "m68k-atari-mint-gcc (MiNT 20230719) 4.6.4",
+  "commands": [
+    [
+      "m68k-atari-mint-gcc",
+      "-m68040",
+      "-c",
+      "/home/rob/git/Aranym/build/arm-fpu-jit-source/tests/jit-hardware-probe/guest/probe.S",
+      "-o",
+      "/home/rob/git/Aranym/build/compatibility-20261117/hardware-fixtures/NOPLESS.o"
+    ],
+    [
+      "m68k-atari-mint-gcc",
+      "-m68000",
+      "-msoft-float",
+      "-O2",
+      "/home/rob/git/Aranym/build/arm-fpu-jit-source/tests/jit-hardware-probe/guest/probe.c",
+      "/home/rob/git/Aranym/build/compatibility-20261117/hardware-fixtures/NOPLESS.o",
+      "-o",
+      "/home/rob/git/Aranym/build/compatibility-20261117/hardware-fixtures/NOPLESS.PRG"
+    ],
+    [
+      "m68k-atari-mint-gcc",
+      "-m68040",
+      "-DWITH_NOP=1",
+      "-c",
+      "/home/rob/git/Aranym/build/arm-fpu-jit-source/tests/jit-hardware-probe/guest/probe.S",
+      "-o",
+      "/home/rob/git/Aranym/build/compatibility-20261117/hardware-fixtures/WITHNOP.o"
+    ],
+    [
+      "m68k-atari-mint-gcc",
+      "-m68000",
+      "-msoft-float",
+      "-O2",
+      "/home/rob/git/Aranym/build/arm-fpu-jit-source/tests/jit-hardware-probe/guest/probe.c",
+      "/home/rob/git/Aranym/build/compatibility-20261117/hardware-fixtures/WITHNOP.o",
+      "-o",
+      "/home/rob/git/Aranym/build/compatibility-20261117/hardware-fixtures/WITHNOP.PRG"
+    ]
+  ],
+  "source_sha256": {
+    "guest/probe.S": "f7688b841309b5044071ab141fefd1a7ed04f63f398c7d2c0af238feb378ce26",
+    "guest/probe.c": "4dd5946cc214cb46616def352fca5b973462d153804330dd54061b8fdc6e89e7"
+  },
+  "guest_sha256": {
+    "NOPLESS.PRG": "011a93184db6000b025bb8bd2d2b0b84ba79368db75d323aeefc33c312a7af46",
+    "WITHNOP.PRG": "df9fc1e07fdce7a2624280330540aafc281725baa374c452d8f1627b2c6bc525"
+  }
+}

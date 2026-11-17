@@ -7199,6 +7199,7 @@ void exec_nostats(void)
 	aranym_hybrid_classic_active=true;
 #endif
 	for (;;)  { 
+		regs.fault_pc = m68k_getpc();
 		uae_u32 opcode = GET_OPCODE;
 #ifdef FLIGHT_RECORDER
 		m68k_record_step(m68k_getpc(), cft_map(opcode));
@@ -7241,6 +7242,7 @@ void execute_normal(void)
 		start_pc = regs.pc; 
 #endif
 		for (;;)  { /* Take note: This is the do-it-normal loop */
+			regs.fault_pc = m68k_getpc();
 			pc_hist[blocklen++].location = (uae_u16 *)regs.pc_p;
 			uae_u32 opcode = GET_OPCODE;
 #ifdef FLIGHT_RECORDER
