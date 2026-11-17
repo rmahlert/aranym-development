@@ -63,7 +63,7 @@ jobs:
       - name: ARM32 ISA execution and paired correctness gates under QEMU
         run: python3 tests/arm64-guest/run.py --fpu-jit --architecture arm32 --emulator build/rpi32/src/aranym --firmware data/emutos-macos-reference.img --qemu /usr/bin/qemu-arm-static --qemu-sysroot / --qemu-library-path "$RUNNER_TEMP/slirp-armhf/lib:/usr/lib/arm-linux-gnueabihf" --output build/rpi32-guests
       - name: ARM32 hardware probe recovery under QEMU
-        run: python3 tests/jit-hardware-probe/run.py --emulator build/rpi32/src/aranym --firmware data/emutos-macos-reference.img --runner "/usr/bin/qemu-arm-static -L / -E LD_LIBRARY_PATH=$RUNNER_TEMP/slirp-armhf/lib:/usr/lib/arm-linux-gnueabihf" --output build/rpi32-hardware
+        run: python3 tests/jit-hardware-probe/run.py --emulator build/rpi32/src/aranym --firmware data/emutos-macos-reference.img --runner "/usr/bin/qemu-arm-static -L / -E LD_LIBRARY_PATH=$RUNNER_TEMP/slirp-armhf/lib:/usr/lib/arm-linux-gnueabihf" --output build/rpi32-hardware --strict-frame
       - name: Package exact ARM32 application with sources
         run: |
           curl -L --fail --retry 3 -o build/dependency-source/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32

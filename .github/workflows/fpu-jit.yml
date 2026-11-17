@@ -56,7 +56,7 @@ jobs:
       - name: Native FPU on/off oracle, CPU regressions and measured arithmetic
         run: python3 tests/fpu-jit/run.py --emulator build/fpu-linux/src/aranym --firmware data/emutos-macos-reference.img --output build/fpu-results --cpu-regression --benchmark
       - name: Hardware probe recovery and NOP boundary regression
-        run: python3 tests/jit-hardware-probe/run.py --emulator build/fpu-linux/src/aranym --firmware data/emutos-macos-reference.img --output build/hardware-probes
+        run: python3 tests/jit-hardware-probe/run.py --emulator build/fpu-linux/src/aranym --firmware data/emutos-macos-reference.img --output build/hardware-probes --strict-frame
       - name: Exact firmware and dependency sources
         run: |
           curl -L --fail --retry 3 -o build/dependency-source/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
