@@ -49,8 +49,8 @@ The loop performs ten million iterations and independently accumulates the
 iteration count in an FPU register even with diagnostic counters disabled.
 Guest 200Hz ticks are retained for diagnosis, not used as the timing oracle.
 
-ARM64 emits operand and control checks directly into native blocks and reuses
-the checked operand bits for arithmetic. The previous C guard remains available
+ARM64 and ARM32 emit operand and control checks directly into native blocks and reuses
+the checked operands for arithmetic. The previous C guard remains available
 for paired qualification with `--c-guard-reference`; both paths must match the
 interpreter output. Compare `--benchmark` host-time results on the same native
 host before claiming an optimization gain.

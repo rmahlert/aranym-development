@@ -16,7 +16,7 @@ def main():
  p.add_argument('--qemu-sysroot',type=Path)
  p.add_argument('--qemu-library-path')
  p.add_argument('--benchmark',action='store_true')
- p.add_argument('--c-guard-reference',action='store_true',help='Use the previous ARM64 C operand guard for paired optimization measurements')
+ p.add_argument('--c-guard-reference',action='store_true',help='Use the previous ARM C operand guard for paired optimization measurements')
  a=p.parse_args()
  if a.qemu and not all([a.emulator,a.qemu_sysroot,a.qemu_library_path]):p.error('QEMU requires emulator,sysroot and target libraries')
  if not a.qemu:

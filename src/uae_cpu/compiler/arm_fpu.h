@@ -76,11 +76,11 @@ static void arm_fpu_address(uintptr address) {
     compemu_raw_mov_l_ri(REG_WORK1,address);
 #endif
 }
-#if defined(ARANYM_ARM64)
 static bool arm_fpu_inline_guard_enabled() {
     static const bool enabled=getenv("ARANYM_ARM_FPU_C_GUARD")==nullptr;
     return enabled;
 }
+#if defined(ARANYM_ARM64)
 static void arm_fpu_inline_guard(unsigned extra) {
     const unsigned source=(extra>>10)&7,destination=(extra>>7)&7;
     const int op=arm_fpu_operation(extra);
@@ -118,6 +118,52 @@ static void arm_fpu_inline_guard(unsigned extra) {
     }
     compemu_raw_jmp((uintptr)popall_arm_fpu_deopt);
     write_jmp_target(ready,(uintptr)get_target());
+}
+#else
+static void arm_fpu_patch_branch(uae_u32 *branch) {
+    const uintptr offset=((uintptr)get_target()-(uintptr)branch-8)>>2;
+    *branch=(*branch&0xff000000u)|(offset&0xffffffu);
+}
+static void arm_fpu_inline_guard(unsigned extra) {
+    const unsigned source=(extra>>10)&7,destination=(extra>>7)&7;
+    const int op=arm_fpu_operation(extra);
+    uae_u32 *failures[8];unsigned count=0;
+    arm_fpu_address((uintptr)&bx_options.jit.jitfpu);LDRB_rR(REG_WORK2,REG_WORK1);
+    CMP_ri(REG_WORK2,0);failures[count++]=(uae_u32*)get_target();BEQ_i(0);
+    arm_fpu_address((uintptr)&fpu.fpcr);LDR_rR(REG_WORK2,REG_WORK1);
+    CMP_ri(REG_WORK2,0);failures[count++]=(uae_u32*)get_target();BNE_i(0);
+    emit_long(0xeef13a10u); // VMRS r3,FPSCR
+    compemu_raw_mov_l_ri(REG_WORK1,0x07ff9f00u);AND_rrr(REG_WORK2,REG_WORK2,REG_WORK1);
+    CMP_ri(REG_WORK2,0);failures[count++]=(uae_u32*)get_target();BNE_i(0);
+    auto bounded=[&](unsigned reg,unsigned fp) {
+        arm_fpu_address((uintptr)&fpu.registers[reg]);
+        emit_long(fp?0xed921b00u:0xed920b00u); // VLDR d1/d0,[r2]
+        emit_long(fp?0xec510b11u:0xec510b10u); // VMOV r0,r1,d1/d0
+        BIC_rri(REG_WORK2,1,0x80000000u);MOV_rrLSRi(REG_WORK2,REG_WORK2,20);
+        SUB_rri(REG_WORK2,REG_WORK2,0x300);CMP_ri(REG_WORK2,0x200);
+        uae_u32 *normal=(uae_u32*)get_target();BCC_i(0);
+        BIC_rri(REG_WORK2,1,0x80000000u);ORR_rrr(REG_WORK2,REG_WORK2,0);
+        CMP_ri(REG_WORK2,0);failures[count++]=(uae_u32*)get_target();BNE_i(0);
+        arm_fpu_patch_branch(normal);
+    };
+    bounded(source,1);
+    if(op==0x20) {
+        BIC_rri(REG_WORK2,1,0x80000000u);ORR_rrr(REG_WORK2,REG_WORK2,0);
+        CMP_ri(REG_WORK2,0);failures[count++]=(uae_u32*)get_target();BEQ_i(0);
+    }
+    if(op==0x04) {
+        CMP_ri(1,0);failures[count++]=(uae_u32*)get_target();BMI_i(0);
+    }
+    if(op==0x20 || op==0x22 || op==0x23 || op==0x28 || op==0x38)
+        bounded(destination,0);
+    uae_u32 *ready=(uae_u32*)get_target();B_i(0);
+    for(unsigned i=0;i<count;++i)arm_fpu_patch_branch(failures[i]);
+    if(arm_fpu_diagnostics()) {
+        arm_fpu_address((uintptr)&arm_fpu_deoptimized);LDR_rR(REG_WORK2,REG_WORK1);
+        ADD_rri(REG_WORK2,REG_WORK2,1);STR_rR(REG_WORK2,REG_WORK1);
+    }
+    compemu_raw_jmp((uintptr)popall_arm_fpu_deopt);
+    arm_fpu_patch_branch(ready);
 }
 #endif
 static void arm_fpu_emit(uae_u8 *pc) {
@@ -180,14 +226,17 @@ static void arm_fpu_emit(uae_u8 *pc) {
     }
     compemu_raw_set_pc_i((uintptr)(pc+4));
 #else
-    compemu_raw_mov_l_ri(REG_PAR1,extra);
-    compemu_raw_call((uintptr)arm_fpu_guard);
-    CMP_ri(REG_RESULT,0);
-    uae_u32 *ready=(uae_u32*)get_target();BNE_i(0);
-    compemu_raw_jmp((uintptr)popall_arm_fpu_deopt);
-    *ready=(*ready&0xff000000u)|((((uintptr)get_target()-(uintptr)ready-8)>>2)&0xffffffu);
-    arm_fpu_address((uintptr)&fpu.registers[source]);emit_long(0xed921b00u);
-    arm_fpu_address((uintptr)&fpu.registers[destination]);emit_long(0xed920b00u);
+    if(arm_fpu_inline_guard_enabled())arm_fpu_inline_guard(extra);
+    else {
+        compemu_raw_mov_l_ri(REG_PAR1,extra);
+        compemu_raw_call((uintptr)arm_fpu_guard);
+        CMP_ri(REG_RESULT,0);
+        uae_u32 *ready=(uae_u32*)get_target();BNE_i(0);
+        compemu_raw_jmp((uintptr)popall_arm_fpu_deopt);
+        arm_fpu_patch_branch(ready);
+        arm_fpu_address((uintptr)&fpu.registers[source]);emit_long(0xed921b00u);
+        arm_fpu_address((uintptr)&fpu.registers[destination]);emit_long(0xed920b00u);
+    }
     switch(op) {
     case 0x00:case 0x3a:emit_long(0xeeb00b41u);break;
     case 0x04:emit_long(0xeeb10bc1u);break;

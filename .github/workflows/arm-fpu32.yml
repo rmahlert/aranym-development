@@ -72,12 +72,14 @@ jobs:
         run: |
           apt-get install -y ./build/rpi32-package/aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-armhf.deb
           python3 tests/arm-fpu/run.py --architecture arm32 --emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --qemu /usr/bin/qemu-arm-static --qemu-sysroot / --qemu-library-path /usr/lib/aranym-unofficial:/usr/lib/arm-linux-gnueabihf --output build/rpi32-fpu --benchmark
+          python3 tests/arm-fpu/run.py --architecture arm32 --emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --qemu /usr/bin/qemu-arm-static --qemu-sysroot / --qemu-library-path /usr/lib/aranym-unofficial:/usr/lib/arm-linux-gnueabihf --c-guard-reference --output build/rpi32-fpu-reference --benchmark
           python3 tests/macos-slirp/run.py --linux-emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --architecture arm32 --require-jit --fpu-jit --qemu /usr/bin/qemu-arm-static --qemu-sysroot / --qemu-library-path /usr/lib/aranym-unofficial:/usr/lib/arm-linux-gnueabihf --output build/rpi32-network
       - name: Archive ARM32 package, sources and explicitly emulated evidence
         run: |
           cp -a build/rpi32-hardware build/rpi32-package/hardware-validation
           cp -a build/rpi32-guests build/rpi32-package/guest-validation
           cp -a build/rpi32-fpu build/rpi32-package/fpu-validation
+          cp -a build/rpi32-fpu-reference build/rpi32-package/fpu-guard-reference
           cp -a build/rpi32-network build/rpi32-package/network-validation
           tar -czf aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-armhf.tar.gz -C build/rpi32-package --exclude=deb-root --exclude=debian .
           sha256sum aranym-1.2.0-unofficial-arm-fpu-jit-test1-rpi-armhf.tar.gz
@@ -94,5 +96,6 @@ jobs:
             build/rpi32-hardware
             build/rpi32-guests
             build/rpi32-fpu
+            build/rpi32-fpu-reference
             build/rpi32-network
             build/rpi32-package/build-manifest.json
