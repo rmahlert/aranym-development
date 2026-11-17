@@ -925,11 +925,14 @@ bool aranym_modern_fpu_mode() {
 extern void aranym_modern_fpu_native_completed();
 static uae_u16 aranym_fpu_native_status;
 static bool fpu_normal_register(unsigned reg) {
-    uae_u32 bits[4]={};memcpy(bits,fpu_register_address(reg),10);
-    const unsigned exponent=bits[2]&0x7fff;
+    const auto *bytes=reinterpret_cast<const uae_u8*>(fpu_register_address(reg));
+    uae_u16 sign_exponent;uae_u32 significand;
+    memcpy(&sign_exponent,bytes+8,sizeof sign_exponent);
+    memcpy(&significand,bytes+4,sizeof significand);
+    const unsigned exponent=sign_exponent&0x7fff;
     // Bound both operands away from underflow/overflow and reject every
     // exceptional or noncanonical encoding before native arithmetic.
-    return exponent>=0x3000 && exponent<=0x4fff && (bits[1]&0x80000000u);
+    return exponent>=0x3000 && exponent<=0x4fff && (significand&0x80000000u);
 }
 static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
     (void)opcode;
@@ -941,8 +944,9 @@ static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
         if(op==0x20 || op==0x22 || op==0x23 || op==0x28 || op==0x38)
             safe=safe&&fpu_normal_register(destination);
         if(op==0x04) {
-            uae_u32 bits[4]={};memcpy(bits,fpu_register_address(source),10);
-            safe=safe&&!(bits[2]&0x8000);
+            uae_u16 sign_exponent;
+            memcpy(&sign_exponent,reinterpret_cast<const uae_u8*>(fpu_register_address(source))+8,sizeof sign_exponent);
+            safe=safe&&!(sign_exponent&0x8000);
         }
     } else if(opclass==2) {
         // The compiler admits only integer Dn/immediate inputs.
@@ -953,7 +957,7 @@ static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
     if(safe) {
         // Guest rounding defaults are exact x87 extended/nearest. Mask host
         // traps; guest exceptions remain architectural software decisions.
-        const uae_u16 control=0x037f;
+        static const uae_u16 control=0x037f;
         __asm__ volatile("fldcw %0"::"m"(control));
     }
     return safe;
@@ -961,12 +965,15 @@ static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
 static void REGPARAM2 aranym_fpu_native_commit(uae_u32 extra) {
     if((extra>>13)==3)
         memcpy(&fpu.result,fpu_register_address((extra>>7)&7),10);
-    uae_u32 bits[4]={};memcpy(bits,&fpu.result,10);
-    const unsigned exponent=bits[2]&0x7fff;
-    const bool zero=exponent==0 && bits[1]==0 && bits[0]==0;
+    const auto *bytes=reinterpret_cast<const uae_u8*>(&fpu.result);
+    uae_u16 sign_exponent;uae_u32 high,low;
+    memcpy(&sign_exponent,bytes+8,sizeof sign_exponent);
+    memcpy(&high,bytes+4,sizeof high);memcpy(&low,bytes,sizeof low);
+    const unsigned exponent=sign_exponent&0x7fff;
+    const bool zero=exponent==0 && high==0 && low==0;
     const bool special=exponent==0x7fff;
-    const bool nan=special && ((bits[1]&0x7fffffffu)||bits[0]);
-    fpu.fpsr.condition_codes=((bits[2]&0x8000)?0x08000000u:0)|
+    const bool nan=special && ((high&0x7fffffffu)||low);
+    fpu.fpsr.condition_codes=((sign_exponent&0x8000)?0x08000000u:0)|
         (zero?0x04000000u:0)|(special&&!nan?0x02000000u:0)|(nan?0x01000000u:0);
     const unsigned sw=aranym_fpu_native_status;
     uae_u32 status=0;
