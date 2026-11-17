@@ -18,8 +18,10 @@ hash of its locally adapted form. Original notices are retained.
 `aranym_arm64.cpp`, `aranym_arm64.h` and `native_flags.h` adapt the real ARAnyM
 register state, NZCV/CCR representation, physical memory helpers, native dispatch,
 interrupts and longjmp exception boundary. Generated memory operations use the
-checked native bank callbacks. Floating-point instructions retain the native
-interpreter; FPU JIT and the paged modern040 core are not yet enabled here.
+checked native bank callbacks. The optional ARM FPU adapter emits guarded
+native arithmetic against ARAnyM IEEE64 registers, with interpreter fallback;
+see [qualification and limits](../../../../tests/arm-fpu/README.md).
+The paged modern040 core is not enabled here.
 
 Build explicitly with `--enable-jit-compiler --enable-arm64-jit --disable-jit-fpu
 --enable-addressing=normal`. macOS packaging requires `--jit-build-dir` and adds

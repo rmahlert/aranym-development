@@ -231,7 +231,7 @@ bool EmulOp(uint16 opcode, M68kRegisters *r)
 				int32_t state;
 
 				state = bx_options.jit.jit & 1;
-#ifdef USE_JIT_FPU
+#if defined(USE_JIT_FPU) || defined(ARANYM_ARM_FPU_JIT)
 				state |= (bx_options.jit.jitfpu & 1) << 1;
 #endif
 #ifdef JIT_DEBUG
@@ -242,13 +242,16 @@ bool EmulOp(uint16 opcode, M68kRegisters *r)
 				if (enable >= 0)
 				{
 					bx_options.jit.jit = enable & 1;
-#ifdef USE_JIT_FPU
+#if defined(USE_JIT_FPU) || defined(ARANYM_ARM_FPU_JIT)
 					bx_options.jit.jitfpu = (enable >> 1) & 1;
 #endif
 #ifdef JIT_DEBUG
 					bx_options.jit.jitdebug = (enable >> 2) & 1;
 #endif
 					set_cache_state((enable >> 3) & 1);
+#ifdef ARANYM_ARM_FPU_JIT
+                    if((state^enable)&2)flush_icache(0);
+#endif
 					/* FIXME: when toggling jitfpu, have to rebuild cpu tables */
 				}
 				r->d[0] = state;

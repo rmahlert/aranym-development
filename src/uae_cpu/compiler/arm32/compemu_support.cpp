@@ -3947,6 +3947,9 @@ static inline void match_states(blockinfo* bi)
 	}
 }
 
+#ifdef ARANYM_ARM_FPU_JIT
+#include "../arm_fpu.h"
+#endif
 static inline void create_popalls(void)
 {
 	int i,r;
@@ -4013,6 +4016,13 @@ static inline void create_popalls(void)
 	raw_inc_sp(stack_space);
 	raw_pop_preserved_regs();
 	compemu_raw_jmp(uae_p32(do_nothing));
+
+#ifdef ARANYM_ARM_FPU_JIT
+    popall_arm_fpu_deopt=get_target();
+    raw_inc_sp(stack_space);
+    raw_pop_preserved_regs();
+    compemu_raw_jmp((uintptr)arm_fpu_deopt);
+#endif
 
 	align_target(align_jumps);
 	popall_execute_normal=get_target();
@@ -4936,7 +4946,11 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 #endif
 
 				failure = 1; // gb-- defaults to failure state
-				if (comptbl[opcode] && optlev>1) {
+                bool native_fpu=false;
+#ifdef ARANYM_ARM_FPU_JIT
+                native_fpu=arm_fpu_candidate((uae_u8*)pc_hist[i].location);
+#endif
+				if ((comptbl[opcode] || native_fpu) && optlev>1) {
 					failure=0;
 					if (!was_comp) {
 						comp_pc_p=(uae_u8*)pc_hist[i].location;
@@ -4961,6 +4975,10 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 						compemu_raw_mov_l_mi((uintptr)&regs.fault_pc, ((uintptr)(pc_hist[i].location)) - MEMBaseDiff);
 #endif
 
+#ifdef ARANYM_ARM_FPU_JIT
+                    if(native_fpu)arm_fpu_emit((uae_u8*)pc_hist[i].location);
+                    else
+#endif
 					comptbl[opcode](opcode);
 
                     // Count execution in emitted native instructions, never compilation.

@@ -11,7 +11,7 @@
     "compemu_support.cpp": {
       "upstream_path": "src/uae_cpu/compiler/compemu_support.cpp",
       "upstream_sha256": "ca25066ec7a06c7a280fce614790cbdc31c4ed26c670c7fb971efd1ca950c8b5",
-      "integrated_sha256": "4eaf864db110a52ffd29c51744f8abe57987f10f0d8cfdcaab11e989611456f6"
+      "integrated_sha256": "fba7f18bea0ea11779c4587a528f140d4ecd55f43b77a916a2464c315217bd4a"
     }
   },
   "status": "Restored complete original ARM32 engine; 15 paired owned guests pass ARM ISA execution under QEMU; physical Pi hardware acceptance pending."

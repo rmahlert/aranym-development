@@ -31,6 +31,7 @@ def main():
     parser.add_argument('--qemu',type=Path,help='explicitly marked cross-emulated debug execution only')
     parser.add_argument('--qemu-sysroot',type=Path)
     parser.add_argument('--qemu-library-path')
+    parser.add_argument('--fpu-jit',action='store_true')
     args=parser.parse_args()
     if args.qemu and (not args.emulator or not args.qemu_sysroot or not args.qemu_library_path):
         parser.error('--qemu needs standalone emulator, sysroot and target library path')
@@ -58,15 +59,22 @@ def main():
            ('trace','TRACE','TRACE','JIT TRACE GUEST PASS',0),
            ('negative','EMUNEG','EMUNEG','EMULOP JIT GUEST FAIL',3)]
     report={'host_arch':platform.machine(),'execution_arch':args.architecture,'native':not bool(args.qemu),
-            'cross_emulated':bool(args.qemu),'platform':sys.platform,'profiles':[], 'passed':False}
+            'cross_emulated':bool(args.qemu),'platform':sys.platform,'fpu_jit':args.fpu_jit,'profiles':[], 'passed':False}
     report_path=output/'arm64-guests.json'
     try:
         for label,on,off,marker,status in cases:
             # The emulop negative control intentionally expects JIT enabled.
             for jit in ((True,) if label=='negative' else (False,True)):
                 name=on if jit else off
-                body=bytes.fromhex((HERE/'fixtures'/(name+'.hex')).read_text())
-                if hashlib.sha256(body).hexdigest()!=pins['guest_sha256'][name+'.PRG']:
+                fixture_root=HERE/'fixtures';fixture_pins=pins
+                if args.fpu_jit and name in ('EMUON','EMUOFF','EMUNEG'):
+                    fixture_root=ROOT/'tests/arm-fpu/fixtures'
+                    fixture_pins=json.loads((fixture_root/'provenance.json').read_text())
+                    for source,expected in fixture_pins['source_sha256'].items():
+                        if digest(fixture_root.parent/source)!=expected:raise RuntimeError('FPU guest source changed: '+source)
+                    name={'EMUON':'EMUFON','EMUOFF':'EMUFOFF','EMUNEG':'EMUFNEG'}[name]
+                body=bytes.fromhex((fixture_root/(name+'.hex')).read_text())
+                if hashlib.sha256(body).hexdigest()!=fixture_pins['guest_sha256'][name+'.PRG']:
                     raise RuntimeError('guest binary changed: '+name)
                 arm=label+('-jit' if jit else '-interpreter')
                 with tempfile.TemporaryDirectory(prefix='ARAnyM ARM64 '+arm+' ') as temporary:
@@ -81,7 +89,7 @@ def main():
                     program=work/'CHECK.PRG';program.write_bytes(body)
                     config=work/'config'
                     config.write_text(f'[GLOBAL]\nFastRAM = 64\nEmuTOS = {rom}\nBootstrap = {program}\nTOS =\nFloppy =\n'
-                        f'[JIT]\nJIT = {"Yes" if jit else "No"}\nJITFPU = No\nJITCacheSize = 8192\nJITInline = No\n'
+                        f'[JIT]\nJIT = {"Yes" if jit else "No"}\nJITFPU = {"Yes" if args.fpu_jit else "No"}\nJITCacheSize = 8192\nJITInline = No\n'
                         '[ETH0]\nType = none\n[STARTUP]\nGrabMouse = No\n[AUDIO]\nEnabled = No\n')
                     env={k:v for k,v in os.environ.items() if not k.startswith(('ARANYM_','DYLD_','SDL_'))}
                     env['ARANYM_'+witness_arch+'_JIT_DIAGNOSTICS']='1'

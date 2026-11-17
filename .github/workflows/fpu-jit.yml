@@ -5,8 +5,8 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Public testing prerelease containing the candidate Windows installer
-        default: v1.2.0-unofficial-fpu-jit-test1
+        description: Testing release or draft containing the candidate Windows installer
+        default: v1.2.0-unofficial-fpu-jit-test2
         required: true
       installer_sha256:
         description: Exact candidate Windows installer SHA-256; omit for Linux-only qualification
@@ -55,6 +55,8 @@ jobs:
           make -j3
       - name: Native FPU on/off oracle, CPU regressions and measured arithmetic
         run: python3 tests/fpu-jit/run.py --emulator build/fpu-linux/src/aranym --firmware data/emutos-macos-reference.img --output build/fpu-results --cpu-regression --benchmark
+      - name: Counted native FPU arithmetic timing
+        run: python3 tests/fpu-jit/benchmark.py --emulator build/fpu-linux/src/aranym --firmware data/emutos-macos-reference.img --output build/fpu-counted
       - name: Hardware probe recovery and NOP boundary regression
         run: python3 tests/jit-hardware-probe/run.py --emulator build/fpu-linux/src/aranym --firmware data/emutos-macos-reference.img --output build/hardware-probes --strict-frame
       - name: Exact firmware and dependency sources
@@ -65,7 +67,7 @@ jobs:
         run: python3 tools/package-linux.py --fpu-jit-test --build-dir build/fpu-linux --slirp-library "$RUNNER_TEMP/slirp/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --winuae-source-archive build/dependency-source/winuae-source.tar.gz --output build/fpu-package
       - name: Installed FPU JIT and SLIRP
         run: |
-          sudo apt-get install -y ./build/fpu-package/aranym-1.2.0-unofficial-fpu-jit-test1-linux-amd64.deb
+          sudo apt-get install -y ./build/fpu-package/aranym-1.2.0-unofficial-fpu-jit-test2-linux-amd64.deb
           env -u LD_LIBRARY_PATH ldd /usr/bin/aranym-unofficial
           env -u LD_LIBRARY_PATH python3 tests/fpu-jit/run.py --emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --output build/fpu-installed
           env -u LD_LIBRARY_PATH python3 tests/macos-slirp/run.py --linux-emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --fpu-jit --output build/fpu-network
@@ -73,13 +75,14 @@ jobs:
         run: |
           cp -a build/hardware-probes build/fpu-package/hardware-validation
           cp -a build/fpu-results build/fpu-package/cpu-validation
+          cp -a build/fpu-counted build/fpu-package/counted-fpu-validation
           cp -a build/fpu-installed build/fpu-package/installed-validation
           cp -a build/fpu-network build/fpu-package/network-validation
-          tar -czf aranym-1.2.0-unofficial-fpu-jit-test1-linux-x86_64.tar.gz -C build/fpu-package --exclude=deb-root --exclude=debian .
+          tar -czf aranym-1.2.0-unofficial-fpu-jit-test2-linux-x86_64.tar.gz -C build/fpu-package --exclude=deb-root --exclude=debian .
       - uses: actions/upload-artifact@v4
         with:
           name: aranym-fpu-jit-linux-${{ github.sha }}
-          path: aranym-1.2.0-unofficial-fpu-jit-test1-linux-x86_64.tar.gz
+          path: aranym-1.2.0-unofficial-fpu-jit-test2-linux-x86_64.tar.gz
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -88,10 +91,13 @@ jobs:
             build/fpu-linux/config.log
             build/hardware-probes
             build/fpu-results
+            build/fpu-counted
             build/fpu-installed
             build/fpu-network
             build/fpu-package/build-manifest.json
   windows:
+    permissions:
+      contents: write
     if: inputs.installer_sha256 != ''
     runs-on: windows-2022
     timeout-minutes: 25
@@ -105,7 +111,7 @@ jobs:
         shell: pwsh
         run: |
           if ($env:EXPECTED_SHA256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Invalid installer hash' }
-          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'aranym-1.2.0-unofficial-fpu-jit-test1-windows-x86_64-setup.exe' --dir build/windows-dist
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'aranym-1.2.0-unofficial-fpu-jit-test2-windows-x86_64-setup.exe' --dir build/windows-dist
           if ($LASTEXITCODE -ne 0) { throw 'Installer download failed' }
           $installer = Get-Item build/windows-dist/*-setup.exe
           if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne $env:EXPECTED_SHA256) { throw 'Installer hash mismatch' }
@@ -121,6 +127,10 @@ jobs:
         run: |
           python tests/fpu-jit/run.py --emulator C:/ARAnyMFpuTest/aranym.exe --firmware C:/ARAnyMFpuTest/aranym/emutos-aranym.img --output build/fpu-results --cpu-regression --benchmark
           if ($LASTEXITCODE -ne 0) { throw 'FPU JIT qualification failed' }
+          python tests/jit-hardware-probe/run.py --emulator C:/ARAnyMFpuTest/aranym.exe --firmware C:/ARAnyMFpuTest/aranym/emutos-aranym.img --output build/hardware-probes --strict-frame
+          if ($LASTEXITCODE -ne 0) { throw 'Hardware fault qualification failed' }
+          python tests/fpu-jit/benchmark.py --emulator C:/ARAnyMFpuTest/aranym.exe --firmware C:/ARAnyMFpuTest/aranym/emutos-aranym.img --output build/fpu-counted
+          if ($LASTEXITCODE -ne 0) { throw 'Counted FPU benchmark failed' }
           python tests/macos-slirp/run.py --windows-emulator C:/ARAnyMFpuTest/aranym.exe --firmware C:/ARAnyMFpuTest/aranym/emutos-aranym.img --fpu-jit --output build/fpu-network
           if ($LASTEXITCODE -ne 0) { throw 'FPU JIT plus SLIRP failed' }
       - name: Preserving upgrade check
@@ -142,4 +152,6 @@ jobs:
           name: fpu-jit-windows-evidence-${{ github.sha }}
           path: |
             build/fpu-results
+            build/fpu-counted
             build/fpu-network
+            build/hardware-probes

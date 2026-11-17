@@ -2,3 +2,5 @@
 # Keep identical bytes when qualifying on Windows with core.autocrlf enabled.
 tests/fpu-jit/guest/* text eol=lf
 tests/modern-jit/guest/* text eol=lf
+tests/arm-fpu/guest/* text eol=lf
+tests/jit-hardware-probe/guest/* text eol=lf

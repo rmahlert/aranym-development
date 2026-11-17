@@ -13,8 +13,8 @@ def main():
  p.add_argument('--benchmark',action='store_true')
  p.add_argument('--cpu-regression',action='store_true')
  a=p.parse_args()
- if sys.platform not in ('linux','win32') or platform.machine().lower() not in ('x86_64','amd64'):
-  p.error('native Linux or Windows x86-64 is required')
+ if sys.platform not in ('linux','win32','darwin') or platform.machine().lower() not in ('x86_64','amd64'):
+  p.error('native Linux, Windows or Intel macOS x86-64 is required')
  binary=a.emulator.resolve(strict=True);rom=a.firmware.resolve(strict=True)
  out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
  pins=json.loads((HERE/'fixtures/provenance.json').read_text())
@@ -25,6 +25,10 @@ def main():
          'limitations':['Enabled FPU arithmetic exception/FPSP continuation remains explicitly unsupported.']}
  def run(label,fixture,fpu,reference=True,diagnostics=True,expected=0,marker='FPU JIT GUEST PASS'):
   fixture_dir=HERE/'fixtures';fixture_pins=pins
+  if fixture=='FPUCOMP':
+   fixture_pins=json.loads((fixture_dir/'compare-provenance.json').read_text())
+   for name,digest in fixture_pins['source_sha256'].items():
+    if sha(HERE/name)!=digest:raise RuntimeError('comparison guest source changed: '+name)
   if not (fixture_dir/(fixture+'.hex')).is_file():
    fixture_dir=ROOT/'tests/arm64-guest/fixtures'
    fixture_pins=json.loads((fixture_dir/'provenance.json').read_text())
@@ -34,6 +38,7 @@ def main():
   if hashlib.sha256(body).hexdigest()!=fixture_pins['guest_sha256'][fixture+'.PRG']:raise RuntimeError('guest hash mismatch')
   with tempfile.TemporaryDirectory(prefix='ARAnyM FPU '+label+' ') as directory:
    work=Path(directory);program=work/'CHECK.PRG';program.write_bytes(body)
+   if sys.platform=='darwin':(work/'Aranym_files').mkdir()
    config=work/'config'
    config.write_text(f'[GLOBAL]\nFastRAM = 64\nFixedMemoryOffset = 60000000\nEmuTOS = {rom.as_posix()}\nBootstrap = {program.as_posix()}\nTOS =\nFloppy =\n'
      f'[JIT]\nJIT = Yes\nJITSafe = Yes\nJITFPU = {"Yes" if fpu else "No"}\nJITInline = No\nJITLazyFlush = 0\nJITUpdatePC = Yes\n'
@@ -79,6 +84,22 @@ def main():
    record['arithmetic_cases']=192;record['constant_rom_cases']=16
   assert corpora[0]==corpora[1],'native FPU register/status data differs from SoftFloat'
   report['bit_exact_profiles']=208
+  comparisons=[]
+  for enabled in (False,True):
+   text,record=run('compare-'+('jit' if enabled else 'reference'),'FPUCOMP',enabled,marker='FPU COMPARE PASS')
+   assert bool(record['executed_native_guest_fpu'])==enabled,'comparison native execution witness mismatch'
+   values={}
+   for mode,case,words in re.findall(r'FPU-COMP mode=(\w+) case=(\w+) words=(\w+)',text):
+    key=(int(mode,16),int(case,16));assert key not in values and len(words)==72
+    values[key]=[int(words[i:i+8],16) for i in range(0,72,8)]
+   assert len(values)==768,'missing FCMP modes, operands or integer CCR profiles'
+   for (mode,case),words in values.items():
+    relation=[0,0x08000000,0x08000000,0x04000000,0,0][case//32]
+    assert words[0]==(relation|0x005a00f8),'FCMP changed quotient/accrued bits or raised arithmetic status'
+    assert words[2]==case%32,'FCMP changed integer CCR'
+   comparisons.append(values);record['comparison_profiles']=len(values)
+  assert comparisons[0]==comparisons[1],'native FCMP register/status data differs from SoftFloat'
+  report['comparison_profiles']=768
   # Preserve the pre-existing explicit capability boundary. This is a known
   # unsupported case, not evidence of delivered guest FPU traps.
   run('unsupported-enabled-trap','FPUTRAP',True,expected=3,

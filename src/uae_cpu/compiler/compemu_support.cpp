@@ -925,11 +925,14 @@ bool aranym_modern_fpu_mode() {
 extern void aranym_modern_fpu_native_completed();
 static uae_u16 aranym_fpu_native_status;
 static bool fpu_normal_register(unsigned reg) {
-    uae_u32 bits[4]={};memcpy(bits,fpu_register_address(reg),10);
-    const unsigned exponent=bits[2]&0x7fff;
+    const auto *bytes=reinterpret_cast<const uae_u8*>(fpu_register_address(reg));
+    uae_u16 sign_exponent;uae_u32 significand;
+    memcpy(&sign_exponent,bytes+8,sizeof sign_exponent);
+    memcpy(&significand,bytes+4,sizeof significand);
+    const unsigned exponent=sign_exponent&0x7fff;
     // Bound both operands away from underflow/overflow and reject every
     // exceptional or noncanonical encoding before native arithmetic.
-    return exponent>=0x3000 && exponent<=0x4fff && (bits[1]&0x80000000u);
+    return exponent>=0x3000 && exponent<=0x4fff && (significand&0x80000000u);
 }
 static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
     (void)opcode;
@@ -941,8 +944,9 @@ static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
         if(op==0x20 || op==0x22 || op==0x23 || op==0x28 || op==0x38)
             safe=safe&&fpu_normal_register(destination);
         if(op==0x04) {
-            uae_u32 bits[4]={};memcpy(bits,fpu_register_address(source),10);
-            safe=safe&&!(bits[2]&0x8000);
+            uae_u16 sign_exponent;
+            memcpy(&sign_exponent,reinterpret_cast<const uae_u8*>(fpu_register_address(source))+8,sizeof sign_exponent);
+            safe=safe&&!(sign_exponent&0x8000);
         }
     } else if(opclass==2) {
         // The compiler admits only integer Dn/immediate inputs.
@@ -953,7 +957,7 @@ static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
     if(safe) {
         // Guest rounding defaults are exact x87 extended/nearest. Mask host
         // traps; guest exceptions remain architectural software decisions.
-        const uae_u16 control=0x037f;
+        static const uae_u16 control=0x037f;
         __asm__ volatile("fldcw %0"::"m"(control));
     }
     return safe;
@@ -961,12 +965,15 @@ static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
 static void REGPARAM2 aranym_fpu_native_commit(uae_u32 extra) {
     if((extra>>13)==3)
         memcpy(&fpu.result,fpu_register_address((extra>>7)&7),10);
-    uae_u32 bits[4]={};memcpy(bits,&fpu.result,10);
-    const unsigned exponent=bits[2]&0x7fff;
-    const bool zero=exponent==0 && bits[1]==0 && bits[0]==0;
+    const auto *bytes=reinterpret_cast<const uae_u8*>(&fpu.result);
+    uae_u16 sign_exponent;uae_u32 high,low;
+    memcpy(&sign_exponent,bytes+8,sizeof sign_exponent);
+    memcpy(&high,bytes+4,sizeof high);memcpy(&low,bytes,sizeof low);
+    const unsigned exponent=sign_exponent&0x7fff;
+    const bool zero=exponent==0 && high==0 && low==0;
     const bool special=exponent==0x7fff;
-    const bool nan=special && ((bits[1]&0x7fffffffu)||bits[0]);
-    fpu.fpsr.condition_codes=((bits[2]&0x8000)?0x08000000u:0)|
+    const bool nan=special && ((high&0x7fffffffu)||low);
+    fpu.fpsr.condition_codes=((sign_exponent&0x8000)?0x08000000u:0)|
         (zero?0x04000000u:0)|(special&&!nan?0x02000000u:0)|(nan?0x01000000u:0);
     const unsigned sw=aranym_fpu_native_status;
     uae_u32 status=0;
@@ -975,6 +982,9 @@ static void REGPARAM2 aranym_fpu_native_commit(uae_u32 extra) {
     if(sw&8)status|=0x1000;
     if(sw&16)status|=0x0800;
     if(sw&32)status|=0x0200;
+    // FCMP publishes a relation, without the rounding exception of the
+    // native subtraction used to compute it for finite admitted operands.
+    if((extra>>13)!=3 && (extra&0x7f)==0x38)status=0;
     // An exact extended store preserves the preceding arithmetic status.
     // The paired SoftFloat frontend retains INEX2 across this transfer.
     if((extra>>13)!=3)fpu.fpsr.exception_status=status;
@@ -4298,7 +4308,7 @@ static void aranym_emit_checked_read(int address,int dest,int size,int tmp) {
     sync_compiled_exception_state();
     const uintptr helper=size==1?(uintptr)aranym_upstream_checked_read_b:
         size==2?(uintptr)aranym_upstream_checked_read_w:(uintptr)aranym_upstream_checked_read_l;
-    verify(helper<=0xffffffffu);
+    if(helper>0xffffffffu)jit_abort("JIT memory helper exceeds the 32-bit address range");
     mov_l_ri(tmp,helper);
     call_r_11(dest,tmp,address,size,4);
     forget_about(tmp);
@@ -4307,7 +4317,7 @@ static void aranym_emit_checked_write(int address,int source,int size,int tmp) {
     sync_compiled_exception_state();
     const uintptr helper=size==1?(uintptr)aranym_upstream_checked_write_b:
         size==2?(uintptr)aranym_upstream_checked_write_w:(uintptr)aranym_upstream_checked_write_l;
-    verify(helper<=0xffffffffu);
+    if(helper>0xffffffffu)jit_abort("JIT memory helper exceeds the 32-bit address range");
     mov_l_ri(tmp,helper);
     call_r_02(tmp,address,source,4,size);
     forget_about(tmp);

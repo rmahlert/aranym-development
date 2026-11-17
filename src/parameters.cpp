@@ -53,7 +53,11 @@
 #endif
 
 #ifndef USE_JIT_FPU
-# define USE_JIT_FPU 0
+# ifdef ARANYM_ARM_FPU_JIT
+#  define USE_JIT_FPU 1
+# else
+#  define USE_JIT_FPU 0
+# endif
 #endif
 
 #if defined(HW_SIGSEGV)
@@ -753,7 +757,7 @@ static void preset_jit()
 {
 	bx_options.jit.jit = true;
 	bx_options.jit.jitsafe = true;
-#ifdef MODERN040_FPU_JIT
+#if defined(MODERN040_FPU_JIT) || defined(ARANYM_ARM_FPU_JIT)
     bx_options.jit.jitfpu = false;
 #else
     bx_options.jit.jitfpu = true;
@@ -767,7 +771,7 @@ static void preset_jit()
 static void postload_jit()
 {
 	if (bx_options.jit.jitsafe) {
-#ifndef MODERN040_FPU_JIT
+#if !defined(MODERN040_FPU_JIT) && !defined(ARANYM_ARM_FPU_JIT)
         bx_options.jit.jitfpu = false;
 #endif
         bx_options.jit.jitlazyflush = 0;

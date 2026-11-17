@@ -2811,6 +2811,9 @@ static uint8 *alloc_code_near_popall(uint32 size)
 	return alloc_code(size);
 }
 #endif /* __APPLE__ */
+#ifdef ARANYM_ARM_FPU_JIT
+#include "../arm_fpu.h"
+#endif
 STATIC_INLINE void create_popalls(void);
 
 /* popallspace was allocated without room for a cache of this size, because
@@ -3186,6 +3189,12 @@ STATIC_INLINE void create_popalls(void)
     popall_do_nothing = get_target();
     raw_pop_preserved_regs();
     compemu_raw_jmp((uintptr)do_nothing);
+
+#ifdef ARANYM_ARM_FPU_JIT
+    popall_arm_fpu_deopt = get_target();
+    raw_pop_preserved_regs();
+    compemu_raw_jmp((uintptr)arm_fpu_deopt);
+#endif
 
     popall_cache_miss = get_target();
     raw_pop_preserved_regs();
@@ -3727,7 +3736,11 @@ void compile_block(cpu_history* pc_hist, int blocklen, int totcycles)
 
                 failure = 1; // gb-- defaults to failure state
                 aranym_arm64_emit_instruction_pc(start_pc+(uae_u32)((uae_u8*)pc_hist[i].location-start_pc_p));
-                if (comptbl[opcode] && optlev > 1) {
+                bool native_fpu=false;
+#ifdef ARANYM_ARM_FPU_JIT
+                native_fpu=arm_fpu_candidate((uae_u8*)pc_hist[i].location);
+#endif
+                if ((comptbl[opcode] || native_fpu) && optlev > 1) {
                     failure = 0;
                     if (!was_comp) {
                         comp_pc_p = (uae_u8*)pc_hist[i].location;
@@ -3735,6 +3748,10 @@ void compile_block(cpu_history* pc_hist, int blocklen, int totcycles)
                     }
                     was_comp = 1;
 
+#ifdef ARANYM_ARM_FPU_JIT
+                    if(native_fpu)arm_fpu_emit((uae_u8*)pc_hist[i].location);
+                    else
+#endif
                     comptbl[opcode](opcode);
                     if(!failure)
                         aranym_arm64_emit_execution_witness(start_pc+(uae_u32)((uae_u8*)pc_hist[i].location-start_pc_p));

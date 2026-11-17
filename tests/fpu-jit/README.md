@@ -46,7 +46,12 @@ python3 tests/fpu-jit/run.py --emulator PATH/aranym --firmware PATH/emutos-arany
 The same immutable Atari program runs with FPU translation off and on. It checks
 192 arithmetic/mode/special-value combinations and 16 constant-ROM profiles,
 compares every raw register/status output word, checks independent exact integer
-arithmetic and PI values, and repeats operations through cold/hot code.
+arithmetic and PI values, and repeats operations through cold/hot code. An
+additional 768 FCMP profiles cover six finite operand pairs, four FPCR modes
+and every integer CCR combination, including comparisons such as `2^1024`
+against `1` that must not report arithmetic inexactness. FPSR, FPIAR and both
+FP registers are compared word for word, with independent relation and
+register-preservation checks.
 It also crosses an MMU permission-mode boundary 128 times and checks FPU
 null/idle frames and arbitrary guest-written FPSR bits. The additional CPU
 profiles cover master/user stacks, real VBL/MFP interrupts, self-modifying code
@@ -60,8 +65,36 @@ proves execution of millions of native FP operations, then times three identical
 runs per backend with all diagnostic counters disabled. Classic IEEE, SoftFloat
 and native results stay separate; this is not a whole-system speed claim.
 
-Rebuild fixture hex with `build-fixtures.py` and an Atari MiNT compiler.
+Rebuild the original fixture hex with `build-fixtures.py` and the comparison
+fixture with `build-compare.py`, using an Atari MiNT compiler.
 No personal boot image or installed guest applications are used in CI.
+
+### Counted host-time benchmark
+
+On a native Linux, Windows or Intel Mac host, run:
+
+```
+python3 tests/fpu-jit/benchmark.py --emulator PATH/aranym --firmware PATH/emutos-aranym.img --output COUNTED-RESULTS
+```
+
+Add `--compare-with PATH/previous-aranym` to measure a previous executable in
+the same run. The immutable guest completes ten million register-arithmetic
+iterations and independently counts them in an FP register. Both the final
+arithmetic result and the count must match. A separate diagnostic run proves
+that at least 49 million FP operations execute natively; all timed runs disable
+those counters. The harness records three interleaved samples per backend,
+host monotonic elapsed time between the guest's start/result messages and
+the exact executable, firmware and guest hashes. Rebuild this separate fixture
+with `build-guard-benchmark.py`; its source hashes and compiler provenance are
+in `fixtures/guard-benchmark-provenance.json`.
+
+The scalar guard/status reads preserve the existing admission rules while
+avoiding temporary arrays on each native FP instruction. On one Linux x86-64
+host, the counted loop's median changed from 1.2681 s to 0.9415 s (1.35 times
+faster). The same run measured 0.9074 s for classic IEEE and 14.9407 s for the
+pinned SoftFloat reference. This is one arithmetic loop, not a desktop speed
+claim. A separate 80-by-60 POV-Ray scene retained identical pixels before and
+after the change; its rendering time showed no improvement.
 
 ## Remaining limitations
 
@@ -74,7 +107,7 @@ Do not remove this boundary or advertise full FPU pipeline coverage without its
 own frame/FSAVE/FRESTORE/RTE qualification.
 
 Packed-decimal and undefined FPU encodings are outside the connected SoftFloat
-frontend. Native FPU JIT is not enabled on ARM. FreeMiNT/XaAES/GBE and real
+frontend. ARM FPU translation has its own qualification in `tests/arm-fpu`. FreeMiNT/XaAES/GBE and real
 application performance still need owner/community testing.
 
 ## Test 1 results

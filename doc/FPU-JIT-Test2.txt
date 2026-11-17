@@ -1,0 +1,38 @@
+ARAnyM 1.2.0 Unofficial FPU JIT Test 2
+Windows/Linux x86-64, Intel/Apple Silicon macOS and Raspberry Pi ARM
+
+This is an experimental community testing build of ARAnyM.
+Original project: https://aranym.github.io/
+
+Use your existing configuration, firmware and boot drive image.
+Application packages do not update FreeMiNT or install guest applications.
+FPU JIT remains off by default. Enable it in Setup or set:
+
+[JIT]
+JIT = Yes
+JITSafe = Yes
+JITFPU = Yes
+
+On x86-64, the guarded native x87 path handles ordinary extended-precision
+arithmetic and moves. Other supported instructions, modes and values use the
+pinned WinUAE SoftFloat frontend. Paging and tracing use the modern interpreter.
+Enabled arithmetic exception/FPSP continuation is not implemented.
+
+ARM builds retain their existing IEEE64 FPU precision. Bounded register
+arithmetic can execute natively; other instructions, values and modes use the
+interpreter. These builds do not claim an 80-bit SoftFloat or MMU JIT profile.
+
+Test 2 adds native Intel Mac packaging, faster ARM FPU admission checks and
+corrections to fault-frame reporting and finite floating-point comparisons.
+Consult the exact platform validation accompanying each package. Hardware-probe
+frame recovery is distinct from complete native no-NOP state recovery.
+
+Set JITFPU = No to retain the classic-compatible physical FPU path.
+CPU/network tests are separate from FreeMiNT/XaAES/GBE application testing.
+Benchmark results describe their exact workload, not overall emulator speed.
+Mac packages record their required macOS version and are ad-hoc signed,
+not notarized. Raspberry Pi packages contain the application, not a BeePi image.
+
+Source, checksums, platform validation and issue reporting:
+https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test2
+https://github.com/rmahlert/aranym-development/issues
