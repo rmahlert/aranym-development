@@ -13,7 +13,9 @@ _probe:
  move.w #127,%d2
 1: bsr leaf
  dbra %d2,1b
- move.l #0xfffffa44,%a0
+ move.l _probe_address,%a0
+ movem.l %d0-%d7/%a0-%a6,_expected_registers
+ move.w #0x2710,%sr
  bsr leaf
  moveq #1,%d0
  bra finish
@@ -31,8 +33,13 @@ _probe_access:
  addq.l #1,%d1
  rts
 _probe_handler:
+ movem.l %d0-%d7/%a0-%a6,_fault_registers
+ move.l %sp,_fault_stack
+ move.w (%sp),_fault_sr
  move.l 2(%sp),_fault_pc
  move.w 6(%sp),_fault_format
+ move.w 12(%sp),_fault_ssw
+ move.l 20(%sp),_fault_address
  move.l %d1,_fault_d1
  move.l _saved_sp,%sp
  moveq #0,%d0

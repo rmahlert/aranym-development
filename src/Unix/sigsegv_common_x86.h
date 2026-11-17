@@ -957,7 +957,8 @@ static const int x86_reg_map[] = {
 	if (addr >= 0xff000000)
 		addr &= 0x00ffffff;
 
-	regs.mmu_ssw = ((size & 3) << 5) | (transfer_type == TYPE_STORE ? 0 : MMU_SW_RW);
+	regs.mmu_ssw = ((size & 3) << 5) |
+		(transfer_type == TYPE_STORE ? 0 : MMU_SW_RW) | (regs.s ? 5 : 1);
 	if ((addr < 0x00f00000) || (addr > 0x00ffffff))
 		goto buserr;
 
@@ -1781,6 +1782,11 @@ static __attribute_noinline__ void handle_access_fault(CONTEXT_ATYPE CONTEXT_NAM
 		 * triggered by one of the HWget_x/HWput_x calls
 		 * in the handler above
 		 */
+		// Hardware decoding uses a 24-bit alias. The guest exception frame
+		// must retain the high byte of the effective address that faulted.
+		if (faultaddr >= 0xff000000 &&
+			regs.mmu_fault_addr >= 0x00f00000 && regs.mmu_fault_addr <= 0x00ffffff)
+			regs.mmu_fault_addr |= faultaddr & 0xff000000;
 		D(bug("Atari bus error %s $%08x (%s)",
 			regs.mmu_ssw & MMU_SW_RW ? "read" : "write",
 			regs.mmu_fault_addr,
