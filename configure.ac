@@ -1591,6 +1591,7 @@ if test "x$WANT_MODERN040" = xyes; then
  if test "x$WANT_JIT_FPU" = xyes; then
   DEFINES="$DEFINES -DMODERN040_FPU_JIT"
  fi
+ CXXFLAGS="$CXXFLAGS -std=gnu++17"
  FPE_CORE_TEST_ORDER=ieee
  if test "$OS_TYPE" = linux; then
   CFLAGS="$CFLAGS -fno-pie"

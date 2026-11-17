@@ -4298,7 +4298,7 @@ static void aranym_emit_checked_read(int address,int dest,int size,int tmp) {
     sync_compiled_exception_state();
     const uintptr helper=size==1?(uintptr)aranym_upstream_checked_read_b:
         size==2?(uintptr)aranym_upstream_checked_read_w:(uintptr)aranym_upstream_checked_read_l;
-    verify(helper<=0xffffffffu);
+    if(helper>0xffffffffu)jit_abort("JIT memory helper exceeds the 32-bit address range");
     mov_l_ri(tmp,helper);
     call_r_11(dest,tmp,address,size,4);
     forget_about(tmp);
@@ -4307,7 +4307,7 @@ static void aranym_emit_checked_write(int address,int source,int size,int tmp) {
     sync_compiled_exception_state();
     const uintptr helper=size==1?(uintptr)aranym_upstream_checked_write_b:
         size==2?(uintptr)aranym_upstream_checked_write_w:(uintptr)aranym_upstream_checked_write_l;
-    verify(helper<=0xffffffffu);
+    if(helper>0xffffffffu)jit_abort("JIT memory helper exceeds the 32-bit address range");
     mov_l_ri(tmp,helper);
     call_r_02(tmp,address,source,4,size);
     forget_about(tmp);
