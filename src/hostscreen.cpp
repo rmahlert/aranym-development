@@ -171,6 +171,7 @@ HostScreen::HostScreen(void)
 	force_refresh(true),
 	do_screenshot(false),
 	refreshCounter(0),
+	renderVidelSurface(true),
 	grabbedMouse(SDL_FALSE),
 	hiddenMouse(SDL_FALSE),
 	canGrabMouseAgain(false),
@@ -719,6 +720,7 @@ void HostScreen::refresh(void)
 void HostScreen::setVidelRendering(bool videlRender)
 {
 	renderVidelSurface = videlRender;
+	refreshMouseCursor();
 }
 
 void HostScreen::initScreen(void)
@@ -884,51 +886,51 @@ void HostScreen::WarpMouse(int x, int y)
 #endif
 }
 
+void HostScreen::refreshMouseCursor()
+{
+	SDL_Cursor *shape = aranym_cursor;
+	bool visible = !hiddenMouse;
+#ifdef NFVDI_SUPPORT
+	if (hiddenMouse && !renderVidelSurface && bx_options.nfvdi.use_host_mouse_cursor) {
+		if (!fvdi)
+			fvdi = NFGetDriver("fVDI");
+		if (fvdi) {
+			VdiDriver *driver = static_cast<VdiDriver *>(fvdi);
+			visible = driver->mouseCursorVisible();
+			if (driver->mouseCursor())
+				shape = driver->mouseCursor();
+		}
+	}
+#endif
+	if (visible) {
+		SDL_SetCursor(shape);
+		SDL_ShowCursor(SDL_ENABLE);
+	} else {
+		SDL_SetCursor(empty_cursor);
+		if (!empty_cursor || (bx_options.startup.grabMouseAllowed &&
+		    (SDL_IsVideoDriver("x11") || SDL_IsVideoDriver("Quartz"))))
+			SDL_ShowCursor(SDL_DISABLE);
+	}
+}
+
 SDL_bool HostScreen::hideMouse(SDL_bool hide)
 {
 	SDL_bool current = hiddenMouse;
-	if (hide) {
-		SDL_SetCursor(empty_cursor);
-#if defined(SDL_VIDEO_DRIVER_X11)
-		if (bx_options.startup.grabMouseAllowed && SDL_IsVideoDriver("x11"))
-			SDL_ShowCursor(SDL_DISABLE);
-#endif
-#if defined(SDL_VIDEO_DRIVER_QUARTZ)
-		if (bx_options.startup.grabMouseAllowed && SDL_IsVideoDriver("Quartz"))
-			SDL_ShowCursor(SDL_DISABLE);
-#endif
-		hiddenMouse = SDL_TRUE;
-	}
-	else if (!hide) {
-		SDL_SetCursor(aranym_cursor);
-#if defined(SDL_VIDEO_DRIVER_X11)
-		if (bx_options.startup.grabMouseAllowed && SDL_IsVideoDriver("x11"))
-			SDL_ShowCursor(SDL_ENABLE);
-#endif
-#if defined(SDL_VIDEO_DRIVER_QUARTZ)
-		if (bx_options.startup.grabMouseAllowed && SDL_IsVideoDriver("Quartz"))
-			SDL_ShowCursor(SDL_ENABLE);
-#endif
-		hiddenMouse = SDL_FALSE;
-	}
+	hiddenMouse = hide;
+	refreshMouseCursor();
 	return current;
 }
 
 SDL_bool HostScreen::grabMouse(SDL_bool grab)
 {
-	SDL_bool current = SDL_GetWindowGrab(window);
-	if (grab && !current) {
-		SDL_SetWindowGrab(window, SDL_TRUE);
-		grabbedMouse = SDL_TRUE;
+	const SDL_bool current = grabbedMouse;
+	SDL_SetWindowGrab(window, grab);
+	grabbedMouse = grab;
+	hideMouse(grab);
+	if (grab) {
 		canGrabMouseAgain = true;
-		hideMouse(SDL_TRUE);
-		if (bx_options.startup.grabMouseAllowed)
+		if (!current && bx_options.startup.grabMouseAllowed)
 			IgnoreMouseMotionEvent(true);
-	}
-	else if (!grab && current) {
-		SDL_SetWindowGrab(window, SDL_FALSE);
-		grabbedMouse = SDL_FALSE;
-		hideMouse(SDL_FALSE);
 	}
 
 	// show hint in the window caption
@@ -965,7 +967,6 @@ void HostScreen::grabTheMouse()
 	SDL_GetMouseState(&x, &y);
 	D(bug("grabTheMouse: mouse grab at window position [%d,%d]", x, y));
 #endif
-	hideMouse(SDL_TRUE);
 	grabMouse(SDL_TRUE);
 	RestoreAtariMouseCursorPosition();
 }
@@ -981,8 +982,7 @@ void HostScreen::releaseTheMouse()
 #endif
 
 	D(bug("Releasing the mouse grab"));
-	grabMouse(SDL_FALSE);	// release mouse
-	hideMouse(SDL_FALSE);	// show it
+	grabMouse(SDL_FALSE);
 	ARADATA *ara = getARADATA();
 	if (ara && ara->isAtariMouseDriver()) {
 		RememberAtariMouseCursorPosition();

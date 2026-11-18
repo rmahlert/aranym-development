@@ -275,12 +275,12 @@ int32 VdiDriver::dispatch(uint32 fncode)
 }
 
 VdiDriver::VdiDriver()
-	: surface(NULL)
+	: surface(NULL), Mouse()
 {
 	index_count = crossing_count = point_count = 0;
 	alloc_index = alloc_crossing = alloc_point = NULL;
 	cursor = NULL;
-	Mouse.storage.x = Mouse.storage.y = Mouse.storage.width = Mouse.storage.height = 0;
+	cursorVisible = true;
 	events = 0;
 }
 
@@ -304,7 +304,13 @@ VdiDriver::~VdiDriver()
 
 void VdiDriver::reset()
 {
+	cursorVisible = true;
+	Mouse.storage.width = Mouse.storage.height = 0;
 	host->video->setVidelRendering(true);
+	if (cursor) {
+		SDL_FreeCursor(cursor);
+		cursor = NULL;
+	}
 }
 
 /*--- Protected functions ---*/
@@ -404,10 +410,12 @@ void VdiDriver::setResolution(int32 width, int32 height, int32 depth)
 		{
 			if ((surface->getWidth() != width) || (surface->getHeight() != height))
 			{
+				Mouse.storage.width = Mouse.storage.height = 0;
 				surface->resize(width, height);
 			}
 		} else
 		{
+			Mouse.storage.width = Mouse.storage.height = 0;
 			delete surface;
 			surface = NULL;
 		}
@@ -677,40 +685,25 @@ int32 VdiDriver::drawMouse(memptr wk, int32 x, int32 y, uint32 mode,
 
 	D(bug("VdiDriver::drawMouse(): x,y = [%d,%d] mode=%d", x, y, mode));
 
-	switch (mode)
-	{
-	case 0:
-	case 1:
-		break;
-	case 2:
-#if 0
-		SDL_ShowCursor(SDL_DISABLE);
-#endif
-		break;
-	case 3:
-		SDL_ShowCursor(SDL_ENABLE);
-		break;
-	case 4:
-	case 5:
-		host->video->WarpMouse(x, y);
-		break;
-	case 6:
-	case 7:
-		break;
-	default:
-		{
-			if (cursor)
-				SDL_FreeCursor(cursor);
-
-			cursor = SDL_CreateCursor(
-				(Uint8 *)Atari2HostAddr(data),
-				(Uint8 *)Atari2HostAddr(mode),
-				16, 16, hot_x, hot_y
-			);
-
-			SDL_SetCursor(cursor);
+	if (mode <= 5) {
+		if ((mode == 4 || mode == 5) && host->video->GrabbedMouse() && host->video->HasInputFocus())
+			host->video->WarpMouse(x, y);
+		const bool visible = mode == 0 || mode == 3 || mode == 4;
+		if (visible != cursorVisible) {
+			cursorVisible = visible;
+			host->video->refreshMouseCursor();
 		}
-		break;
+	} else if (mode > 7) {
+		SDL_Cursor *replacement = SDL_CreateCursor(
+			(Uint8 *)Atari2HostAddr(data), (Uint8 *)Atari2HostAddr(mode),
+			16, 16, hot_x & 15, hot_y & 15);
+		if (replacement) {
+			SDL_Cursor *previous = cursor;
+			cursor = replacement;
+			host->video->refreshMouseCursor();
+			if (previous)
+				SDL_FreeCursor(previous);
+		}
 	}
 
 	return 1;

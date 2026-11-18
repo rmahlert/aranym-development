@@ -195,12 +195,15 @@ void SoftVdiDriver::restoreMouseBackground(void)
 {
 	int16 x = Mouse.storage.x;
 	int16 y = Mouse.storage.y;
+	if (!Mouse.storage.width || !Mouse.storage.height)
+		return;
 
 	for(uint16 i = 0; i < Mouse.storage.height; i++)
 		for(uint16 j = 0; j < Mouse.storage.width; j++)
 			hsPutPixel(x + j, y + i, Mouse.storage.background[i][j]);
 
-	surface->setDirtyRect(x,y,16,16);
+	surface->setDirtyRect(x, y, Mouse.storage.width, Mouse.storage.height);
+	Mouse.storage.width = Mouse.storage.height = 0;
 }
 
 void SoftVdiDriver::saveMouseBackground(int16 x, int16 y, int16 width,
@@ -247,6 +250,7 @@ int SoftVdiDriver::drawMouse(memptr wk, int32 x, int32 y, uint32 mode,
 		restoreMouseBackground();
 		return 1;
 	case 3:  // show
+		restoreMouseBackground();
 		break;
 	case 6:
 	case 7:
@@ -304,6 +308,9 @@ int SoftVdiDriver::drawMouse(memptr wk, int32 x, int32 y, uint32 mode,
 
 	D2(bug("fVDI: mouse x,y: %d,%d,%d,%d (%x,%x)", x, y, w, h,
 	   Mouse.storage.color.background, Mouse.storage.color.foreground));
+
+	if (w <= 0 || h <= 0)
+		return 1;
 
 	// draw the mouse
 	saveMouseBackground(x, y, w, h);

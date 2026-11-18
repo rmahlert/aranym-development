@@ -181,6 +181,7 @@ class HostScreen: public DirtyRects
 	bool CapslockState() { return capslockState; }
 	void CapslockState(bool state) { capslockState = state; }
 	SDL_bool GrabbedMouse() { return grabbedMouse; }
+	void refreshMouseCursor();
 	SDL_bool hideMouse(SDL_bool hide);
 	SDL_bool grabMouse(SDL_bool grab);
 	void grabTheMouse();

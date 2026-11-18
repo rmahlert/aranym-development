@@ -123,6 +123,8 @@ public:
 	virtual ~VdiDriver();
 
 	HostSurface *getSurface(void) { return surface; }
+	SDL_Cursor *mouseCursor() const { return cursor; }
+	bool mouseCursorVisible() const { return cursorVisible; }
 
 protected:
 	HostSurface *surface;
@@ -248,6 +250,7 @@ protected:
 
 private:
 	SDL_Cursor *cursor;
+	bool cursorVisible;
 
 	int events, new_event, mouse_x, mouse_y, buttons, wheel, vblank;
  

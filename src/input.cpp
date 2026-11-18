@@ -22,6 +22,7 @@
  */
 
 
+#include <algorithm>
 #include "sysdeps.h"
 #include "input.h"
 #include "aradata.h"		// for getAtariMouseXY
@@ -640,6 +641,7 @@ static int keysymToAtari(SDL_Keysym *keysym)
 static bool pendingQuit = false;
 static int but = 0;
 static bool mouseOut = false;
+static bool resumeMouseGrab = false;
 
 #ifdef SDL_GUI
 extern bool isGuiAvailable;	// from main.cpp
@@ -1236,8 +1238,13 @@ static void process_mouse_event(const SDL_Event &event)
 	}
 #endif /* SDL_GUI */
 
+	#if SDL_VERSION_ATLEAST(2, 0, 0)
+	if (event.motion.windowID != video->window_id)
+		return;
+#endif
 	if (!video->GrabbedMouse()) {
-		if ((event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP) && event.button.button == SDL_BUTTON_LEFT) {
+		if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT && video->HasInputFocus()) {
+			resumeMouseGrab = false;
 			D(bug("Left mouse click in our window => grab the mouse"));
 			video->RememberAtariMouseCursorPosition();
 			video->grabTheMouse();
@@ -1325,7 +1332,9 @@ static void process_mouse_event(const SDL_Event &event)
 
 #ifdef NFVDI_SUPPORT
 		if (fvdi != NULL) {
-			if (fvdi->dispatch(0x80008000 | (event.motion.x << 16) | (event.motion.y)) == 0)
+			const uint32 x = std::min(0x7fff, std::max(0, static_cast<int>(event.motion.x)));
+			const uint32 y = std::min(0x7fff, std::max(0, static_cast<int>(event.motion.y)));
+			if (fvdi->dispatch(0x80008000u | (x << 16) | y) == 0)
 				fvdi_events = true;
 		}
 
@@ -1463,6 +1472,9 @@ static void process_active_event(const SDL_Event &event)
 		return;
 	}
 	
+	if (event.window.windowID != video->window_id)
+		return;
+
 	bool app_focus = event.window.event == SDL_WINDOWEVENT_MINIMIZED || event.window.event == SDL_WINDOWEVENT_RESTORED || event.window.event == SDL_WINDOWEVENT_SHOWN || event.window.event == SDL_WINDOWEVENT_HIDDEN;
 	bool mouse_focus = event.window.event == SDL_WINDOWEVENT_ENTER || event.window.event == SDL_WINDOWEVENT_LEAVE;
 	bool input_focus = event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || event.window.event == SDL_WINDOWEVENT_FOCUS_LOST;
@@ -1487,48 +1499,34 @@ static void process_active_event(const SDL_Event &event)
 		D(bug("%d: ARAnyM window is being %s", ticks, gained ? "restored" : "minimized"));
 	}
 
-	if (input_focus) {
-		D(bug("%d: ARAnyM window is %s input focus", ticks, gained ? "gaining" : "losing"));
-		if (!gained)
-		{
-			getIKBD()->ReleaseShiftKeys();
+	if (input_focus && !gained) {
+		getIKBD()->ReleaseShiftKeys();
+		mouseOut = false;
+		if (but) {
+			but = 0;
+#ifdef NFVDI_SUPPORT
+			if (!fvdi || fvdi->dispatch(0xb0000000) != 0)
+#endif
+				getIKBD()->SendMouseMotion(0, 0, 0, false);
 		}
+		if (video->GrabbedMouse()) {
+			video->RememberAtariMouseCursorPosition();
+			resumeMouseGrab = true;
+			video->grabMouse(SDL_FALSE);
+		}
+		return;
 	}
 
-	// if it's mouse focus event
-	if (mouse_focus) {
-		D(bug("%d: Mouse pointer is %s ARAnyM window", ticks, gained ? "entering" : "leaving"));
-		bool allowMouseGrab = true;
+	if (!gained || (!input_focus && !mouse_focus) || video->GrabbedMouse() ||
+	    !video->HasInputFocus() || !video->HasMouseFocus() || !video->CanGrabMouseAgain())
+		return;
 #ifdef SDL_GUI
-		// Disable grab, if Setup GUI is open
-		// because else the mouse goes invisible if the window is reentered
-		allowMouseGrab = SDLGui_isClosed();
+	if (!SDLGui_isClosed())
+		return;
 #endif
-		if (allowMouseGrab) {
-			// if we can grab the mouse automatically
-			// and if the Atari mouse driver works
-			D(bug("Proceed only if AtariMouseDriver is working"));
-			if (getARADATA()->isAtariMouseDriver()) {
-				// if the mouse pointer is leaving our window
-				if (!gained) {
-					// allow grabbing it when it will be returning
-					D(bug("Host mouse is indeed leaving us"));
-					if (video->CanGrabMouseAgain()) {
-						// video->RememberAtariMouseCursorPosition();
-					}
-				}
-				// if the mouse pointer is entering our window
-				else {
-					D(bug("Host mouse is returning!"));
-					// if grabbing the mouse is allowed
-					if (video->CanGrabMouseAgain() && (video->HasInputFocus() || bx_options.startup.grabMouseAllowed)) {
-						D(bug("canGrabMouseAgain allows autograb"));
-						// then grab it
-						video->grabTheMouse();
-					}
-				}
-			}
-		}
+	if (resumeMouseGrab || (mouse_focus && getARADATA()->isAtariMouseDriver())) {
+		resumeMouseGrab = false;
+		video->grabTheMouse();
 	}
 }
 
