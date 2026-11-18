@@ -351,6 +351,13 @@ STATIC_INLINE int get_fp_value(uae_u32 opcode, uae_u16 extra)
 }
 
 
+STATIC_INLINE void write_extended_exponent(uae_u32 address)
+{
+	mov_l_rm(S2, (uintptr) temp_fp + 8);
+	shll_l_ri(S2, 16);
+	writelong_clobber(address, S2, S3);
+}
+
 /* return of -1 means failure, >=0 means OK */
 STATIC_INLINE int put_fp_value(int val, uae_u32 opcode, uae_u16 extra)
 {
@@ -543,8 +550,7 @@ STATIC_INLINE int put_fp_value(int val, uae_u32 opcode, uae_u16 extra)
 	case 2: /* extended precision */
 		fmov_ext_mr((uintptr) temp_fp, val);
 		delay;
-		mov_w_rm(S2, (uintptr) temp_fp + 8);
-		writeword_clobber(ad, S2, S3);
+		write_extended_exponent(ad);
 		add_l_ri(ad, 4);
 		mov_l_rm(S2, (uintptr) temp_fp + 4);
 		writelong_clobber(ad, S2, S3);
@@ -1228,8 +1234,7 @@ void comp_fpp_opp(uae_u32 opcode, uae_u16 extra)
 							mov_l_rm(S2, (uintptr) temp_fp + 4);
 							writelong_clobber(ad, S2, S3);
 							sub_l_ri(ad, 4);
-							mov_w_rm(S2, (uintptr) temp_fp + 8);
-							writeword_clobber(ad, S2, S3);
+							write_extended_exponent(ad);
 						}
 						list <<= 1;
 					}
@@ -1241,8 +1246,7 @@ void comp_fpp_opp(uae_u32 opcode, uae_u16 extra)
 						{
 							fmov_ext_mr((uintptr) temp_fp, reg);
 							delay;
-							mov_w_rm(S2, (uintptr) temp_fp + 8);
-							writeword_clobber(ad, S2, S3);
+							write_extended_exponent(ad);
 							add_l_ri(ad, 4);
 							mov_l_rm(S2, (uintptr) temp_fp + 4);
 							writelong_clobber(ad, S2, S3);

@@ -965,9 +965,7 @@ static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
     }
     return safe;
 }
-static void REGPARAM2 aranym_fpu_native_commit(uae_u32 extra) {
-    if((extra>>13)==3)
-        memcpy(&fpu.result,fpu_register_address((extra>>7)&7),10);
+static uae_u32 aranym_fpu_result_condition() {
     const auto *bytes=reinterpret_cast<const uae_u8*>(&fpu.result);
     uae_u16 sign_exponent;uae_u32 high,low;
     memcpy(&sign_exponent,bytes+8,sizeof sign_exponent);
@@ -976,8 +974,12 @@ static void REGPARAM2 aranym_fpu_native_commit(uae_u32 extra) {
     const bool zero=exponent==0 && high==0 && low==0;
     const bool special=exponent==0x7fff;
     const bool nan=special && ((high&0x7fffffffu)||low);
-    fpu.fpsr.condition_codes=((sign_exponent&0x8000)?0x08000000u:0)|
+    return ((sign_exponent&0x8000)?0x08000000u:0)|
         (zero?0x04000000u:0)|(special&&!nan?0x02000000u:0)|(nan?0x01000000u:0);
+}
+static void REGPARAM2 aranym_fpu_native_commit(uae_u32 extra) {
+    const bool store=(extra>>13)==3;
+    if(!store)fpu.fpsr.condition_codes=aranym_fpu_result_condition();
     const unsigned sw=aranym_fpu_native_status;
     uae_u32 status=0;
     if(sw&1)status|=0x2000; // operand error; special inputs already deoptimize
@@ -987,10 +989,8 @@ static void REGPARAM2 aranym_fpu_native_commit(uae_u32 extra) {
     if(sw&32)status|=0x0200;
     // FCMP publishes a relation, without the rounding exception of the
     // native subtraction used to compute it for finite admitted operands.
-    if((extra>>13)!=3 && (extra&0x7f)==0x38)status=0;
-    // An exact extended store preserves the preceding arithmetic status.
-    // The paired SoftFloat frontend retains INEX2 across this transfer.
-    if((extra>>13)!=3)fpu.fpsr.exception_status=status;
+    if(!store && (extra&0x7f)==0x38)status=0;
+    fpu.fpsr.exception_status=status;
     fpu.fpsr.accrued_exception=modern040::accrued_exceptions(fpu.fpsr.accrued_exception, status);
     fpu.instruction_address=regs.fault_pc;
     aranym_modern_fpu_native_completed();

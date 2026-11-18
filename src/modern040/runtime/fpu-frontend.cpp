@@ -267,9 +267,10 @@ bool execute_modern_fpu(uae_u16 opcode) {
         if(!sizes[format])return false;
         FpuStore converted;if(!softfloat_store(format,regs.fp[source],regs.fpcr,converted))return false;
         const auto status=converted.status&0x0000ff00u;
+        const auto store_fpsr=(regs.fpsr&0x0fff0000u)|status|accrued_exceptions(regs.fpsr, status);
         if(const auto vector=arithmetic_vector(status)) {
             regs.fpiar=regs.instruction_pc;regs.fpu_state=1;
-            regs.fpsr=(regs.fpsr&0x00ff0000u)|condition(regs.fp[source])|status|accrued_exceptions(regs.fpsr, status);
+            regs.fpsr=store_fpsr;
             Exception(vector);return true;
         }
         if(mode==0) {
@@ -286,7 +287,7 @@ bool execute_modern_fpu(uae_u16 opcode) {
             else write(address,sizes[format],converted.words[0]);
         }
         regs.fpiar=regs.instruction_pc;regs.fpu_state=1;
-        regs.fpsr=(regs.fpsr&0x00ff0000u)|condition(regs.fp[source])|status|accrued_exceptions(regs.fpsr, status);
+        regs.fpsr=store_fpsr;
         return true;
     }
     if(opclass==4||opclass==5) {
