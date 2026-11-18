@@ -110,7 +110,12 @@ extern  SDL_mutex *spcflags_lock;
 #undef HAVE_HARDWARE_LOCKS
 extern  SDL_mutex *spcflags_lock;
 extern  SDL_cond *stop_condition;
-bool cpu_stop_has_pending_work();
+#ifdef __cplusplus
+extern "C"
+#else
+#include <stdbool.h>
+#endif
+bool cpu_stop_has_pending_work(void);
 
 #define SPCFLAGS_SET(m) do { 				\
 	SDL_LockMutex(spcflags_lock);		\
