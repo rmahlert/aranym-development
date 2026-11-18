@@ -22,7 +22,9 @@
 #define VER_MAJOR	1
 #define VER_MINOR	2
 #define VER_MICRO	0
+#ifndef BUILD_LABEL
 #define BUILD_LABEL	" unofficial-dsp-midi-preview2"
+#endif
 #define RELEASE_DATE "2026/11/17"
 
 

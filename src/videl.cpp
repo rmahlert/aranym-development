@@ -52,8 +52,7 @@
 
 VIDEL::VIDEL(memptr addr, uint32 size)
 	: BASE_IO(addr, size), surface(NULL),
-	prevVidelWidth(-1), prevVidelHeight(-1), prevVidelBpp(-1),
-	stPalette(false)
+	prevVidelWidth(-1), prevVidelHeight(-1), prevVidelBpp(-1)
 {
 	reset();
 }
@@ -67,6 +66,7 @@ VIDEL::~VIDEL(void)
 
 void VIDEL::reset(void)
 {
+	stShifter = false;
 	aspect_x = aspect_y = 1;
 	updatePalette = true;
 	forceRefresh();
@@ -93,23 +93,13 @@ void VIDEL::handleWrite(uint32 addr, uint8 value)
 		return;
 	}
 
-	if ((addr & ~1) == HW+0x60) {
-		D(bug("VIDEL st_shift: %06x = %d ($%02x)", addr, value, value));
-		// writing to st_shift changed scn_width and vid_mode
-		// BASE_IO::handleWrite(HW+0x10, 0x0028);
-		// BASE_IO::handleWrite(HW+0xc2, 0x0008);
-	} else if (((addr & ~1) == HW+0x64) || ((addr & ~1) == HW+0x0e) || ((addr & ~1) == HW+0x10)) {
+	if (addr == HW + 0x60) {
+		setStShiftMode(value & 3);
+	} else if ((addr & ~1) == HW + 0x66) {
+		stShifter = false;
+		updatePalette = true;
+	} else if ((addr & ~1) == HW + 0x64 || (addr & ~1) == HW + 0x0e || (addr & ~1) == HW + 0x10) {
 		forceRefresh();
-	} else if ((addr & ~1) == HW+0x66) {
-		D(bug("VIDEL f_shift: %06x = %d ($%02x)", addr, value, value));
-		// IMPORTANT:
-		// set st_shift to 0, so we can tell the screen-depth if f_shift==0.
-		// Writing 0 to f_shift enables 4 plane Falcon mode but
-		// doesn't set st_shift. st_shift!=0 (!=4planes) is impossible
-		// with Falcon palette so we set st_shift to 0 manually.
-		if (handleReadW(HW+0x66) == 0) {
-			BASE_IO::handleWrite(HW+0x60, 0);
-		}
 	}
 
 	if ((addr & ~1) == HW+0xc2) {
@@ -119,27 +109,17 @@ void VIDEL::handleWrite(uint32 addr, uint8 value)
 
 /*--- Private functions ---*/
 
-bool VIDEL::useStPalette(void)
+void VIDEL::setStShiftMode(uint8 mode)
 {
-	bool useStPal = false;
+	static const uint8 vgaMode[4] = {5, 9, 8, 0};
+	static const uint8 rgbMode[4] = {0, 4, 6, 0};
+	const uint8 videoMode = bx_options.video.monitor == 1 ? rgbMode[mode] : vgaMode[mode];
 
-	int st_shift = handleReadW(HW + 0x60);
-	if (st_shift == 0) {
-		// bpp == 4
-		int hreg = handleReadW(HW + 0x82); // Too lame!
-		// Better way how to make out ST LOW mode wanted
-		if (hreg == 0x10 || hreg == 0x17 || hreg == 0x3e) {
-			useStPal = true;
-		}
-	} else if (st_shift == 0x100) {
-		// bpp == 2
-		useStPal = true;
-	} else {
-		// bpp == 1	// if (st_shift == 0x200)
-		useStPal = true;
-	}
-
-	return useStPal;
+	stShifter = true;
+	updatePalette = true;
+	BASE_IO::handleWrite(HW + 0x60, mode);
+	BASE_IO::handleWriteW(HW + 0x10, mode == 2 ? 40 : 80);
+	BASE_IO::handleWriteW(HW + 0xc2, videoMode);
 }
 
 void VIDEL::updateAspect(void)
@@ -228,32 +208,16 @@ int VIDEL::getHeight(void)
 
 int VIDEL::getBpp(void)
 {
-	int f_shift = handleReadW(HW + 0x66);
-	int st_shift = handleRead(HW + 0x60);
-	/* to get bpp, we must examine f_shift and st_shift.
-	 * f_shift is valid if any of bits no. 10, 8 or 4
-	 * is set. Priority in f_shift is: 10 ">" 8 ">" 4, i.e.
-	 * if bit 10 set then bit 8 and bit 4 don't care...
-	 * If all these bits are 0 get display depth from st_shift
-	 * (as for ST and STE)
-	 */
-	int bits_per_pixel = 1;
-	if (f_shift & 0x400)		/* 2 colors */
-		bits_per_pixel = 1;
-	else if (f_shift & 0x100)	/* hicolor */
-		bits_per_pixel = 16;
-	else if (f_shift & 0x010)	/* 8 bitplanes */
-		bits_per_pixel = 8;
-	else if (st_shift == 0)
-		bits_per_pixel = 4;
-	else if (st_shift == 0x01)
-		bits_per_pixel = 2;
-	else /* if (st_shift == 0x02) */
-		bits_per_pixel = 1;
+	const int falcon = handleReadW(HW + 0x66);
+	if (falcon & 0x0400) return 1;
+	if (falcon & 0x0100) return 16;
+	if (falcon & 0x0010) return 8;
+	if (!stShifter) return 4;
 
-	// D(bug("Videl works in %d bpp, f_shift=%04x, st_shift=%d", bits_per_pixel, f_shift, st_shift));
-
-	return bits_per_pixel;
+	const int st = handleRead(HW + 0x60);
+	if (st == 1) return 2;
+	if (st == 2) return 1;
+	return 4;
 }
 
 HostSurface *VIDEL::getSurface(void)
@@ -283,13 +247,8 @@ HostSurface *VIDEL::getSurface(void)
 		surface->resize(width,height);
 	}
 
-	if (bpp == 8) {
-		const bool useSt = useStPalette();
-		if (modeChanged || stPalette != useSt)
-			updatePalette = true;
-		stPalette = useSt;
-	}
 	if (modeChanged) {
+		updatePalette = true;
 		forceRefresh();
 		host->video->forceRefreshScreen();
 	}
@@ -315,11 +274,14 @@ static Uint8 steColorComponent(unsigned component)
 void VIDEL::refreshPalette(void)
 {
 	SDL_Color palette[256];
-	int i, c, numColors = stPalette ? 16 : 256;
+	const int falcon = handleReadW(HW + 0x66);
+	const bool useSt = stShifter && !(falcon & 0x0510);
+	const int numColors = 1 << prevVidelBpp;
+	int i, c;
 
-	if (numColors == 16) {
+	if (useSt) {
 		/* STe palette registers, 4 bits/component */
-		for (i=0; i<16; i++) {
+		for (i=0; i<numColors; i++) {
 			int color = STE_COLORS(i);
 
 			palette[i].r = steColorComponent(color >> 8);
@@ -331,8 +293,9 @@ void VIDEL::refreshPalette(void)
 		}
 	} else {
 		/* Falcon palette registers, 6 bits/component */
-		for (i=0; i<256; i++) {
-			int offset = i<<2;
+		const int first = prevVidelBpp == 4 ? (falcon & 15) * 16 : 0;
+		for (i=0; i<numColors; i++) {
+			int offset = (first + i) << 2;
 
 			c = F_COLORS(offset) & 0xfc;
 			c |= (c>>6) & 3;

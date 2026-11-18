@@ -32,10 +32,10 @@ class VIDEL : public BASE_IO
 	private:
 		HostSurface *surface;
 		int prevVidelWidth, prevVidelHeight, prevVidelBpp;
-		bool updatePalette, stPalette;
+		bool updatePalette, stShifter;
 		std::vector<Uint16> previousFrame;
 
-		bool useStPalette(void);
+		void setStShiftMode(uint8 mode);
 		Uint32 getVramAddress(void);
 		int getWidth(void);
 		int getHeight(void);
