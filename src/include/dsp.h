@@ -14,7 +14,11 @@ public:
 	~DSP();
 	virtual void reset(void);
 	virtual uint8 handleRead(memptr address);
+	virtual uint16 handleReadW(memptr address);
+	virtual uint32 handleReadL(memptr address);
 	virtual void handleWrite(memptr address, uint8 value);
+	virtual void handleWriteW(memptr address, uint16 value);
+	virtual void handleWriteL(memptr address, uint32 value);
 	void exec_insts(int count);
 	void service(uint64_t now_ns);
 	uint64_t next_deadline_ns() const;

@@ -11,6 +11,7 @@ std::uint64_t peripheral_clock_event_time_ns();
 std::uint64_t peripheral_clock_last_event_ns();
 void peripheral_clock_reset();
 void peripheral_clock_service();
+void peripheral_clock_reschedule();
 void peripheral_clock_set_source(PeripheralClockSource source, void *opaque);
 void peripheral_clock_start();
 void peripheral_clock_shutdown();

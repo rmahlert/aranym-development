@@ -75,9 +75,9 @@ def main():
         version="1.2.0~unofficial.fpujit.test2"
         package_basename="aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-"+arch
     if args.dsp_midi_preview:
-        label="Unofficial DSP/MIDI Preview 1"
-        version="1.2.0~unofficial.dspmidi.preview1"
-        package_basename="aranym-1.2.0-unofficial-dsp-midi-preview1-rpi-"+arch
+        label="Unofficial DSP/MIDI Preview 2"
+        version="1.2.0~unofficial.dspmidi.preview2"
+        package_basename="aranym-1.2.0-unofficial-dsp-midi-preview2-rpi-"+arch
     fpu_available=args.fpu_jit_test or arm_fpu_available
     fpu_description="guarded native FPU JIT available; opt-in" if fpu_available else "FPU JIT disabled"
     commit = run("git", "-C", str(ROOT), "rev-parse", "HEAD")

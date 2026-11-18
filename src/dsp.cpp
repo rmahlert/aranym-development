@@ -150,11 +150,59 @@ uint8 DSP::handleRead(memptr address)
 	return 0xff;
 #endif
 }
+uint16 DSP::handleReadW(memptr address)
+{
+	service(peripheral_clock_event_time_ns());
+#if DSP_EMULATION
+	const int offset = static_cast<int>(address - getHWoffset());
+	const uint16 high = dsp_core_read_host(offset);
+	return (high << 8) | dsp_core_read_host(offset + 1);
+#else
+	(void)address;
+	return 0xffff;
+#endif
+}
+uint32 DSP::handleReadL(memptr address)
+{
+	service(peripheral_clock_event_time_ns());
+#if DSP_EMULATION
+	const int offset = static_cast<int>(address - getHWoffset());
+	uint32 value = 0;
+	for (int byte = 0; byte < 4; ++byte)
+		value = (value << 8) | dsp_core_read_host(offset + byte);
+	return value;
+#else
+	(void)address;
+	return 0xffffffffu;
+#endif
+}
 void DSP::handleWrite(memptr address, uint8 value)
 {
 	service(peripheral_clock_event_time_ns());
 #if DSP_EMULATION
 	dsp_core_write_host(static_cast<int>(address - getHWoffset()), value);
+#else
+	(void)address; (void)value;
+#endif
+}
+void DSP::handleWriteW(memptr address, uint16 value)
+{
+	service(peripheral_clock_event_time_ns());
+#if DSP_EMULATION
+	const int offset = static_cast<int>(address - getHWoffset());
+	dsp_core_write_host(offset, value >> 8);
+	dsp_core_write_host(offset + 1, value);
+#else
+	(void)address; (void)value;
+#endif
+}
+void DSP::handleWriteL(memptr address, uint32 value)
+{
+	service(peripheral_clock_event_time_ns());
+#if DSP_EMULATION
+	const int offset = static_cast<int>(address - getHWoffset());
+	for (int byte = 0; byte < 4; ++byte)
+		dsp_core_write_host(offset + byte, value >> (24 - byte * 8));
 #else
 	(void)address; (void)value;
 #endif

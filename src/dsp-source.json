@@ -11,7 +11,7 @@
     "src/dsp_core.c": {
       "upstream_path": "src/falcon/dsp_core.c",
       "upstream_sha256": "12097d28d38d33acc2b0f00e68993435b20bbea3b276a912b85f5cc26dfe8865",
-      "adapted_sha256": "091f8faf857dcb2f794529fcf46ce5f4a3e6646f94acf4077f02158453df8345"
+      "adapted_sha256": "14884952178dd8ff544632193d00b724fbb93db78767f2fd2019c9d882cb07f1"
     },
     "src/dsp_disasm.c": {
       "upstream_path": "src/falcon/dsp_disasm.c",
@@ -45,8 +45,8 @@
     }
   },
   "adapter_files": {
-    "src/dsp.cpp": "6f857d7c59a1ba7b2b29f990b3fec0c822df5d91b8aafcedf1ab524244497e37",
-    "src/include/dsp.h": "765862f9e89d99d1af5b39e1dda8cee770baa7609d71ef414c54e0338e5c23a8",
+    "src/dsp.cpp": "6c9c737d9ea688b9f68b48d9826cc2448de218d00633ba0c98e9fb47b0240ab4",
+    "src/include/dsp.h": "a75796866d965f84cba470b3dff5dd678a52e78f2c7fa6ace5d88c5c5fa87ff8",
     "src/include/dsp_host.h": "7a30750749bedc9d2deec53565e806960d7aff1c8d84a7b9d2601bc7731d70ec",
     "src/include/audio_dma.h": "bc8e7f728a23c51d6443c9a53132edae475249f095ab361d2021d3a780e3b240",
     "src/include/audio_crossbar.h": "09a91de7877596c086bf76834b8140a780b7ba5ef1adb489a8404fe5dd8b4f3f"

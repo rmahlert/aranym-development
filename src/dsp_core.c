@@ -922,13 +922,15 @@ static void dsp_core_hostport_update_trdy(void)
 static void dsp_core_hostport_update_hreq(void)
 {
 	/* Set HREQ bit in hostport and trigger host interrupt? */
+	const uint8_t previous = dsp_core.hostport[CPU_HOST_ISR] & (1u << CPU_HOST_ISR_HREQ);
 	if ((dsp_core.hostport[CPU_HOST_ICR] & dsp_core.hostport[CPU_HOST_ISR]) & 0x3) {
 		dsp_core.hostport[CPU_HOST_ISR] |= 1<<CPU_HOST_ISR_HREQ;
-		dsp_host_interrupt(1);
 	} else {
 		dsp_core.hostport[CPU_HOST_ISR] &= 0x7f;
-		dsp_host_interrupt(0);
 	}
+	const uint8_t current = dsp_core.hostport[CPU_HOST_ISR] & (1u << CPU_HOST_ISR_HREQ);
+	if (current != previous)
+		dsp_host_interrupt(current != 0);
 }
 
 

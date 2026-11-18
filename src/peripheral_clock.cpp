@@ -36,7 +36,9 @@ bool cleanup_registered = false;
 
 void schedule_wakeup(std::uint64_t deadline, std::uint64_t now)
 {
-    if (schedule_valid && deadline == scheduled_guest_deadline && deadline > now)
+    if (schedule_valid && scheduled_guest_deadline > now &&
+        (scheduled_guest_deadline == deadline ||
+         (deadline != never && scheduled_guest_deadline <= deadline)))
         return;
     scheduled_guest_deadline = deadline;
     schedule_valid = true;
@@ -122,10 +124,10 @@ namespace {
 std::uint64_t next_device_deadline()
 {
     auto deadline = never;
-    if (getMFP()) deadline = std::min(deadline, getMFP()->next_deadline_ns());
-    if (getMIDI()) deadline = std::min(deadline, getMIDI()->next_deadline_ns());
-    if (getDSP()) deadline = std::min(deadline, getDSP()->next_deadline_ns());
-    if (getCROSSBAR()) deadline = std::min(deadline, getCROSSBAR()->next_deadline_ns());
+    if (auto *device = getMFP()) deadline = std::min(deadline, device->next_deadline_ns());
+    if (auto *device = getMIDI()) deadline = std::min(deadline, device->next_deadline_ns());
+    if (auto *device = getDSP()) deadline = std::min(deadline, device->next_deadline_ns());
+    if (auto *device = getCROSSBAR()) deadline = std::min(deadline, device->next_deadline_ns());
     return deadline;
 }
 }
@@ -147,16 +149,23 @@ void peripheral_clock_service()
         if (service_time >= target)
             break;
     }
-    auto deadline = never;
-    if (getMFP()) deadline = std::min(deadline, getMFP()->next_deadline_ns());
-    if (getMIDI()) deadline = std::min(deadline, getMIDI()->next_deadline_ns());
-    if (getDSP()) deadline = std::min(deadline, getDSP()->next_deadline_ns());
-    if (getCROSSBAR()) {
-        const auto batch = target + std::min<std::uint64_t>(500000, never - target);
-        deadline = std::min(deadline, std::max(batch, getCROSSBAR()->next_deadline_ns()));
-    }
     servicing = false;
-    schedule_wakeup(deadline, target);
+    peripheral_clock_reschedule();
+}
+
+void peripheral_clock_reschedule()
+{
+    if (servicing) return;
+    const auto now = last_service_time;
+    auto deadline = never;
+    if (auto *device = getMFP()) deadline = std::min(deadline, device->next_deadline_ns());
+    if (auto *device = getMIDI()) deadline = std::min(deadline, device->next_deadline_ns());
+    if (auto *device = getDSP()) deadline = std::min(deadline, device->next_deadline_ns());
+    if (auto *device = getCROSSBAR()) {
+        const auto batch = now + std::min<std::uint64_t>(500000, never - now);
+        deadline = std::min(deadline, std::max(batch, device->next_deadline_ns()));
+    }
+    schedule_wakeup(deadline, now);
 }
 
 void peripheral_clock_start()
