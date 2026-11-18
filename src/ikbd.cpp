@@ -264,9 +264,7 @@ void IKBD::WriteData(uint8 value)
 					break;
 				case 0x80:
 					if (outbuffer[1]==0x01) {
-						// Resetting the keyboard firmware preserves the host ACIA setup.
 						resetKeyboard();
-						outwrite = 0;
 						send(0xf1); // if all's well code 0xF1 is returned, else the break codes of all keys making contact 
 					}
 					break;

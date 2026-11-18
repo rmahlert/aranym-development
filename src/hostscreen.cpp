@@ -902,15 +902,17 @@ void HostScreen::refreshMouseCursor()
 		}
 	}
 #endif
-	if (visible) {
-		SDL_SetCursor(shape);
+	SDL_Cursor *selected = visible ? shape : empty_cursor;
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+	if (selected == SDL_GetCursor())
+		selected = NULL;
+#endif
+	SDL_SetCursor(selected);
+	if (visible)
 		SDL_ShowCursor(SDL_ENABLE);
-	} else {
-		SDL_SetCursor(empty_cursor);
-		if (!empty_cursor || (bx_options.startup.grabMouseAllowed &&
-		    (SDL_IsVideoDriver("x11") || SDL_IsVideoDriver("Quartz"))))
-			SDL_ShowCursor(SDL_DISABLE);
-	}
+	else if (!empty_cursor || (bx_options.startup.grabMouseAllowed &&
+	         (SDL_IsVideoDriver("x11") || SDL_IsVideoDriver("Quartz"))))
+		SDL_ShowCursor(SDL_DISABLE);
 }
 
 SDL_bool HostScreen::hideMouse(SDL_bool hide)

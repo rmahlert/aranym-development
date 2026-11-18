@@ -1454,6 +1454,8 @@ static void process_active_event(const SDL_Event &event)
 		 event.window.event == SDL_WINDOWEVENT_RESTORED))
 	{
 		video->forceRefreshScreen();
+		if (video->HasMouseFocus() && video->HasInputFocus())
+			video->refreshMouseCursor();
 	}
 
 	if (event.window.event == SDL_WINDOWEVENT_NONE ||
@@ -1516,8 +1518,13 @@ static void process_active_event(const SDL_Event &event)
 		return;
 	}
 
-	if (!gained || (!input_focus && !mouse_focus) || video->GrabbedMouse() ||
-	    !video->HasInputFocus() || !video->HasMouseFocus() || !video->CanGrabMouseAgain())
+	if (!gained || (!input_focus && !mouse_focus) || !video->HasInputFocus() || !video->HasMouseFocus())
+		return;
+	if (video->GrabbedMouse()) {
+		video->refreshMouseCursor();
+		return;
+	}
+	if (!video->CanGrabMouseAgain())
 		return;
 #ifdef SDL_GUI
 	if (!SDLGui_isClosed())
