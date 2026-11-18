@@ -871,7 +871,7 @@ PRIVATE inline fpu_register FFPU fp_doround(fpu_register const & src)
 		result = fp_round_to_minus_infinity(src);
 		break;
 	case FPCR_ROUND_NEAR:
-		result = fp_round_to_nearest(src);
+		result = fp_round_to_even(src);
 		break;
 	case FPCR_ROUND_PINF:
 		result = fp_round_to_plus_infinity(src);

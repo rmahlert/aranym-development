@@ -59,6 +59,7 @@
 #define __USE_ISOC99 1 // for glibc 2.2.X and newer
 #define __USE_ISOC9X 1 // for glibc 2.1.X
 #include <math.h>
+#include <cmath>
 #else
 #include <cmath>
 using namespace std;
@@ -1106,8 +1107,8 @@ PRIVATE inline fpu_extended fp_do_atanh(fpu_extended x)
 #define DEFINE_ROUND_FUNC(rounding_mode_str, rounding_mode)						\
 PRIVATE inline fpu_extended fp_do_round_to_ ## rounding_mode_str(fpu_extended __x)	\
 { \
-	register long double __value; \
-	register int __ignore; \
+	long double __value; \
+	int __ignore; \
 	volatile unsigned short __cw; \
 	volatile unsigned short __cwtmp; \
 	__asm __volatile ("fnstcw %3\n\t" \
@@ -1162,21 +1163,8 @@ DEFINE_ROUND_FUNC(plus_infinity, CW_RC_UP)
 DEFINE_ROUND_FUNC(zero, CW_RC_ZERO)
 #endif
 
-#undef fp_round_to_nearest
-#ifdef HAVE_ROUNDL
-#define fp_round_to_nearest roundl
-#else
-#define fp_round_to_nearest fp_do_round_to_nearest
-DEFINE_ROUND_FUNC(nearest, CW_RC_NEAR)
-#endif
-
-#undef fp_round_to_even
-#ifdef HAVE_RINTL
-#define fp_round_to_even rintl
-#else
 #define fp_round_to_even fp_do_round_to_even
 DEFINE_ROUND_FUNC(even, CW_RC_NEAR)
-#endif
 
 #undef fp_ceil
 #define fp_ceil fp_do_round_to_plus_infinity
@@ -1196,15 +1184,19 @@ DEFINE_ROUND_FUNC(even, CW_RC_NEAR)
 #endif
 
 #ifndef fp_round_to_zero
-#define fp_round_to_zero(x) ((int)(x))
-#endif
-
-#ifndef fp_round_to_nearest
-#define fp_round_to_nearest(x) ((int)((x) + 0.5))
+#define fp_round_to_zero(x) std::trunc(x)
 #endif
 
 #ifndef fp_round_to_even
-#define fp_round_to_even fp_round_to_nearest
+PRIVATE inline fpu_extended fp_round_to_even(fpu_extended value)
+{
+	fpu_extended integral;
+	const fpu_extended fraction = std::modf(value, &integral);
+	const fpu_extended distance = std::fabs(fraction);
+	if (distance > 0.5 || (distance == 0.5 && std::fmod(integral, 2) != 0))
+		return fraction < 0 ? integral - 1 : integral + 1;
+	return integral;
+}
 #endif
 
 #endif /* FPU_MATHLIB_H */
