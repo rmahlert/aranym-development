@@ -77,7 +77,6 @@ def main():
         shutil.copy2(ROOT / "data" / name, data / name)
     shutil.copy2(ROOT / "doc/config", data / "config.example")
     shutil.copy2(ROOT / "COPYING", doc / "copyright")
-    shutil.copy2(ROOT / "UNOFFICIAL.md", doc / "UNOFFICIAL.md")
     firmware = json.loads((ROOT / "data/emutos-macos.json").read_text())
     image = ROOT / "data/emutos-macos-reference.img"
     if sha(image) != firmware["image_sha256"] or sha(args.emutos_source_archive) != firmware["source_archive_sha256"]:

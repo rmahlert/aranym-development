@@ -197,7 +197,7 @@ aranym_LDADD = libaranym.a
 if MODERN040_CORE
 # Link the independently built/pinned C-ABI core through the ordinary build.
 # Do not mutate libaranym.a with externally injected objects.
-aranym_SOURCES += ../tests/modern-jit/modern-fallback.cpp
+aranym_SOURCES += modern040/aranym-adapter.cpp
 aranym_LDADD += $(MODERN040_LIBRARY)
 endif
 

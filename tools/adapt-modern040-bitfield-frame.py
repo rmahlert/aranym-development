@@ -24,7 +24,8 @@ def correct(text):
         correction='Only a separately captured unissued logical IU write supplies WB3A. WB3S/data come from that exact CPU request; WB1 retains explicit failed physical provenance. No WB2 or physical address is invented for the unissued write.',
         scope='Pinned bitfield write-only tail and at most one unissued IU write. Not a generic queue, ATC/MMU, unknown/partial recovery or default/frontend admission.')
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--input',type=Path,default=ROOT/'src/modern040/integer.cpp');p.add_argument('--output',type=Path);p.add_argument('--metadata-output',type=Path,default=ROOT/'src/modern040/PHYSICAL-BITFIELD-FRAME-CORRECTION.json');p.add_argument('--apply',action='store_true');a=p.parse_args();text,record=correct(a.input.read_text())
-    if a.apply:(a.output or a.input).write_text(text);a.metadata_output.write_text(json.dumps(record,indent=2)+'\n')
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--input',type=Path,default=ROOT/'src/modern040/integer.cpp');p.add_argument('--output',type=Path);p.add_argument('--metadata-output',type=Path);p.add_argument('--apply',action='store_true');a=p.parse_args();text,record=correct(a.input.read_text())
+    if a.apply:(a.output or a.input).write_text(text)
+    if a.apply and a.metadata_output:a.metadata_output.write_text(json.dumps(record,indent=2)+'\n')
     print(json.dumps(record,indent=2))
 if __name__=='__main__':main()
