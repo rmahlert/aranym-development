@@ -5762,22 +5762,23 @@ void build_comp(void)
 		 * instructions either belong to the imported core or can change the
 		 * translation/trace execution mode.  They are rare; all other physical
 		 * instructions use the original one-call interpreter hot path. */
-		switch (table68k[cft_map(opcode)].mnemo) {
+		const unsigned runtime_opcode = cft_map(opcode);
+		switch (table68k[opcode].mnemo) {
 #ifdef MODERN040_FPU_JIT
         case i_FPP:case i_FDBcc:case i_FScc:case i_FTRAPcc:case i_FBcc:
         case i_FSAVE:case i_FRESTORE:
-            aranym_modern_dispatch[opcode]=4;
+            aranym_modern_dispatch[runtime_opcode]=4;
             break;
 #endif
         case i_MMUOP:
-            aranym_modern_dispatch[opcode]=1;
+            aranym_modern_dispatch[runtime_opcode]=1;
 			break;
 		case i_EMULOP_RETURN:
 		case i_EMULOP:
 			/* Supervisor physical EmulOps can use ARAnyM's original fast
 			 * service body. User-mode EmulOps retain the modern path because
 			 * it owns the qualified 68040 privilege-frame contract. */
-			aranym_modern_dispatch[opcode]=3;
+			aranym_modern_dispatch[runtime_opcode]=3;
 			break;
 		case i_MOVE2C:
 		case i_ORSR:
@@ -5788,10 +5789,10 @@ void build_comp(void)
 		case i_RTE:
 			/* These retain ARAnyM's established host/frame semantics.  A value
 			 * of two requests the classic handler plus one boundary check. */
-			aranym_modern_dispatch[opcode]=2;
+			aranym_modern_dispatch[runtime_opcode]=2;
 			break;
 		default:
-			aranym_modern_dispatch[opcode]=0;
+			aranym_modern_dispatch[runtime_opcode]=0;
 			break;
 		}
 #endif
