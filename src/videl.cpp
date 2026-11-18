@@ -315,6 +315,12 @@ HostSurface *VIDEL::getSurface(void)
 	return surface;
 }
 
+static Uint8 steColorComponent(unsigned component)
+{
+	const unsigned intensity = ((component & 7) << 1) | ((component >> 3) & 1);
+	return (intensity << 4) | intensity;
+}
+
 void VIDEL::refreshPalette(void)
 {
 	SDL_Color palette[256];
@@ -325,15 +331,9 @@ void VIDEL::refreshPalette(void)
 		for (i=0; i<16; i++) {
 			int color = STE_COLORS(i);
 
-			c = (color>>8) & 0x0f;
-			c = ((c & 7)<<1)|((c & 1)>>3);
-			palette[i].r = (c<<4)|c;
-			c = (color>>4) & 0x0f;
-			c = ((c & 7)<<1)|((c & 1)>>3);
-			palette[i].g = (c<<4)|c;
-			c = color & 0x0f;
-			c = ((c & 7)<<1)|((c & 1)>>3);
-			palette[i].b = (c<<4)|c;
+			palette[i].r = steColorComponent(color >> 8);
+			palette[i].g = steColorComponent(color >> 4);
+			palette[i].b = steColorComponent(color);
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 			palette[i].a = WINDOW_ALPHA;
 #endif
