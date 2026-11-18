@@ -301,99 +301,34 @@ gldiff:
 	$(PERL) $(DYNGL_PL) $(GLENUMS) -tinyslbsource $(top_srcdir)/tools/glfuncs.h | diff $(top_srcdir)/atari/nfosmesa/tinygl_loadslb.c - || true
 
 EXTRA_DIST = \
-	BUGS FAQ README.md README-cygwin.in \
-	aranym.spec autogen.sh \
-	android atari contrib data tools \
-	extras/hostfs/hostfs.dos \
-	extras/nfcdrom/nfcdrom.bos \
-	extras/nfjpeg/nfjpeg.prg \
-	appimage/build.sh \
-	appimage/desktopintegration \
-	appimage/excludelist \
-	appimage/functions.sh
+ BUGS FAQ README.md \
+ README-cygwin.in aranym.spec autogen.sh \
+ android atari contrib \
+ data tools extras/hostfs/hostfs.dos \
+ extras/nfcdrom/nfcdrom.bos extras/nfjpeg/nfjpeg.prg appimage/build.sh \
+ appimage/desktopintegration appimage/excludelist appimage/functions.sh
 
 # Corresponding source required by the opt-in modern040 build/library tool.
-EXTRA_DIST += src/include/display_diagnostics.h tools/config-locator.cpp tools/build-modern040-library.py tools/runtime-verifier.c \
- src/include/display_performance.h src/include/modern040_performance.h src/include/modern040_qualified_jit.h \
- src/modern040/native-ea-plan.hpp tests/modern-jit/native-ea-plan-test.cpp \
- tests/modern-jit/qualified-jit-gates-test.cpp \
- tests/modern-jit/execution-mode-test.cpp src/include/modern040_execution_mode.h \
- tests/modern-jit/full-native-validation-20261114.json \
- tests/modern-jit/native-rmw-plan-test.cpp \
- tests/modern-jit/native-movem-plan-test.cpp \
- tests/modern-jit/generate-rmw-oracle.py tests/modern-jit/guest/rmw-oracle.c \
- tests/modern-jit/guest/rmw-fault.c tests/modern-jit/guest/rmw-fault.S \
- tests/modern-jit/guest/movem-alias.c tests/modern-jit/guest/movem-alias.S \
- tests/modern-jit/guest/movem-oracle.c tests/modern-jit/guest/movem-oracle.S \
- tests/modern-jit/guest/movem-bus.c \
- tests/modern-jit/guest/movem-fault.c tests/modern-jit/guest/movem-fault.S \
- tests/modern-jit/guest/movem-fetch.c tests/modern-jit/guest/movem-fetch.S \
- tests/modern-jit/guest/writeback.c tests/modern-jit/guest/writeback.S \
- tests/modern-jit/guest/trace-fault.c tests/modern-jit/guest/trace-fault.S \
- tests/modern-jit/guest/irq-boundary.c tests/modern-jit/guest/irq-boundary.S \
- tests/modern-jit/guest/moves-probe.c tests/modern-jit/guest/moves-probe.S \
- tests/modern-jit/guest/rte-boundary.c tests/modern-jit/guest/rte-boundary.S \
- tests/modern-jit/guest/bitfield-containment.c tests/modern-jit/guest/bitfield-containment.S \
- tests/cpu-core-upgrade/runner/trace-fault-test.cpp \
- tests/cpu-core-upgrade/runner/irq-restart-test.cpp \
- tests/cpu-core-upgrade/runner/write-producer-test.cpp \
- tests/cpu-core-upgrade/runner/multiwrite-producer-test.cpp \
- tests/cpu-core-upgrade/runner/writeback-layout.hpp tests/cpu-core-upgrade/runner/writeback-layout-test.cpp \
- tests/cpu-core-upgrade/runner/producer-boundary-cases.hpp \
- tests/cpu-core-upgrade/runner/detailed-bus-test.cpp tests/cpu-core-upgrade/runner/detailed-bus-c-test.c \
- tests/cpu-core-upgrade/runner/physical-writeback-test.cpp tools/adapt-modern040-writeback-frame.py \
- tests/cpu-core-upgrade/runner/physical-read-test.cpp \
- tests/cpu-core-upgrade/runner/bitfield-writeback-test.cpp tools/adapt-modern040-bitfield-frame.py \
- tests/cpu-core-upgrade/runner/completed-frame-before-test.cpp tests/cpu-core-upgrade/runner/completed-frame-irq-test.cpp \
- tests/cpu-core-upgrade/runner/frame-dma-test.cpp \
- tests/modern-jit/guest/frame-native-before.c tests/modern-jit/guest/frame-native-before.S \
- tests/modern-jit/guest/irq-arbitration.c tests/modern-jit/guest/irq-arbitration.S \
- src/include/modern040-frame.h src/modern040/COMPLETED-FRAME-IRQ-POLICY.json \
- src/modern040/IRQ-ARBITRATION-POLICY.json \
- tests/cpu-core-upgrade/runner/irq-priority-platform-test.cpp \
- tests/cpu-core-upgrade/runner/moves-trace-test.cpp \
- tests/cpu-core-upgrade/runner/rte-load-test.cpp \
- src/modern040/RTE-LOAD-POLICY.json \
- src/modern040/BITFIELD-WRITE-CONTAINMENT.json \
- src/modern040/DETAILED-BUS-CONTRACT.json \
- src/modern040/PHYSICAL-WRITEBACK-FRAME-CORRECTION.json src/modern040/PHYSICAL-WRITEBACK-POLICY.json \
- src/modern040/PHYSICAL-READ-POLICY.json \
- src/modern040/PHYSICAL-BITFIELD-FRAME-CORRECTION.json src/modern040/BITFIELD-WRITEBACK-POLICY.json \
- tools/adapt-modern040-trace-restart.py src/modern040/TRACE-RESTART-CORRECTION.json \
- src/modern040/MOVES-TRACE-POLICY.json \
- tests/cpu-core-upgrade/runner/movem-fetch-restart-test.cpp \
- tests/cpu-core-upgrade/runner/movem-restart-test.cpp \
- tools/adapt-modern040-movem-restart.py src/modern040/MOVEM-RESTART-CORRECTION.json \
- tools/adapt-modern040-movem.py tests/modern-jit/MOVEM-PREDECREMENT-CORRECTION.json \
- tests/modern-jit/import-provenance.json \
- src/modern040/native-ea-plan-source.json \
- tests/modern-jit/generate-extended-ea.py tests/modern-jit/guest/extended-ea-oracle.c \
- tests/modern-jit/generate-scalar-oracle.py tests/modern-jit/guest/scalar-oracle.c \
+EXTRA_DIST += \
+ src/include/display_diagnostics.h tools/config-locator.cpp tools/build-modern040-library.py \
+ tools/runtime-verifier.c src/include/display_performance.h src/include/modern040_performance.h \
+ src/include/modern040_qualified_jit.h src/modern040/native-ea-plan.hpp src/include/modern040_execution_mode.h \
+ tools/adapt-modern040-writeback-frame.py tools/adapt-modern040-bitfield-frame.py src/include/modern040-frame.h \
+ tools/adapt-modern040-trace-restart.py tools/adapt-modern040-movem-restart.py tools/adapt-modern040-movem.py \
  src/modern040/integer.cpp src/modern040/restart.cpp src/modern040/RESTART-SOURCE.json \
- tools/extract-modern040-restart.py tests/cpu-core-upgrade/runner/restart.hpp \
- tests/cpu-core-upgrade/runner/restart-test.cpp src/modern040/include/uae/types.h \
- tests/modern-jit/guest/access-probe.c tests/modern-jit/guest/access-probe.S \
- tests/modern-jit/guest/ram-benchmark.c tests/modern-jit/guest/ram-benchmark.S \
- tests/modern-jit/generate-ram-alias.py tests/modern-jit/guest/ram-alias.c \
- tests/modern-jit/guest/ram-alias-probes.h tests/modern-jit/guest/ram-alias-probes.S \
- src/modern040/COPYING.WinUAE src/modern040/SOURCE.json src/modern040/README.txt \
- src/modern040/softfloat-mingw/sysconfig.h src/modern040/softfloat-mingw/target.h \
- tests/cpu-core-upgrade/runner/core.cpp tests/cpu-core-upgrade/runner/core.hpp \
- tests/cpu-core-upgrade/runner/c-api.cpp tests/cpu-core-upgrade/runner/c-api.h \
- tests/cpu-core-upgrade/runner/fpu-frontend.cpp tests/cpu-core-upgrade/runner/fpu-frontend-test.cpp \
- tests/cpu-core-upgrade/runner/softfloat-adapter.cpp tests/cpu-core-upgrade/runner/softfloat-adapter.hpp \
- tests/cpu-core-upgrade/runner/softfloat-test.cpp \
- tests/cpu-core-upgrade/runner/mmu-walk.cpp tests/cpu-core-upgrade/runner/mmu-walk.hpp \
- tests/cpu-core-upgrade/runner/mmu-walk-test.cpp tests/cpu-core-upgrade/runner/mmu-integration-test.cpp \
- tests/cpu-core-upgrade/platform/adapter.h \
- tests/modern-jit/modern-fallback.cpp tests/modern-jit/upstream-compemu.cpp \
- tests/modern-jit/upstream-compstbl.cpp tests/modern-jit/upstream-comptbl.h
+ tools/extract-modern040-restart.py src/modern040/runtime/restart.hpp src/modern040/include/uae/types.h \
+ src/modern040/COPYING.WinUAE src/modern040/SOURCE.json src/modern040/softfloat-mingw/sysconfig.h \
+ src/modern040/softfloat-mingw/target.h src/modern040/runtime/core.cpp src/modern040/runtime/core.hpp \
+ src/modern040/runtime/c-api.cpp src/modern040/runtime/c-api.h src/modern040/runtime/fpu-frontend.cpp \
+ src/modern040/runtime/softfloat-adapter.cpp src/modern040/runtime/softfloat-adapter.hpp src/modern040/runtime/mmu-walk.cpp \
+ src/modern040/runtime/mmu-walk.hpp src/modern040/adapter.h src/modern040/aranym-adapter.cpp \
+ src/uae_cpu/compiler/imported/upstream-compemu.cpp src/uae_cpu/compiler/imported/upstream-compstbl.cpp src/uae_cpu/compiler/imported/upstream-comptbl.h
 
-EXTRA_DIST += src/include/display_performance.h
+EXTRA_DIST += \
+ src/include/display_performance.h
 
-EXTRA_DIST += src/include/modern040_performance.h
+EXTRA_DIST += \
+ src/include/modern040_performance.h
 
-EXTRA_DIST += tests/modern-jit/windows-hotpath-20261115.txt
-
-EXTRA_DIST += tests/modern-jit/guest/master-bridge.c tests/modern-jit/guest/master-bridge.S \
- tests/modern-jit/master-stack-validation-20261115.txt
+EXTRA_DIST += \
+ tools/modern040-extract.py

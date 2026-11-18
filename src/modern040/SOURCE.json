@@ -3,146 +3,16 @@
   "scope": "Mechanically extracted modern040 integer bodies/helpers plus explicit C-ABI core, pinned WinUAE SoftFloat FPU frontend, and 68040 paged-MMU translation",
   "integer_sha256": "032d6620c568f60aa74acd140335508b0a0a82b268b7b0940b4ab3c68edb735b",
   "types_sha256": "929c3b03e0c58b9cb3c7ec2c13570eb0d9e10d923eaa3a887bd4d85a22ba65a9",
-  "runner_inputs": {
-    "tests/cpu-core-upgrade/runner/core.cpp": "eada9c6d76b264090912f5f938d61950b7870de76ca203a3051a15fb96bb88c0",
-    "tests/cpu-core-upgrade/runner/c-api.cpp": "425b6bf75ee552a10695d60bcb2f9bb5142282973a4bd5673cf8b6af067a93f7",
-    "tests/cpu-core-upgrade/runner/core.hpp": "be0fed582ab2771cbff2ab3b53b173c0307769a8e001d39c4bd70c844198ab04",
-    "tests/cpu-core-upgrade/runner/c-api.h": "0e8a0833766fe8d550d91930714434f25e6aacd40d17a8bb80ed29d5e14ce474",
-    "tests/cpu-core-upgrade/runner/restart.hpp": "616500f578cab537a2aa91198eec42adad846807e5188240420c98862f814ae4",
-    "tests/cpu-core-upgrade/runner/fpu-frontend.cpp": "67ab61291d102e70f461aa9cb621d2d4cbd1c78bea62b4c6f37803c906e94b79",
-    "tests/cpu-core-upgrade/runner/softfloat-adapter.cpp": "fbca59aa8fc22b3b7fef8f75bd98f4a1a42e40e18cb2fa8f43d6414bb5130bb8",
-    "tests/cpu-core-upgrade/runner/softfloat-adapter.hpp": "bdb64d378e4841fd23103757170549cb85c869ca714d70fe3200ebdbbd31efd2",
-    "tests/cpu-core-upgrade/runner/mmu-walk.cpp": "aa7ea6e597056ca9da08d49860b26469f7adb828e31720b9e7094e06da24a327",
-    "tests/cpu-core-upgrade/runner/mmu-walk.hpp": "cacb3cca85567e442f70471be7dd92b1a1357d3ae5639b95b71e48a3398f1c9c"
-  },
-  "original_seed_identity": {
-    "experimental": true,
-    "launched": false,
-    "installed": false,
-    "source_commit": "5c8d0e3e69b6351c4805ee95f3441d9ad31aa822",
-    "upstream_pin": "d82bc2549f27943d11dc59482d5388daf1c0f337",
-    "native_test_provenance_sha256": "14bc4c1b858c9c850e962d5e034b9423bb1e4663a6fe30d51ca9bf16adb1d38a",
-    "core": {
-      "inputs": {
-        "/home/rob/git/shinogi/docs/aranym-cpu-harness-2026-11-08/source/tests/cpu-core-upgrade/build-runner-static/integer.cpp": "e4268caf87aca6841be8ff5573cf814b4cdf6dfe5ee9b89c2ea249eb1c719023",
-        "/home/rob/git/shinogi/docs/aranym-cpu-harness-2026-11-08/source/tests/cpu-core-upgrade/runner/core.cpp": "155c376f182e17e7dc1fea293a7730d2c8b3ddafb8bf193470d648b9615bf5a1",
-        "/home/rob/git/shinogi/docs/aranym-cpu-harness-2026-11-08/source/tests/cpu-core-upgrade/runner/c-api.cpp": "b986c9d5828d1a6bda1ee8ca58da49634f156ab3bffc3220c32e96e03664ced4",
-        "/home/rob/git/shinogi/docs/aranym-cpu-harness-2026-11-08/source/tests/cpu-core-upgrade/runner/core.hpp": "73964fa1676cb5322ab4b50a42126dc9a1bf8ffbb5282601f064c9dab3545741",
-        "/home/rob/git/shinogi/docs/aranym-cpu-harness-2026-11-08/source/tests/cpu-core-upgrade/runner/c-api.h": "86ce53f50c0d53bcc04da3a2ceef7a638018ea6b18ad38bab5d4fdd8312c933e"
-      },
-      "compiler": "x86_64-w64-mingw32-g++ (GCC) 13-win32",
-      "flags": [
-        "-std=c++20",
-        "-O2",
-        "-g",
-        "-fwrapv",
-        "-DFPUEMU",
-        "-I/home/rob/git/shinogi/docs/aranym-cpu-harness-2026-11-08/source/tests/cpu-core-upgrade/runner",
-        "-I/home/rob/git/shinogi/docs/aranym-cpu-core-assessment-2026-11-08/WinUAE-current/include"
-      ]
-    },
-    "builds": [
-      {
-        "kind": "modern",
-        "binary": "/home/rob/git/shinogi/docs/aranym-cpu-harness-2026-11-08/build-windows-experimental/modern/src/aranym.exe",
-        "sha256": "04210e73f7f91ba9ecaa2211226cbff806af38a14c66efa29da5d57b1a2aaae0",
-        "configuration": {
-          "configure": [
-            "--host=x86_64-w64-mingw32",
-            "--disable-opengl",
-            "--disable-jit-compiler",
-            "--enable-addressing=normal",
-            "--enable-slirp",
-            "--enable-nfjpeg",
-            "--enable-disasm=builtin",
-            "--disable-flightrecorder",
-            "--disable-fullhistory"
-          ],
-          "cppflags": "-I/home/rob/git/shinogi/docs/aranym-installer-2026-11-06/jpeg-root/mingw64/include -DEXPERIMENTAL_MODERN040",
-          "ldflags": "-L/home/rob/git/shinogi/docs/aranym-installer-2026-11-06/jpeg-root/mingw64/lib",
-          "SDL2_CFLAGS": "-I/home/rob/git/Aranym/build/mingw-root/mingw64/include/SDL2",
-          "SDL2_LIBS": "-L/home/rob/git/Aranym/build/mingw-root/mingw64/lib -lSDL2",
-          "profile": "aranym-modern040-experimental"
-        },
-        "config_h_sha256": "52dcba5ed8f9171188126a96fbc3f80e2f332a9f370f337d07cb6c38a94af507",
-        "native_defines": [
-          "-DOS_mingw",
-          "-DCPU_x86_64",
-          "-D_GNU_SOURCE",
-          "-DNORMAL_ADDRESSING",
-          "-DUNALIGNED_PROFITABLE",
-          "-DX86_64_ASSEMBLY",
-          "-DOPTIMIZED_FLAGS",
-          "-DFPU_IEEE",
-          "-DENABLE_EXCLUSIVE_SPCFLAGS"
-        ],
-        "profile_path": "%USERPROFILE%\\aranym-modern040-experimental",
-        "profile_macro_verified": true
-      },
-      {
-        "kind": "baseline",
-        "binary": "/home/rob/git/shinogi/docs/aranym-cpu-harness-2026-11-08/build-windows-experimental/baseline/src/aranym.exe",
-        "sha256": "081d623a1b3d780a7a95b3d4a127208144ade2dde2e787988923cc7868199485",
-        "configuration": {
-          "configure": [
-            "--host=x86_64-w64-mingw32",
-            "--disable-opengl",
-            "--disable-jit-compiler",
-            "--enable-addressing=normal",
-            "--enable-slirp",
-            "--enable-nfjpeg",
-            "--enable-disasm=builtin",
-            "--disable-flightrecorder",
-            "--disable-fullhistory"
-          ],
-          "cppflags": "-I/home/rob/git/shinogi/docs/aranym-installer-2026-11-06/jpeg-root/mingw64/include",
-          "ldflags": "-L/home/rob/git/shinogi/docs/aranym-installer-2026-11-06/jpeg-root/mingw64/lib",
-          "SDL2_CFLAGS": "-I/home/rob/git/Aranym/build/mingw-root/mingw64/include/SDL2",
-          "SDL2_LIBS": "-L/home/rob/git/Aranym/build/mingw-root/mingw64/lib -lSDL2",
-          "profile": "aranym-modern040-baseline"
-        },
-        "config_h_sha256": "3d8b8a4b5b2b48caf9baf20fd8521127d01f792c0760d7039e79853d87098ac9",
-        "native_defines": [
-          "-DOS_mingw",
-          "-DCPU_x86_64",
-          "-D_GNU_SOURCE",
-          "-DNORMAL_ADDRESSING",
-          "-DUNALIGNED_PROFITABLE",
-          "-DX86_64_ASSEMBLY",
-          "-DOPTIMIZED_FLAGS",
-          "-DFPU_IEEE",
-          "-DENABLE_EXCLUSIVE_SPCFLAGS"
-        ],
-        "profile_path": "%USERPROFILE%\\aranym-modern040-baseline",
-        "profile_macro_verified": true
-      }
-    ],
-    "source_sha256": {
-      "src/uae_cpu/newcpu.cpp": "b8891c1c2e5a94898a46847412aa258f9f46f40f47c2ade120561bbca35c67ad",
-      "tests/cpu-core-upgrade/platform/adapter.cpp": "2bce020f68e57660734b75b920041b5933d27b41072cbbcd555f6513d4cb4f37",
-      "tests/cpu-core-upgrade/platform/build-windows.py": "337720067e021c811230ba169c1a437787502a0c224d8df292a67b0141583332"
-    },
-    "limits": [
-      "modern integer with explicitly original IEEE FPU; not modernFPU",
-      "noJIT/noMMU/generalrestart; no speedup claim",
-      "requires advance notice and owned closed guest copy before Windows desktop test"
-    ]
-  },
-  "local_restart_corrections": [
-    "MOVEM-RESTART-CORRECTION.json",
-    "TRACE-RESTART-CORRECTION.json"
-  ],
-  "physical_fault_trace_policies": [
-    "MOVES-TRACE-POLICY.json"
-  ],
-  "rte_internal_load_policy": "RTE-LOAD-POLICY.json",
-  "bitfield_write_containment_policy": "BITFIELD-WRITE-CONTAINMENT.json",
-  "detailed_bus_contract": "DETAILED-BUS-CONTRACT.json",
-  "physical_writeback_frame_correction": "PHYSICAL-WRITEBACK-FRAME-CORRECTION.json",
-  "physical_writeback_policy": "PHYSICAL-WRITEBACK-POLICY.json",
-  "physical_read_policy": "PHYSICAL-READ-POLICY.json",
-  "physical_bitfield_frame_correction": "PHYSICAL-BITFIELD-FRAME-CORRECTION.json",
-  "bitfield_writeback_policy": "BITFIELD-WRITEBACK-POLICY.json",
-  "completed_frame_irq_policy": "COMPLETED-FRAME-IRQ-POLICY.json",
-  "irq_arbitration_policy": "IRQ-ARBITRATION-POLICY.json"
+  "local_inputs": {
+    "src/modern040/runtime/core.cpp": "eada9c6d76b264090912f5f938d61950b7870de76ca203a3051a15fb96bb88c0",
+    "src/modern040/runtime/c-api.cpp": "425b6bf75ee552a10695d60bcb2f9bb5142282973a4bd5673cf8b6af067a93f7",
+    "src/modern040/runtime/core.hpp": "bdf6d3757104ed3ea1252b1509408bb7b22c13801ded5ce5bda1de2731c9bdb0",
+    "src/modern040/runtime/c-api.h": "0e8a0833766fe8d550d91930714434f25e6aacd40d17a8bb80ed29d5e14ce474",
+    "src/modern040/runtime/restart.hpp": "616500f578cab537a2aa91198eec42adad846807e5188240420c98862f814ae4",
+    "src/modern040/runtime/fpu-frontend.cpp": "67ab61291d102e70f461aa9cb621d2d4cbd1c78bea62b4c6f37803c906e94b79",
+    "src/modern040/runtime/softfloat-adapter.cpp": "fbca59aa8fc22b3b7fef8f75bd98f4a1a42e40e18cb2fa8f43d6414bb5130bb8",
+    "src/modern040/runtime/softfloat-adapter.hpp": "bdb64d378e4841fd23103757170549cb85c869ca714d70fe3200ebdbbd31efd2",
+    "src/modern040/runtime/mmu-walk.cpp": "aa7ea6e597056ca9da08d49860b26469f7adb828e31720b9e7094e06da24a327",
+    "src/modern040/runtime/mmu-walk.hpp": "cacb3cca85567e442f70471be7dd92b1a1357d3ae5639b95b71e48a3398f1c9c"
+  }
 }

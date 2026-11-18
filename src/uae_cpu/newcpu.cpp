@@ -47,7 +47,7 @@
 #include "fpu/fpu.h"
 #include "natfeats.h"
 #if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
-#include "../../tests/cpu-core-upgrade/platform/adapter.h"
+#include "../modern040/adapter.h"
 #endif
 #include "disasm-glue.h"
 #include "nf_objs.h"

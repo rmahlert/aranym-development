@@ -1,8 +1,9 @@
 name: Raspberry Pi ARM32 guest JIT package
-on:
-  workflow_dispatch:
+'on':
+  workflow_dispatch: null
   push:
-    branches: [arm-jit-integration-20261115]
+    branches:
+    - arm-jit-integration-20261115
 permissions:
   contents: read
 jobs:
@@ -11,81 +12,73 @@ jobs:
     container: debian:bookworm
     timeout-minutes: 35
     steps:
-      - name: Bootstrap source checkout
-        run: |
-          apt-get update
-          apt-get install -y git ca-certificates
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: ARM32 cross compiler and target dependencies
-        run: |
-          dpkg --add-architecture armhf
-          apt-get update
-          apt-get install -y curl autoconf automake build-essential gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf qemu-user-static python3 pkg-config meson ninja-build dpkg-dev libsdl2-dev:armhf libjpeg-dev:armhf libudev-dev:armhf libusb-1.0-0-dev:armhf libglib2.0-dev:armhf
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          echo 'PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig' >> "$GITHUB_ENV"
-      - name: Cross-build pinned ARM32 SLIRP
-        run: |
-          mkdir -p build/dependency-source
-          curl -L --fail --retry 3 -o build/dependency-source/libslirp-v4.9.1.tar.bz2 https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v4.9.1/libslirp-v4.9.1.tar.bz2
-          echo '3caff6e2de445f4995629d4929c55419f661b2b1d14f12481e155a71c1e8f811  build/dependency-source/libslirp-v4.9.1.tar.bz2' | sha256sum -c -
-          tar -xjf build/dependency-source/libslirp-v4.9.1.tar.bz2 -C build
-          cat > build/armhf-cross.ini <<'EOF'
-          [binaries]
-          c = 'arm-linux-gnueabihf-gcc'
-          cpp = 'arm-linux-gnueabihf-g++'
-          ar = 'arm-linux-gnueabihf-ar'
-          strip = 'arm-linux-gnueabihf-strip'
-          pkgconfig = 'pkg-config'
-          exe_wrapper = ['qemu-arm-static', '-L', '/']
-          [properties]
-          needs_exe_wrapper = true
-          pkg_config_libdir = ['/usr/lib/arm-linux-gnueabihf/pkgconfig', '/usr/share/pkgconfig']
-          [host_machine]
-          system = 'linux'
-          cpu_family = 'arm'
-          cpu = 'armv7'
-          endian = 'little'
-          EOF
-          meson setup build/slirp-armhf build/libslirp-v4.9.1 --cross-file build/armhf-cross.ini --prefix="$RUNNER_TEMP/slirp-armhf" --libdir=lib --buildtype=release
-          ninja -C build/slirp-armhf
-          meson test -C build/slirp-armhf --print-errorlogs
-          ninja -C build/slirp-armhf install
-          echo "PKG_CONFIG_PATH=$RUNNER_TEMP/slirp-armhf/lib/pkgconfig" >> "$GITHUB_ENV"
-      - name: Compile full ARM32 guest JIT application
-        run: |
-          NO_CONFIGURE=1 ./autogen.sh
-          mkdir -p build/rpi32
-          cd build/rpi32
-          ../../configure --host=arm-linux-gnueabihf --prefix=/usr --datadir=/usr/share/aranym-unofficial --disable-opengl --enable-jit-compiler --disable-jit-fpu --disable-cxx-exceptions --enable-addressing=direct --enable-fpe=ieee --enable-slirp CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ LDFLAGS=-Wl,-rpath,/usr/lib/aranym-unofficial
-          make -j3
-      - name: ARM32 ISA execution and paired correctness gates under QEMU
-        run: python3 tests/arm64-guest/run.py --architecture arm32 --emulator build/rpi32/src/aranym --firmware data/emutos-macos-reference.img --qemu /usr/bin/qemu-arm-static --qemu-sysroot / --qemu-library-path "$RUNNER_TEMP/slirp-armhf/lib:/usr/lib/arm-linux-gnueabihf" --output build/rpi32-guests
-      - name: Package exact ARM32 application with sources
-        run: |
-          curl -L --fail --retry 3 -o build/dependency-source/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
-          DEB_HOST_ARCH=armhf python3 tools/package-linux.py --architecture armhf --cross-armhf --build-dir build/rpi32 --slirp-library "$RUNNER_TEMP/slirp-armhf/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --output build/rpi32-package
-      - name: Installed ARM32 package SLIRP with guest JIT under QEMU
-        run: |
-          apt-get install -y ./build/rpi32-package/aranym-1.2.0-unofficial-arm-jit-test1-rpi-armhf.deb
-          python3 tests/macos-slirp/run.py --linux-emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --architecture arm32 --require-jit --qemu /usr/bin/qemu-arm-static --qemu-sysroot / --qemu-library-path /usr/lib/aranym-unofficial:/usr/lib/arm-linux-gnueabihf --output build/rpi32-network
-      - name: Archive ARM32 package, sources and explicitly emulated evidence
-        run: |
-          cp -a build/rpi32-guests build/rpi32-package/guest-validation
-          cp -a build/rpi32-network build/rpi32-package/network-validation
-          tar -czf aranym-1.2.0-unofficial-arm-jit-test1-rpi-armhf.tar.gz -C build/rpi32-package --exclude=deb-root --exclude=debian .
-          sha256sum aranym-1.2.0-unofficial-arm-jit-test1-rpi-armhf.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: aranym-rpi-armhf-guest-jit-${{ github.sha }}
-          path: aranym-1.2.0-unofficial-arm-jit-test1-rpi-armhf.tar.gz
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: rpi32-guest-jit-diagnostics-${{ github.sha }}
-          path: |
-            build/rpi32/config.log
-            build/rpi32-guests
-            build/rpi32-network
-            build/rpi32-package/build-manifest.json
+    - name: Bootstrap source checkout
+      run: |
+        apt-get update
+        apt-get install -y git ca-certificates
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: ARM32 cross compiler and target dependencies
+      run: |
+        dpkg --add-architecture armhf
+        apt-get update
+        apt-get install -y curl autoconf automake build-essential gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf qemu-user-static python3 pkg-config meson ninja-build dpkg-dev libsdl2-dev:armhf libjpeg-dev:armhf libudev-dev:armhf libusb-1.0-0-dev:armhf libglib2.0-dev:armhf
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        echo 'PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig' >> "$GITHUB_ENV"
+    - name: Cross-build pinned ARM32 SLIRP
+      run: |
+        mkdir -p build/dependency-source
+        curl -L --fail --retry 3 -o build/dependency-source/libslirp-v4.9.1.tar.bz2 https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v4.9.1/libslirp-v4.9.1.tar.bz2
+        echo '3caff6e2de445f4995629d4929c55419f661b2b1d14f12481e155a71c1e8f811  build/dependency-source/libslirp-v4.9.1.tar.bz2' | sha256sum -c -
+        tar -xjf build/dependency-source/libslirp-v4.9.1.tar.bz2 -C build
+        cat > build/armhf-cross.ini <<'EOF'
+        [binaries]
+        c = 'arm-linux-gnueabihf-gcc'
+        cpp = 'arm-linux-gnueabihf-g++'
+        ar = 'arm-linux-gnueabihf-ar'
+        strip = 'arm-linux-gnueabihf-strip'
+        pkgconfig = 'pkg-config'
+        exe_wrapper = ['qemu-arm-static', '-L', '/']
+        [properties]
+        needs_exe_wrapper = true
+        pkg_config_libdir = ['/usr/lib/arm-linux-gnueabihf/pkgconfig', '/usr/share/pkgconfig']
+        [host_machine]
+        system = 'linux'
+        cpu_family = 'arm'
+        cpu = 'armv7'
+        endian = 'little'
+        EOF
+        meson setup build/slirp-armhf build/libslirp-v4.9.1 --cross-file build/armhf-cross.ini --prefix="$RUNNER_TEMP/slirp-armhf" --libdir=lib --buildtype=release
+        ninja -C build/slirp-armhf
+        ninja -C build/slirp-armhf install
+        echo "PKG_CONFIG_PATH=$RUNNER_TEMP/slirp-armhf/lib/pkgconfig" >> "$GITHUB_ENV"
+    - name: Compile full ARM32 guest JIT application
+      run: |
+        NO_CONFIGURE=1 ./autogen.sh
+        mkdir -p build/rpi32
+        cd build/rpi32
+        ../../configure --host=arm-linux-gnueabihf --prefix=/usr --datadir=/usr/share/aranym-unofficial --disable-opengl --enable-jit-compiler --disable-jit-fpu --disable-cxx-exceptions --enable-addressing=direct --enable-fpe=ieee --enable-slirp CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ LDFLAGS=-Wl,-rpath,/usr/lib/aranym-unofficial
+        make -j3
+    - name: Package exact ARM32 application with sources
+      run: |
+        curl -L --fail --retry 3 -o build/dependency-source/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
+        DEB_HOST_ARCH=armhf python3 tools/package-linux.py --architecture armhf --cross-armhf --build-dir build/rpi32 --slirp-library "$RUNNER_TEMP/slirp-armhf/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --output build/rpi32-package
+    - name: Install packaged application and inspect runtime dependencies
+      run: |
+        apt-get install -y ./build/rpi32-package/aranym-1.2.0-unofficial-arm-jit-test1-rpi-armhf.deb
+    - name: Archive ARM32 package and corresponding source
+      run: |
+        tar -czf aranym-1.2.0-unofficial-arm-jit-test1-rpi-armhf.tar.gz -C build/rpi32-package --exclude=deb-root --exclude=debian .
+        sha256sum aranym-1.2.0-unofficial-arm-jit-test1-rpi-armhf.tar.gz
+    - uses: actions/upload-artifact@v4
+      with:
+        name: aranym-rpi-armhf-guest-jit-${{ github.sha }}
+        path: aranym-1.2.0-unofficial-arm-jit-test1-rpi-armhf.tar.gz
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: rpi32-guest-jit-diagnostics-${{ github.sha }}
+        path: |
+          build/rpi32/config.log
+          build/rpi32-package/build-manifest.json

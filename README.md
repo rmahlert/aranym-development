@@ -36,14 +36,14 @@ Credit for the original emulator belongs to the ARAnyM developers and contributo
 The experimental Windows/Linux x86-64 FPU JIT profile now connects guarded
 native arithmetic to the pinned SoftFloat fallback. Enable `JITFPU = Yes` in
 `[JIT]` in an FPU JIT testing build; it remains opt-in. See
-[its tests and limitations](https://github.com/rmahlert/aranym-development/blob/fpu-jit-x64-20261116/tests/fpu-jit/README.md).
+[its tests and limitations](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test2).
 Native Windows/Linux CPU, installation and SLIRP checks have passed; full
 FPU arithmetic exception/FPSP continuation remains unsupported.
 The new ARM FPU JIT Test 1 builds also offer opt-in native arithmetic with
 `JITFPU = Yes` and `JITSafe = Yes`, retaining the existing ARM IEEE64 precision
 and interpreter fallback. ARM does not include the modern040 paged-MMU core.
 FreeMiNT/XaAES/GBE and physical BeePi desktop testing is still needed.
-See [platform status and test details](https://github.com/rmahlert/aranym-development/blob/macos-arm64-beta-20261115/UNOFFICIAL.md).
+See [platform status and test details](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test2).
 
 ## Latest testing downloads
 
@@ -73,7 +73,7 @@ Corresponding source is available for each current release:
 - Mac/Pi ARM FPU JIT Test 1: [source archive](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-arm-fpu-jit-test1/aranym-1.2.0-unofficial-arm-fpu-jit-test1-source.tar.gz).
 
 ARM FPU development continues on the [ARM FPU JIT branch](https://github.com/rmahlert/aranym-development/tree/arm-fpu-jit-20261116).
-See [platform status, native test results and known limitations](https://github.com/rmahlert/aranym-development/blob/macos-arm64-beta-20261115/UNOFFICIAL.md).
+See [platform status, native test results and known limitations](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test2).
 
 Community Raspberry Pi 5 testing of the integer JIT reported a Kronos 2.50 CPU
 score of **6,238**, versus **1,567** for its stored “Rpi5 Std FVDI” reference

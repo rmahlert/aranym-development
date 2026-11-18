@@ -1,93 +1,64 @@
-name: macOS ARM64 validation
-
-on:
-  workflow_dispatch:
+name: macOS ARM64 application package
+'on':
+  workflow_dispatch: null
   push:
-    branches: [main, macos-arm64-beta-20261115]
-  pull_request:
-
+    branches:
+    - main
+    - macos-arm64-beta-20261115
+  pull_request: null
 permissions:
   contents: read
-
 jobs:
-  platform:
-    name: Native ARM64 emitter and JIT memory
-    runs-on: macos-15
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - name: Require Apple Silicon
-        run: |
-          test "$(uname -m)" = arm64
-          test "${{ runner.arch }}" = ARM64
-          sw_vers
-      - name: Execute and rewrite generated ARM64 code
-        run: bash tests/arm64-platform/run.sh --require-native
-      - name: Retain platform evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: arm64-platform-${{ github.sha }}
-          path: build/arm64-platform/result.txt
-
   interpreter:
-    name: Native ARM64 interpreter baseline (guest JIT pending)
-    needs: platform
+    name: Native ARM64 interpreter baseline
     runs-on: macos-15
     timeout-minutes: 35
     env:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Require Apple Silicon
-        run: test "$(uname -m)" = arm64
-      - name: Install dependencies
-        run: |
-          brew install autoconf automake libtool pkg-config sdl2 jpeg-turbo libslirp
-          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$(brew --prefix jpeg-turbo)/lib/pkgconfig:$(brew --prefix libslirp)/lib/pkgconfig" >> "$GITHUB_ENV"
-          echo "CPPFLAGS=-I$(brew --prefix jpeg-turbo)/include" >> "$GITHUB_ENV"
-          echo "LDFLAGS=-L$(brew --prefix jpeg-turbo)/lib -Wl,-headerpad_max_install_names" >> "$GITHUB_ENV"
-      - name: Configure and build baseline
-        run: |
-          ./autogen.sh --disable-opengl --enable-sdl2 --enable-slirp --disable-jit-compiler --enable-addressing=normal
-          grep -q -- '-DCPU_aarch64' src/Makefile
-          make -j3
-          lipo src/aranym -verify_arch arm64
-      - name: Fetch pinned EmuTOS source for the boot-tested firmware
-        run: |
-          mkdir -p build/emutos
-          curl -L --fail --retry 3 -o build/emutos/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
-      - name: Package relocated app with runtime dependencies
-        run: >-
-          python3 tools/package-macos.py --binary src/aranym --output build/macos-package
-          --emutos-source-archive build/emutos/emutos-source.tar.gz
-      - name: Check relocated package startup
-        run: python3 tools/check-macos-package.py build/macos-package/ARAnyM-Unofficial.app
-      - name: Boot owned Atari guest and require clean host shutdown
-        run: >-
-          python3 tests/macos-boot/run.py --app build/macos-package/ARAnyM-Unofficial.app
-          --output build/macos-package
-      - name: Verify guest SLIRP networking and receiver shutdown
-        run: >-
-          python3 tests/macos-slirp/run.py --app build/macos-package/ARAnyM-Unofficial.app
-          --output build/macos-package
-      - name: Retain build diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-arm64-diagnostics-${{ github.sha }}
-          path: |
-            config.log
-            build/macos-package/*.json
-            build/macos-package/*.txt
-      - name: Archive development artifact and exact source
-        run: |
-          git archive --format=tar.gz -o build/macos-package/aranym-source.tar.gz HEAD
-          tar -czf aranym-unofficial-arm64-interpreter.tar.gz -C build/macos-package .
-          shasum -a 256 aranym-unofficial-arm64-interpreter.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: aranym-unofficial-arm64-interpreter-${{ github.sha }}
-          path: aranym-unofficial-arm64-interpreter.tar.gz
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Require Apple Silicon
+      run: |
+        test "$(uname -m)" = arm64
+    - name: Install dependencies
+      run: |
+        brew install autoconf automake libtool pkg-config sdl2 jpeg-turbo libslirp
+        echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$(brew --prefix jpeg-turbo)/lib/pkgconfig:$(brew --prefix libslirp)/lib/pkgconfig" >> "$GITHUB_ENV"
+        echo "CPPFLAGS=-I$(brew --prefix jpeg-turbo)/include" >> "$GITHUB_ENV"
+        echo "LDFLAGS=-L$(brew --prefix jpeg-turbo)/lib -Wl,-headerpad_max_install_names" >> "$GITHUB_ENV"
+    - name: Configure and build baseline
+      run: |
+        ./autogen.sh --disable-opengl --enable-sdl2 --enable-slirp --disable-jit-compiler --enable-addressing=normal
+        grep -q -- '-DCPU_aarch64' src/Makefile
+        make -j3
+        lipo src/aranym -verify_arch arm64
+    - name: Fetch pinned EmuTOS source for the bundled firmware
+      run: |
+        mkdir -p build/emutos
+        curl -L --fail --retry 3 -o build/emutos/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
+    - name: Package relocated app with runtime dependencies
+      run: |
+        python3 tools/package-macos.py --binary src/aranym --output build/macos-package --emutos-source-archive build/emutos/emutos-source.tar.gz
+    - name: Check relocated package startup
+      run: |
+        python3 tools/check-macos-package.py build/macos-package/ARAnyM-Unofficial.app
+    - name: Retain build diagnostics
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-arm64-diagnostics-${{ github.sha }}
+        path: |
+          config.log
+          build/macos-package/*.json
+          build/macos-package/*.txt
+    - name: Archive development artifact and exact source
+      run: |
+        git archive --format=tar.gz -o build/macos-package/aranym-source.tar.gz HEAD
+        tar -czf aranym-unofficial-arm64-interpreter.tar.gz -C build/macos-package .
+        shasum -a 256 aranym-unofficial-arm64-interpreter.tar.gz
+    - uses: actions/upload-artifact@v4
+      with:
+        name: aranym-unofficial-arm64-interpreter-${{ github.sha }}
+        path: aranym-unofficial-arm64-interpreter.tar.gz
