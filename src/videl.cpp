@@ -33,8 +33,8 @@
 #include "videl.h"
 #include "hardware.h"
 #include "parameters.h"
-#include "adler32.h"
 #include "display_performance.h"
+#include <algorithm>
 
 #define DEBUG 0
 #include "debug.h"
@@ -53,16 +53,13 @@
 VIDEL::VIDEL(memptr addr, uint32 size)
 	: BASE_IO(addr, size), surface(NULL),
 	prevVidelWidth(-1), prevVidelHeight(-1), prevVidelBpp(-1),
-	crcList(NULL)
+	stPalette(false)
 {
 	reset();
 }
 
 VIDEL::~VIDEL(void)
 {
-	if (crcList) {
-		delete [] crcList;
-	}
 	if (surface) {
 		host->video->destroySurface(surface);
 	}
@@ -71,7 +68,8 @@ VIDEL::~VIDEL(void)
 void VIDEL::reset(void)
 {
 	aspect_x = aspect_y = 1;
-	updatePalette = false;
+	updatePalette = true;
+	forceRefresh();
 }
 
 bool VIDEL::isMyHWRegister(memptr addr)
@@ -205,7 +203,7 @@ Uint32 VIDEL::getVramAddress(void)
 
 int VIDEL::getWidth(void)
 {
-	return handleReadW(HW + 0x10) * 16 / getBpp();
+	return (handleReadW(HW + 0x10) & 0x03ff) * 16 / getBpp();
 }
 
 int VIDEL::getHeight(void)
@@ -271,40 +269,33 @@ HostSurface *VIDEL::getSurface(void)
 	if (height<64) {
 		height = 64;
 	}
-	if(width!=prevVidelWidth||height!=prevVidelHeight||bpp!=prevVidelBpp)
-        aranym_display_trace("videl-mode w=%d h=%d bpp=%d",width,height,videlBpp);
+	const bool modeChanged = width != prevVidelWidth || height != prevVidelHeight || videlBpp != prevVidelBpp;
+	if (modeChanged)
+		aranym_display_trace("videl-mode w=%d h=%d bpp=%d",width,height,videlBpp);
 
-	if (surface) {
-		if (prevVidelBpp == bpp) {
-			if ((prevVidelWidth!=width) || (prevVidelHeight!=height)) {
-				surface->resize(width, height);
-				delete [] crcList;
-				crcList = NULL;
-			}
-		} else {
-			delete surface;
-			surface = NULL;
-			delete [] crcList;
-			crcList = NULL;
-		}
+	if (surface && ((prevVidelBpp == 16) != (videlBpp == 16))) {
+		host->video->destroySurface(surface);
+		surface = NULL;
 	}
-	if (surface==NULL) {
+	if (!surface) {
 		surface = host->video->createSurface(width,height,bpp);
-	}
-	if (crcList==NULL) {
-		int crcWidth = surface->getDirtyWidth();
-		int crcHeight = surface->getDirtyHeight();
-		crcList = new Uint32[crcWidth*crcHeight];
-		memset(crcList, 0, sizeof(Uint32)*crcWidth*crcHeight);
+	} else if (width != prevVidelWidth || height != prevVidelHeight) {
+		surface->resize(width,height);
 	}
 
-	/* Refresh surface palette if switching from true color to bitplane mode */
-	if ((prevVidelBpp == 16) && (bpp != 16))
-		updatePalette = true;
-
+	if (bpp == 8) {
+		const bool useSt = useStPalette();
+		if (modeChanged || stPalette != useSt)
+			updatePalette = true;
+		stPalette = useSt;
+	}
+	if (modeChanged) {
+		forceRefresh();
+		host->video->forceRefreshScreen();
+	}
 	prevVidelWidth = width;
 	prevVidelHeight = height;
-	prevVidelBpp = bpp;
+	prevVidelBpp = videlBpp;
 
 	refreshScreen();
 
@@ -324,7 +315,7 @@ static Uint8 steColorComponent(unsigned component)
 void VIDEL::refreshPalette(void)
 {
 	SDL_Color palette[256];
-	int i, c, numColors = useStPalette() ? 16 : 256;
+	int i, c, numColors = stPalette ? 16 : 256;
 
 	if (numColors == 16) {
 		/* STe palette registers, 4 bits/component */
@@ -383,114 +374,82 @@ void VIDEL::refreshScreen(void)
 		return;
 	}
 
-	if (updatePalette) {
+	if (updatePalette && prevVidelBpp != 16) {
 		refreshPalette();
 		updatePalette = false;
 		surface->setDirtyRect(0,0,surface->getWidth(),surface->getHeight());
 	}
 
-	int videlBpp = getBpp();
-
-	int lineoffset = handleReadW(HW + 0x0e);
-	int linewidth = handleReadW(HW + 0x10) & 0x03ff; // 10 bits
-	int hscroll = handleReadW(HW + 0x64) & 15;
-	if (hscroll) {
-		lineoffset += videlBpp;
-	}
-
-	Uint16 *src = (uint16 *) Atari2HostAddr(getVramAddress());
-	int src_pitch = linewidth + lineoffset;
-	int dst_pitch = sdl_surf->pitch;
-	int x,y;
-
-	Uint8 *dirtyRects = surface->getDirtyRects();
-	if (!dirtyRects) {
+	const int bpp = prevVidelBpp;
+	const int width = surface->getWidth();
+	const int height = surface->getHeight();
+	const int tiles = surface->getDirtyWidth();
+	const int hscroll = handleReadW(HW + 0x64) & 15;
+	const int linewidth = handleReadW(HW + 0x10) & 0x03ff;
+	const int lineoffset = handleReadW(HW + 0x0e) & 0x01ff;
+	const int pitch = linewidth + lineoffset + (hscroll ? bpp : 0);
+	// A fine-scrolled planar tile also reads the next group of plane words.
+	const int overlap = (bpp != 16 && hscroll) ? bpp : 0;
+	const int rowWords = bpp == 16 ? width : tiles * bpp + overlap;
+	Uint16 *src = (Uint16 *)Atari2HostAddr(getVramAddress());
+	Uint8 *dirty = surface->getDirtyRects();
+	if (!dirty || !rowWords || !height)
 		return;
-	}
+	previousFrame.resize(size_t(rowWords) * height);
 
 	AranymDisplayPerfScope perf(1,"videl");
-	perf.width=surface->getWidth(); perf.height=surface->getHeight();
-	int dirty_w = surface->getDirtyWidth();
-	int dirty_h = surface->getDirtyHeight();
-
-	if (videlBpp==16) {
-		Uint16 *dst = (Uint16 *) sdl_surf->pixels;
-		for (y=0; y<dirty_h ;y++) {
-			Uint16 *src_line = src;
-			Uint16 *dst_line = dst; 
-			/* Atari screen may not have a multiple of 16 lines */
-			int num_lines = surface->getHeight() - (y<<4);
-			if (num_lines>16) {
-				num_lines=16;
-			}
-			for (x=0; x<dirty_w; x++) {
-				if (perf.active) ++perf.blocks;
-				Uint32 newCrc = calc_adler((Uint8 *)src_line, 2*16, num_lines, src_pitch<<1);
-				if (newCrc != crcList[y*dirty_w+x]) {
-					if (perf.active) ++perf.changed;
-					crcList[y*dirty_w+x] = newCrc;
-					dirtyRects[y * dirty_w + x] = 1;
-				}
-				if (dirtyRects[y * dirty_w + x]) {
-					if (perf.active) ++perf.converted;
-					perf.rectangle(x<<4,y<<4,16,num_lines);
-					/* Convert 16x16 block */
-					int i,j;
-					Uint16 *src_line1 = src_line;
-					Uint16 *dst_line1 = dst_line;
-					for (j=0;j<num_lines;j++) {
-						Uint16 *src_col = src_line1;
-						Uint16 *dst_col = dst_line1;
-						for (i=0;i<16;i++) {
-							Uint16 pixel = *src_col++;
-							*dst_col++ = SDL_SwapBE16(pixel);
-						}
-						src_line1 += src_pitch;
-						dst_line1 += dst_pitch>>1;
+	perf.width = width;
+	perf.height = height;
+	for (int top = 0; top < height; top += 16) {
+		const int lines = std::min(16, height - top);
+		const int tileRow = top / 16 * tiles;
+		Uint16 *saved = &previousFrame[size_t(top) * rowWords];
+		unsigned changedRows = 0;
+		for (int y = 0; y < lines; y++) {
+			if (memcmp(src + y * pitch, saved + y * rowWords, rowWords * sizeof(Uint16)))
+				changedRows |= 1u << y;
+		}
+		if (perf.active) perf.blocks += tiles;
+		if (changedRows || (surface->hasDirtyRect() && surface->getMaxDirtY() >= top &&
+		                    surface->getMinDirtY() < top + lines)) {
+			for (int tile = 0; tile < tiles; tile++) {
+				const int left = tile * 16;
+				const int cols = std::min(16, width - left);
+				const int offset = tile * bpp;
+				const int words = bpp == 16 ? cols : bpp + overlap;
+				for (int y = 0; changedRows && y < lines; y++) {
+					if ((changedRows & (1u << y)) &&
+					    memcmp(src + y * pitch + offset, saved + y * rowWords + offset, words * sizeof(Uint16))) {
+						if (perf.active) ++perf.changed;
+						if (!dirty[tileRow + tile])
+							surface->setDirtyRect(left, top, cols, lines);
+						break;
 					}
 				}
-				src_line += 16;
-				dst_line += 16;
-			}
-			src += src_pitch * 16;
-			dst += (dst_pitch>>1) * 16;
-		}
-	} else {
-		Uint8 *dst = (Uint8 *) sdl_surf->pixels;
-		for (y=0; y<dirty_h;y++) {
-			Uint16 *src_line = src;
-			Uint8 *dst_line = dst;
-			/* Atari screen may not have a multiple of 16 lines */
-			int num_lines = surface->getHeight() - (y<<4);
-			if (num_lines>16) {
-				num_lines=16;
-			}
-			for (x=0; x<dirty_w; x++) {
-				if (perf.active) ++perf.blocks;
-				Uint32 newCrc = calc_adler((Uint8 *)src_line, 2*videlBpp, num_lines, src_pitch<<1);
-				if (newCrc != crcList[y*dirty_w+x]) {
-					if (perf.active) ++perf.changed;
-					crcList[y*dirty_w+x] = newCrc;
-					dirtyRects[y * dirty_w + x] = 1;
-				}
-				if (dirtyRects[y * dirty_w + x]) {
-					if (perf.active) ++perf.converted;
-					perf.rectangle(x<<4,y<<4,16,num_lines);
-					/* Convert 16x16 block */
-					int j;
-					Uint16 *src_line1 = src_line;
-					Uint8 *dst_line1 = dst_line;
-					for (j=0;j<num_lines;j++) {
-						HostScreen::bitplaneToChunky(src_line1, videlBpp, dst_line1, hscroll);
-						src_line1 += src_pitch;
-						dst_line1 += dst_pitch;
+				if (!dirty[tileRow + tile])
+					continue;
+				if (perf.active) ++perf.converted;
+				perf.rectangle(left, top, cols, lines);
+				for (int y = 0; y < lines; y++) {
+					Uint16 *in = src + y * pitch + offset;
+					Uint8 *out = (Uint8 *)sdl_surf->pixels + (top + y) * sdl_surf->pitch;
+					if (bpp == 16) {
+						for (int x = 0; x < cols; x++)
+							((Uint16 *)out)[left + x] = SDL_SwapBE16(in[x]);
+					} else if (cols == 16) {
+						HostScreen::bitplaneToChunky(in, bpp, out + left, hscroll);
+					} else {
+						Uint8 pixels[16];
+						HostScreen::bitplaneToChunky(in, bpp, pixels, hscroll);
+						memcpy(out + left, pixels, cols);
 					}
 				}
-				src_line += videlBpp;
-				dst_line += 16;
 			}
-			src += src_pitch * 16;
-			dst += dst_pitch * 16;
 		}
+		for (int y = 0; changedRows && y < lines; y++) {
+			if (changedRows & (1u << y))
+				memcpy(saved + y * rowWords, src + y * pitch, rowWords * sizeof(Uint16));
+		}
+		src += lines * pitch;
 	}
 }

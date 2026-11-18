@@ -732,7 +732,10 @@ void HostScreen::clearScreen(void)
 
 void HostScreen::refreshVidel(void)
 {
-	getVIDEL()->forceRefresh();
+#if !SDL_VERSION_ATLEAST(2, 0, 0)
+	if (screen->flags & SDL_DOUBLEBUF)
+		forceRefreshVidel();
+#endif
 	refreshSurface(getVIDEL()->getSurface());
 }
 
@@ -747,7 +750,11 @@ void HostScreen::forceRefreshVidel(void)
 
 void HostScreen::checkSwitchVidelNfvdi(void)
 {
-	numScreen = renderVidelSurface ? SCREEN_VIDEL : SCREEN_NFVDI;
+	const int next = renderVidelSurface ? SCREEN_VIDEL : SCREEN_NFVDI;
+	if (next != numScreen) {
+		numScreen = next;
+		forceRefreshScreen();
+	}
 }
 
 void HostScreen::refreshLogo(void)
@@ -795,6 +802,7 @@ void HostScreen::checkSwitchToVidel(void)
 	/* No logo ? */
 	if (!logo || !logo->getSurface()) {
 		numScreen = SCREEN_VIDEL;
+		forceRefreshScreen();
 #ifdef NFVDI_SUPPORT
 		fvdi = 0;
 #endif
@@ -816,6 +824,7 @@ void HostScreen::checkSwitchToVidel(void)
 		}
 #endif
 		numScreen = SCREEN_VIDEL;
+		forceRefreshScreen();
 #ifdef NFVDI_SUPPORT
 		fvdi = 0;
 #endif
@@ -1129,13 +1138,13 @@ void HostScreen::drawSurfaceToScreen(HostSurface *hsurf, int *dst_x, int *dst_y)
 			SDL_Rect src, dst;
 			dst.x = dst_rect.x +  hsurf->getMinDirtX();
 			dst.y = dst_rect.y +  hsurf->getMinDirtY();
-			dst.w = dst_rect.w +  hsurf->getMaxDirtX()-hsurf->getMinDirtX()+1;
-			dst.h = dst_rect.h +  hsurf->getMaxDirtY()-hsurf->getMinDirtY()+1;
-			src.x = src_rect.x +  hsurf->getMinDirtX();
-			src.y = src_rect.y +  hsurf->getMinDirtY();
-			src.w = src_rect.w +  hsurf->getMaxDirtX()-hsurf->getMinDirtX()+1;
-			src.h = src_rect.h +  hsurf->getMaxDirtY()-hsurf->getMinDirtX()+1;
-			
+			src.x = src_rect.x + hsurf->getMinDirtX();
+			src.y = src_rect.y + hsurf->getMinDirtY();
+			src.w = hsurf->getMaxDirtX() - hsurf->getMinDirtX() + 1;
+			src.h = hsurf->getMaxDirtY() - hsurf->getMinDirtY() + 1;
+			dst.w = src.w;
+			dst.h = src.h;
+
 			perf.rectangle(dst.x,dst.y,src.w,src.h);
 			SDL_BlitSurface(sdl_surf, &src, screen, &dst);
 			setDirtyRect(dst.x,dst.y,dst.w,dst.h);

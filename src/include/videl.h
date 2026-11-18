@@ -22,6 +22,7 @@
 #define VIDEL_H
 
 #include "SDL_compat.h"
+#include <vector>
 
 class BASE_IO;
 class HostSurface;
@@ -31,8 +32,8 @@ class VIDEL : public BASE_IO
 	private:
 		HostSurface *surface;
 		int prevVidelWidth, prevVidelHeight, prevVidelBpp;
-		bool updatePalette;
-		Uint32 *crcList;
+		bool updatePalette, stPalette;
+		std::vector<Uint16> previousFrame;
 
 		bool useStPalette(void);
 		Uint32 getVramAddress(void);

@@ -1647,6 +1647,9 @@ void check_event()
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 			/* resize handled in process_active_event() */
 #else
+			case SDL_VIDEOEXPOSE:
+				if (host && host->video) host->video->forceRefreshScreen();
+				break;
 			case SDL_VIDEORESIZE:
 				process_resize_event(event.resize.w, event.resize.h);
 				break;

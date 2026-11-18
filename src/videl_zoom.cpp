@@ -26,6 +26,7 @@
 #include "host_surface.h"
 #include "videl.h"
 #include "videl_zoom.h"
+#include <algorithm>
 
 #define DEBUG 0
 #include "debug.h"
@@ -35,6 +36,7 @@
 VidelZoom::VidelZoom(memptr addr, uint32 size) :
 	VIDEL(addr, size), surface(NULL),
 	zoomWidth(0), zoomHeight(0),
+	prevVidelWidth(0), prevVidelHeight(0), prevVidelBpp(0),
 	prevWidth(0), prevHeight(0), prevBpp(0),
 	xtable(NULL), ytable(NULL)
 {
@@ -102,8 +104,13 @@ HostSurface *VidelZoom::getSurface(void)
 	}
 
 	/* Return non zoomed surface if correct size, or zoom not suitable */
-	if (bx_options.opengl.enabled || !autozoom_enabled ||
+	if (bx_options.opengl.enabled || !autozoom_enabled || zoomWidth <= 0 || zoomHeight <= 0 ||
 		((zoomWidth==videlWidth) && (zoomHeight==videlHeight))) {
+		if (prevVidelWidth) {
+			videl_hsurf->setDirtyRect(0, 0, videlWidth, videlHeight);
+			host->video->forceRefreshScreen();
+			prevVidelWidth = 0;
+		}
 		return videl_hsurf;
 	}
 
@@ -145,6 +152,7 @@ HostSurface *VidelZoom::getSurface(void)
 
 	/* Update zoom tables if needed */
 	if (updateZoomTable) {
+		videl_hsurf->setDirtyRect(0, 0, videlWidth, videlHeight);
 		int i;
 
 		if (xtable) {
@@ -197,6 +205,9 @@ void VidelZoom::refreshScreen(HostSurface *videl_hsurf)
 		return;
 	}
 
+	if (!videl_hsurf->hasDirtyRect())
+		return;
+
 	/* Update palette from non zoomed surface */
 	if ((videl_hsurf->getBpp()==8) && (surface->getBpp()==8)) {
 		int i;
@@ -237,10 +248,13 @@ void VidelZoom::refreshScreen(HostSurface *videl_hsurf)
 			}
 
 			/* Zoom 16x16 block */
-			int dst_x1 = ((x<<4) * zoomWidth) / videlWidth;
-			int dst_x2 = (((x+1)<<4) * zoomWidth) / videlWidth;
-			int dst_y1 = ((y<<4) * zoomHeight) / videlHeight;
-			int dst_y2 = (((y<<4)+num_lines) * zoomHeight) / videlHeight;
+			const int right = std::min((x + 1) * 16, videlWidth);
+			const int dst_x1 = (x * 16 * zoomWidth + videlWidth - 1) / videlWidth;
+			const int dst_x2 = (right * zoomWidth + videlWidth - 1) / videlWidth;
+			const int dst_y1 = (y * 16 * zoomHeight + videlHeight - 1) / videlHeight;
+			const int dst_y2 = ((y * 16 + num_lines) * zoomHeight + videlHeight - 1) / videlHeight;
+			if (dst_x1 == dst_x2 || dst_y1 == dst_y2)
+				continue;
 
 			int i,j;
 
