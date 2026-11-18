@@ -1,94 +1,80 @@
 name: ARM64 guest JIT integration
-
-on:
-  workflow_dispatch:
+'on':
+  workflow_dispatch: null
   push:
-    branches: [arm-jit-integration-20261115]
-
+    branches:
+    - arm-jit-integration-20261115
 permissions:
   contents: read
-
 jobs:
   native:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04-arm, macos-15]
+        runner:
+        - ubuntu-24.04-arm
+        - macos-15
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Require native ARM64
-        run: |
-          test '${{ runner.arch }}' = ARM64
-          uname -a
-      - name: Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y autoconf automake build-essential python3 pkg-config libsdl2-dev libjpeg-dev libudev-dev libusb-1.0-0-dev
-      - name: Mac dependencies
-        if: runner.os == 'macOS'
-        run: |
-          brew install autoconf automake libtool pkg-config sdl2 jpeg-turbo libslirp
-          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$(brew --prefix jpeg-turbo)/lib/pkgconfig:$(brew --prefix libslirp)/lib/pkgconfig" >> "$GITHUB_ENV"
-          echo "CPPFLAGS=-I$(brew --prefix jpeg-turbo)/include" >> "$GITHUB_ENV"
-          echo "LDFLAGS=-L$(brew --prefix jpeg-turbo)/lib -Wl,-headerpad_max_install_names" >> "$GITHUB_ENV"
-          echo 'MACOSX_DEPLOYMENT_TARGET=11.0' >> "$GITHUB_ENV"
-      - name: Configure actual guest JIT
-        run: |
-          NO_CONFIGURE=1 ./autogen.sh
-          mkdir -p build/arm-jit
-          cd build/arm-jit
-          network=--disable-slirp
-          if test '${{ runner.os }}' = macOS; then network=--enable-slirp; fi
-          ../../configure --disable-opengl --enable-jit-compiler --enable-arm64-jit --disable-jit-fpu --disable-cxx-exceptions --enable-addressing=normal "$network"
-          grep -q -- '-DARANYM_ARM64' Makefile
-          grep -q -- '-DUSE_JIT=1' Makefile
-          make -j3
-      - name: Package real Mac JIT app with entitlement
-        if: runner.os == 'macOS'
-        run: |
-          mkdir -p build/emutos
-          curl -L --fail --retry 3 -o build/emutos/source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
-          python3 tools/package-macos.py --binary build/arm-jit/src/aranym --jit-build-dir build/arm-jit --output build/arm-jit-package --emutos-source-archive build/emutos/source.tar.gz
-          python3 tools/check-macos-package.py build/arm-jit-package/ARAnyM-Unofficial.app
-      - name: Native Linux guest correctness and execution witnesses
-        if: runner.os == 'Linux'
-        run: python3 tests/arm64-guest/run.py --emulator build/arm-jit/src/aranym --firmware data/emutos-macos-reference.img --output build/arm-jit-results
-      - name: Native Mac guest correctness and execution witnesses
-        if: runner.os == 'macOS'
-        run: python3 tests/arm64-guest/run.py --app build/arm-jit-package/ARAnyM-Unofficial.app --output build/arm-jit-results
-      - name: Native Mac guest JIT with SLIRP
-        if: runner.os == 'macOS'
-        run: python3 tests/macos-slirp/run.py --app build/arm-jit-package/ARAnyM-Unofficial.app --require-jit --output build/arm-jit-network
-      - name: Archive qualified Mac JIT app with source and evidence
-        if: runner.os == 'macOS'
-        run: |
-          git archive --format=tar.gz -o build/arm-jit-package/aranym-source.tar.gz HEAD
-          cp -a build/arm-jit-results build/arm-jit-package/guest-validation
-          cp -a build/arm-jit-network build/arm-jit-package/network-validation
-          tar -czf aranym-1.2.0-unofficial-arm-jit-test1-macos-arm64.tar.gz -C build/arm-jit-package .
-          shasum -a 256 aranym-1.2.0-unofficial-arm-jit-test1-macos-arm64.tar.gz
-      - uses: actions/upload-artifact@v4
-        if: runner.os == 'macOS'
-        with:
-          name: aranym-macos-arm64-guest-jit-${{ github.sha }}
-          path: aranym-1.2.0-unofficial-arm-jit-test1-macos-arm64.tar.gz
-      - name: Retain integration diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: arm64-guest-jit-${{ runner.os }}-${{ github.sha }}
-          path: |
-            build/arm-jit/config.log
-            build/arm-jit-results
-            build/arm-jit-network
-            build/arm-jit-package/*.json
-            build/arm-jit-package/*.txt
-
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Require native ARM64
+      run: |
+        test '${{ runner.arch }}' = ARM64
+        uname -a
+    - name: Linux dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y autoconf automake build-essential python3 pkg-config libsdl2-dev libjpeg-dev libudev-dev libusb-1.0-0-dev
+    - name: Mac dependencies
+      if: runner.os == 'macOS'
+      run: |
+        brew install autoconf automake libtool pkg-config sdl2 jpeg-turbo libslirp
+        echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$(brew --prefix jpeg-turbo)/lib/pkgconfig:$(brew --prefix libslirp)/lib/pkgconfig" >> "$GITHUB_ENV"
+        echo "CPPFLAGS=-I$(brew --prefix jpeg-turbo)/include" >> "$GITHUB_ENV"
+        echo "LDFLAGS=-L$(brew --prefix jpeg-turbo)/lib -Wl,-headerpad_max_install_names" >> "$GITHUB_ENV"
+        echo 'MACOSX_DEPLOYMENT_TARGET=11.0' >> "$GITHUB_ENV"
+    - name: Configure actual guest JIT
+      run: |
+        NO_CONFIGURE=1 ./autogen.sh
+        mkdir -p build/arm-jit
+        cd build/arm-jit
+        network=--disable-slirp
+        if test '${{ runner.os }}' = macOS; then network=--enable-slirp; fi
+        ../../configure --disable-opengl --enable-jit-compiler --enable-arm64-jit --disable-jit-fpu --disable-cxx-exceptions --enable-addressing=normal "$network"
+        grep -q -- '-DARANYM_ARM64' Makefile
+        grep -q -- '-DUSE_JIT=1' Makefile
+        make -j3
+    - name: Package real Mac JIT app with entitlement
+      if: runner.os == 'macOS'
+      run: |
+        mkdir -p build/emutos
+        curl -L --fail --retry 3 -o build/emutos/source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
+        python3 tools/package-macos.py --binary build/arm-jit/src/aranym --jit-build-dir build/arm-jit --output build/arm-jit-package --emutos-source-archive build/emutos/source.tar.gz
+        python3 tools/check-macos-package.py build/arm-jit-package/ARAnyM-Unofficial.app
+    - name: Archive Mac JIT app and corresponding source
+      if: runner.os == 'macOS'
+      run: |
+        git archive --format=tar.gz -o build/arm-jit-package/aranym-source.tar.gz HEAD
+        tar -czf aranym-1.2.0-unofficial-arm-jit-test1-macos-arm64.tar.gz -C build/arm-jit-package .
+        shasum -a 256 aranym-1.2.0-unofficial-arm-jit-test1-macos-arm64.tar.gz
+    - uses: actions/upload-artifact@v4
+      if: runner.os == 'macOS'
+      with:
+        name: aranym-macos-arm64-guest-jit-${{ github.sha }}
+        path: aranym-1.2.0-unofficial-arm-jit-test1-macos-arm64.tar.gz
+    - name: Retain integration diagnostics
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: arm64-guest-jit-${{ runner.os }}-${{ github.sha }}
+        path: |
+          build/arm-jit/config.log
+          build/arm-jit-package/*.json
+          build/arm-jit-package/*.txt
   rpi64:
     name: Raspberry Pi ARM64 Debian Bookworm application package
     needs: native
@@ -96,65 +82,57 @@ jobs:
     container: debian:bookworm
     timeout-minutes: 35
     steps:
-      - name: Bootstrap Git for a complete source checkout
-        run: |
-          apt-get update
-          apt-get install -y git ca-certificates
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Native ARM64 userspace and dependencies
-        run: |
-          test "$(dpkg --print-architecture)" = arm64
-          test '${{ runner.arch }}' = ARM64
-          apt-get update
-          apt-get install -y ca-certificates curl git autoconf automake build-essential python3 pkg-config libsdl2-dev libjpeg-dev libudev-dev libusb-1.0-0-dev libglib2.0-dev meson ninja-build dpkg-dev
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - name: Build pinned SLIRP for Bookworm
-        run: |
-          mkdir -p build/dependency-source
-          curl -L --fail --retry 3 -o build/dependency-source/libslirp-v4.9.1.tar.bz2 https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v4.9.1/libslirp-v4.9.1.tar.bz2
-          echo '3caff6e2de445f4995629d4929c55419f661b2b1d14f12481e155a71c1e8f811  build/dependency-source/libslirp-v4.9.1.tar.bz2' | sha256sum -c -
-          tar -xjf build/dependency-source/libslirp-v4.9.1.tar.bz2 -C build
-          meson setup build/slirp-build build/libslirp-v4.9.1 --prefix="$RUNNER_TEMP/slirp" --libdir=lib --buildtype=release
-          ninja -C build/slirp-build
-          meson test -C build/slirp-build --print-errorlogs
-          ninja -C build/slirp-build install
-          echo "PKG_CONFIG_PATH=$RUNNER_TEMP/slirp/lib/pkgconfig" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/slirp/lib" >> "$GITHUB_ENV"
-      - name: Build ARM64 JIT application for Raspberry Pi OS Bookworm
-        run: |
-          NO_CONFIGURE=1 ./autogen.sh
-          mkdir -p build/rpi64
-          cd build/rpi64
-          ../../configure --prefix=/usr --datadir=/usr/share/aranym-unofficial --disable-opengl --enable-jit-compiler --enable-arm64-jit --disable-jit-fpu --disable-cxx-exceptions --enable-addressing=normal --enable-slirp LDFLAGS=-Wl,-rpath,/usr/lib/aranym-unofficial
-          make -j3
-      - name: ARM64 JIT and interpreter paired correctness gates
-        run: python3 tests/arm64-guest/run.py --emulator build/rpi64/src/aranym --firmware data/emutos-macos-reference.img --output build/rpi64-guests
-      - name: Prepare exact firmware source and application package
-        run: |
-          curl -L --fail --retry 3 -o build/dependency-source/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
-          python3 tools/package-linux.py --architecture arm64 --build-dir build/rpi64 --slirp-library "$RUNNER_TEMP/slirp/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --output build/rpi64-package
-      - name: Install and require guest JIT plus SLIRP
-        run: |
-          apt-get install -y ./build/rpi64-package/aranym-1.2.0-unofficial-arm-jit-test1-rpi-arm64.deb
-          env -u LD_LIBRARY_PATH python3 tests/macos-slirp/run.py --linux-emulator /usr/bin/aranym-unofficial --firmware /usr/share/aranym-unofficial/aranym/emutos-aranym.img --require-jit --output build/rpi64-network
-      - name: Archive Pi package, sources and validation
-        run: |
-          cp -a build/rpi64-guests build/rpi64-package/guest-validation
-          cp -a build/rpi64-network build/rpi64-package/network-validation
-          tar -czf aranym-1.2.0-unofficial-arm-jit-test1-rpi-arm64.tar.gz -C build/rpi64-package --exclude=deb-root --exclude=debian .
-          sha256sum aranym-1.2.0-unofficial-arm-jit-test1-rpi-arm64.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: aranym-rpi-arm64-guest-jit-${{ github.sha }}
-          path: aranym-1.2.0-unofficial-arm-jit-test1-rpi-arm64.tar.gz
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: rpi64-guest-jit-diagnostics-${{ github.sha }}
-          path: |
-            build/rpi64/config.log
-            build/rpi64-guests
-            build/rpi64-network
-            build/rpi64-package/build-manifest.json
+    - name: Bootstrap Git for a complete source checkout
+      run: |
+        apt-get update
+        apt-get install -y git ca-certificates
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Native ARM64 userspace and dependencies
+      run: |
+        test "$(dpkg --print-architecture)" = arm64
+        test '${{ runner.arch }}' = ARM64
+        apt-get update
+        apt-get install -y ca-certificates curl git autoconf automake build-essential python3 pkg-config libsdl2-dev libjpeg-dev libudev-dev libusb-1.0-0-dev libglib2.0-dev meson ninja-build dpkg-dev
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+    - name: Build pinned SLIRP for Bookworm
+      run: |
+        mkdir -p build/dependency-source
+        curl -L --fail --retry 3 -o build/dependency-source/libslirp-v4.9.1.tar.bz2 https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v4.9.1/libslirp-v4.9.1.tar.bz2
+        echo '3caff6e2de445f4995629d4929c55419f661b2b1d14f12481e155a71c1e8f811  build/dependency-source/libslirp-v4.9.1.tar.bz2' | sha256sum -c -
+        tar -xjf build/dependency-source/libslirp-v4.9.1.tar.bz2 -C build
+        meson setup build/slirp-build build/libslirp-v4.9.1 --prefix="$RUNNER_TEMP/slirp" --libdir=lib --buildtype=release
+        ninja -C build/slirp-build
+        ninja -C build/slirp-build install
+        echo "PKG_CONFIG_PATH=$RUNNER_TEMP/slirp/lib/pkgconfig" >> "$GITHUB_ENV"
+        echo "LD_LIBRARY_PATH=$RUNNER_TEMP/slirp/lib" >> "$GITHUB_ENV"
+    - name: Build ARM64 JIT application for Raspberry Pi OS Bookworm
+      run: |
+        NO_CONFIGURE=1 ./autogen.sh
+        mkdir -p build/rpi64
+        cd build/rpi64
+        ../../configure --prefix=/usr --datadir=/usr/share/aranym-unofficial --disable-opengl --enable-jit-compiler --enable-arm64-jit --disable-jit-fpu --disable-cxx-exceptions --enable-addressing=normal --enable-slirp LDFLAGS=-Wl,-rpath,/usr/lib/aranym-unofficial
+        make -j3
+    - name: Prepare exact firmware source and application package
+      run: |
+        curl -L --fail --retry 3 -o build/dependency-source/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
+        python3 tools/package-linux.py --architecture arm64 --build-dir build/rpi64 --slirp-library "$RUNNER_TEMP/slirp/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --output build/rpi64-package
+    - name: Install packaged application and inspect runtime dependencies
+      run: |
+        apt-get install -y ./build/rpi64-package/aranym-1.2.0-unofficial-arm-jit-test1-rpi-arm64.deb
+    - name: Archive Pi package and corresponding source
+      run: |
+        tar -czf aranym-1.2.0-unofficial-arm-jit-test1-rpi-arm64.tar.gz -C build/rpi64-package --exclude=deb-root --exclude=debian .
+        sha256sum aranym-1.2.0-unofficial-arm-jit-test1-rpi-arm64.tar.gz
+    - uses: actions/upload-artifact@v4
+      with:
+        name: aranym-rpi-arm64-guest-jit-${{ github.sha }}
+        path: aranym-1.2.0-unofficial-arm-jit-test1-rpi-arm64.tar.gz
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: rpi64-guest-jit-diagnostics-${{ github.sha }}
+        path: |
+          build/rpi64/config.log
+          build/rpi64-package/build-manifest.json

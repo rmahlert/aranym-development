@@ -30,7 +30,8 @@ def correct(text):
         manual=dict(path='MC68040UM.pdf',sha256='aed5a038586dd2f610068efa01919fc552dc65bfd1a9274a333bad29dbd48894',page=238),
         scope='Integer CT only. FPU CP/CU continuation remains separate; no pin/default/installer admission change.')
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--input',type=Path,default=ROOT/'src/modern040/restart.cpp');p.add_argument('--output',type=Path);p.add_argument('--metadata-output',type=Path,default=ROOT/'src/modern040/TRACE-RESTART-CORRECTION.json');p.add_argument('--apply',action='store_true');a=p.parse_args();text,record=correct(a.input.read_text())
-    if a.apply:(a.output or a.input).write_text(text);a.metadata_output.write_text(json.dumps(record,indent=2)+'\n')
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--input',type=Path,default=ROOT/'src/modern040/restart.cpp');p.add_argument('--output',type=Path);p.add_argument('--metadata-output',type=Path);p.add_argument('--apply',action='store_true');a=p.parse_args();text,record=correct(a.input.read_text())
+    if a.apply:(a.output or a.input).write_text(text)
+    if a.apply and a.metadata_output:a.metadata_output.write_text(json.dumps(record,indent=2)+'\n')
     print(json.dumps(record,indent=2))
 if __name__=='__main__':main()

@@ -197,7 +197,7 @@ aranym_LDADD = libaranym.a
 if MODERN040_CORE
 # Link the independently built/pinned C-ABI core through the ordinary build.
 # Do not mutate libaranym.a with externally injected objects.
-aranym_SOURCES += ../tests/modern-jit/modern-fallback.cpp
+aranym_SOURCES += modern040/aranym-adapter.cpp
 aranym_LDADD += $(MODERN040_LIBRARY)
 EXTRA_aranym_DEPENDENCIES = $(MODERN040_LIBRARY)
 endif
@@ -690,7 +690,6 @@ CLEANFILES = cdromtest$(EXEEXT) m68kdisasm$(EXEEXT)
 # Complete pinned ARM64 backend and its native adapter.
 EXTRA_DIST += \
 	uae_cpu/compiler/arm64/SOURCE.json \
-	uae_cpu/compiler/arm64/UPSTREAM.md \
 	uae_cpu/compiler/arm64/aarch64.h \
 	uae_cpu/compiler/arm64/aranym_arm64.cpp \
 	uae_cpu/compiler/arm64/aranym_arm64.h \
@@ -733,3 +732,7 @@ $(BUILT_SOURCES): mach_exc.stamp
 	$(AM_V_at)test -f $@ || { rm -f mach_exc.stamp; $(MAKE) mach_exc.stamp; }
 endif
 endif
+
+EXTRA_DIST += gui-osx/jit-arm64.entitlements.plist
+
+EXTRA_DIST += gui-osx/jit-x86_64.entitlements.plist

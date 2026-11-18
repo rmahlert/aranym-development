@@ -78,10 +78,10 @@ cpustbl.cpp cpufunctbl.cpp cputbl.h: cpuemu.cpp
 if GENCOMP_ARCH_X86
 # Experimental full upstream compiler import. Keep regeneration deterministic:
 # never silently replace the imported compiler with the legacy local generator.
-compemu.cpp: $(srcdir)/../../tests/modern-jit/upstream-compemu.cpp $(srcdir)/../../tests/modern-jit/upstream-compstbl.cpp $(srcdir)/../../tests/modern-jit/upstream-comptbl.h
-	$(AM_V_GEN)cp -f $(srcdir)/../../tests/modern-jit/upstream-compemu.cpp $@
-	cp -f $(srcdir)/../../tests/modern-jit/upstream-compstbl.cpp compstbl.cpp
-	cp -f $(srcdir)/../../tests/modern-jit/upstream-comptbl.h comptbl.h
+compemu.cpp: $(srcdir)/compiler/imported/upstream-compemu.cpp $(srcdir)/compiler/imported/upstream-compstbl.cpp $(srcdir)/compiler/imported/upstream-comptbl.h
+	$(AM_V_GEN)cp -f $(srcdir)/compiler/imported/upstream-compemu.cpp $@
+	cp -f $(srcdir)/compiler/imported/upstream-compstbl.cpp compstbl.cpp
+	cp -f $(srcdir)/compiler/imported/upstream-comptbl.h comptbl.h
 else
 compemu.cpp: gencomp$(EXEEXT)
 	$(AM_V_GEN)./gencomp$(EXEEXT)

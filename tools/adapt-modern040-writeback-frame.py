@@ -31,9 +31,10 @@ def correct(text):
         correction='Only the scoped physical-write delivery supplies WB1A/WB1S/WB1D. Legacy MOVE16/PD0 and zero invalid WB1 slots remain unchanged when absent. The delivery boundary owns origin, whole-scalar no-commit, completion and lane validation.',
         scope='One certified completed scalar ExternalBus write only; not a write queue, ATC, MMU, trace/FPU, native or frontend integration.')
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--input',type=Path,default=ROOT/'src/modern040/integer.cpp');p.add_argument('--output',type=Path);p.add_argument('--metadata-output',type=Path,default=ROOT/'src/modern040/PHYSICAL-WRITEBACK-FRAME-CORRECTION.json');p.add_argument('--apply',action='store_true');a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--input',type=Path,default=ROOT/'src/modern040/integer.cpp');p.add_argument('--output',type=Path);p.add_argument('--metadata-output',type=Path);p.add_argument('--apply',action='store_true');a=p.parse_args()
     text,record=correct(a.input.read_text())
     if a.apply:
-        (a.output or a.input).write_text(text);a.metadata_output.write_text(json.dumps(record,indent=2)+'\n')
+        (a.output or a.input).write_text(text)
+    if a.apply and a.metadata_output:a.metadata_output.write_text(json.dumps(record,indent=2)+'\n')
     print(json.dumps(record,indent=2))
 if __name__=='__main__':main()

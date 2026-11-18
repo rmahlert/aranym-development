@@ -155,7 +155,7 @@ with tarfile.open(archive_path) as archive:
 shutil.copy2(archive_path, stage / 'source/emutos-e0f0c233-source.tar.gz')
 PY
 fi
-for f in nfeth.xif nfeth-config netsetup.prg eth0-config.sh README-setup.txt; do
+for f in nfeth.xif nfeth-config netsetup.prg eth0-config.sh; do
 	cp -a "$root/data/network/$f" "$stage/aranym/network/$f"
 done
 
