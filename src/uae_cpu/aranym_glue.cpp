@@ -28,6 +28,8 @@
 #include "cpu_emulation.h"
 #include "newcpu.h"
 #include "hardware.h"
+#include "peripheral_clock.h"
+#include <atomic>
 #include "scc.h"
 #include "input.h"
 #ifdef USE_JIT
@@ -94,6 +96,8 @@ bool InitMEM() {
 	return true;
 }
 
+static std::atomic<bool> cpu_interrupts_ready{false};
+
 bool Init680x0(void)
 {
 	init_m68k();
@@ -115,6 +119,7 @@ bool Init680x0(void)
 #ifdef USE_JIT
 	if (bx_options.jit.jit) compiler_init();
 #endif
+	cpu_interrupts_ready.store(true, std::memory_order_release);
 	return true;
 }
 
@@ -148,6 +153,7 @@ void Reset680x0(void)
 
 void Exit680x0(void)
 {
+	cpu_interrupts_ready.store(false, std::memory_order_release);
 #ifdef USE_JIT
 	if (bx_options.jit.jit) compiler_exit();
 #endif
@@ -192,7 +198,14 @@ void Quit680x0(void)
 
 int MFPdoInterrupt(void)
 {
-	return getMFP()->doInterrupt();
+	const int vector = getMFP()->doInterrupt();
+	peripheral_clock_service();
+	return vector;
+}
+
+int DSPdoInterrupt(void)
+{
+	return getDSP()->host_interrupt_acknowledge();
 }
 
 int SCCdoInterrupt(void)
@@ -205,7 +218,18 @@ int SCCdoInterrupt(void)
  */
 void TriggerInternalIRQ(void)
 {
+	if (!cpu_interrupts_ready.load(std::memory_order_acquire))
+		return;
 	SPCFLAGS_SET( SPCFLAG_INTERNAL_IRQ );
+}
+
+void TriggerDSP(bool asserted)
+{
+    if (asserted) {
+        SPCFLAGS_SET(SPCFLAG_DSP);
+    } else if (SPCFLAGS_TEST(SPCFLAG_DSP)) {
+        SPCFLAGS_CLEAR(SPCFLAG_DSP);
+    }
 }
 
 void TriggerInt3(void)
@@ -231,12 +255,13 @@ void TriggerSCC(bool enable)
 		SPCFLAGS_CLEAR( SPCFLAG_SCC );
 }
 
-void TriggerMFP(bool enable)
+void TriggerMFP(bool asserted)
 {
-	if (enable)
-		SPCFLAGS_SET( SPCFLAG_MFP );
-	else
-		SPCFLAGS_CLEAR( SPCFLAG_MFP );
+    if (asserted) {
+        SPCFLAGS_SET(SPCFLAG_MFP);
+    } else if (SPCFLAGS_TEST(SPCFLAG_MFP)) {
+        SPCFLAGS_CLEAR(SPCFLAG_MFP);
+    }
 }
 
 void TriggerNMI(void)

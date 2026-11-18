@@ -65,6 +65,7 @@ class ACIA : public BASE_IO {
 		uae_u8 cr;		/* Control register */
 		uae_u8 rxdr;	/* Reception data register */
 		uae_u8 txdr;	/* Transmit data register */
+		virtual void resetInterrupt() {}
 
 	public:
 		ACIA(memptr, uint32);

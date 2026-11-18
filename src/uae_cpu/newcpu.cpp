@@ -1365,102 +1365,88 @@ static void do_trace (void)
     }
 }
 
-#ifdef EXPERIMENTAL_UPSTREAM_MODERN040
-#define MODERN040_IRQ_BLOCKED modern040_irq_restart_pending()
-static bool modern040_serve_priority_irqs(bool resetStop)
+static bool external_interrupt_ready(unsigned level)
 {
-    static const bool enabled=std::getenv("ARANYM_MODERN040_IRQ_PRIORITY")!=nullptr;
-    if(!enabled)return false; // Retain the original dispatcher by default.
-    if(!SPCFLAGS_TEST(SPCFLAG_INT3|SPCFLAG_VBL|SPCFLAG_INT5|SPCFLAG_SCC|SPCFLAG_MFP))return true;
-    // Choose the highest eligible level before acknowledging any source.
-    // A pure shared core predicate preserves halt/service/restart blocking.
-    if(SPCFLAGS_TEST(SPCFLAG_MFP)&&modern040_interrupt_ready(6)) {
-        const int vector=MFPdoInterrupt();
-        if(vector){MFPInterrupt(vector);regs.stopped=0;if(resetStop)SPCFLAGS_CLEAR(SPCFLAG_STOP);return true;}
-        SPCFLAGS_CLEAR(SPCFLAG_MFP); // Existing spurious-source handling.
-    }
-    // Preserve the existing deterministic order of the two level5 sources.
-    if(SPCFLAGS_TEST(SPCFLAG_INT5)&&modern040_interrupt_ready(5)) {
-        Interrupt(5);regs.stopped=0;SPCFLAGS_CLEAR(SPCFLAG_INT5);if(resetStop)SPCFLAGS_CLEAR(SPCFLAG_STOP);return true;
-    }
-    if(SPCFLAGS_TEST(SPCFLAG_SCC)&&modern040_interrupt_ready(5)) {
-        const int vector=SCCdoInterrupt();
-        if(vector){SCCInterrupt(vector);regs.stopped=0;SPCFLAGS_CLEAR(SPCFLAG_SCC);if(resetStop)SPCFLAGS_CLEAR(SPCFLAG_STOP);return true;}
-        SPCFLAGS_CLEAR(SPCFLAG_SCC);
-    }
-    if(SPCFLAGS_TEST(SPCFLAG_VBL)&&modern040_interrupt_ready(4)) {
-        Interrupt(4);regs.stopped=0;SPCFLAGS_CLEAR(SPCFLAG_VBL);if(resetStop)SPCFLAGS_CLEAR(SPCFLAG_STOP);return true;
-    }
-    if(SPCFLAGS_TEST(SPCFLAG_INT3)&&modern040_interrupt_ready(3)) {
-        Interrupt(3);regs.stopped=0;SPCFLAGS_CLEAR(SPCFLAG_INT3);if(resetStop)SPCFLAGS_CLEAR(SPCFLAG_STOP);return true;
-    }
-    return true;
-}
-#define MODERN040_PRIORITY_IRQS(resetStop) modern040_serve_priority_irqs(resetStop)
-#else
-#define MODERN040_IRQ_BLOCKED false
-#define MODERN040_PRIORITY_IRQS(resetStop) false
+#if defined(EXPERIMENTAL_UPSTREAM_MODERN040)
+    if (modern040_irq_restart_pending())
+        return false;
+    if (modern040_owns_interrupt())
+        return modern040_interrupt_ready(level);
+#elif defined(EXPERIMENTAL_MODERN040)
+    return modern040_interrupt_ready(level);
 #endif
-#define SERVE_VBL_MFP(resetStop)							\
-{															\
-	if (MODERN040_PRIORITY_IRQS(resetStop)) {} else			\
-	if (SPCFLAGS_TEST( SPCFLAG_INT3|SPCFLAG_VBL|SPCFLAG_INT5|SPCFLAG_SCC|SPCFLAG_MFP ) && !MODERN040_IRQ_BLOCKED) {		\
-		if (SPCFLAGS_TEST( SPCFLAG_INT3 )) {					\
-			if (3 > regs.intmask) {							\
-				Interrupt(3);								\
-				regs.stopped = 0;							\
-				SPCFLAGS_CLEAR( SPCFLAG_INT3 );				\
-				if (resetStop)								\
-					SPCFLAGS_CLEAR( SPCFLAG_STOP );			\
-			}												\
-		}													\
-		if (SPCFLAGS_TEST( SPCFLAG_VBL )) {					\
-			if (4 > regs.intmask) {							\
-				Interrupt(4);								\
-				regs.stopped = 0;							\
-				SPCFLAGS_CLEAR( SPCFLAG_VBL );				\
-				if (resetStop)								\
-					SPCFLAGS_CLEAR( SPCFLAG_STOP );			\
-			}												\
-		}													\
-		if (SPCFLAGS_TEST( SPCFLAG_INT5 )) {					\
-			if (5 > regs.intmask) {							\
-				Interrupt(5);								\
-				regs.stopped = 0;							\
-				SPCFLAGS_CLEAR( SPCFLAG_INT5 );				\
-				if (resetStop)								\
-					SPCFLAGS_CLEAR( SPCFLAG_STOP );			\
-			}												\
-		}													\
-		if (SPCFLAGS_TEST( SPCFLAG_SCC )) {					\
-			if (5 > regs.intmask) {						\
-				int vector_number=SCCdoInterrupt();			\
-				if(vector_number){					\
-					 SCCInterrupt(vector_number);	        	\
-					regs.stopped = 0;				\
-					SPCFLAGS_CLEAR( SPCFLAG_SCC);		\
-					if (resetStop)					\
-						SPCFLAGS_CLEAR( SPCFLAG_STOP );		\
-				}							\
-				else							\
-					SPCFLAGS_CLEAR( SPCFLAG_SCC );		\
-			}								\
-		}									\
-		if (SPCFLAGS_TEST( SPCFLAG_MFP )) {					\
-			if (6 > regs.intmask) {							\
-				int vector_number = MFPdoInterrupt();		\
-				if (vector_number) {						\
-					MFPInterrupt(vector_number);			\
-					regs.stopped = 0;						\
-					if (resetStop)							\
-						SPCFLAGS_CLEAR( SPCFLAG_STOP );		\
-				}											\
-				else										\
-					SPCFLAGS_CLEAR( SPCFLAG_MFP );			\
-			}												\
-		}													\
-	}														\
+    return level > regs.intmask;
 }
+
+bool cpu_stop_has_pending_work()
+{
+    const auto flags = __atomic_load_n(&regs.spcflags, __ATOMIC_ACQUIRE);
+    if (flags & (SPCFLAG_INTERNAL_IRQ | SPCFLAG_BRK)) return true;
+    return ((flags & (SPCFLAG_DSP | SPCFLAG_MFP)) && external_interrupt_ready(6)) ||
+           ((flags & (SPCFLAG_INT5 | SPCFLAG_SCC)) && external_interrupt_ready(5)) ||
+           ((flags & SPCFLAG_VBL) && external_interrupt_ready(4)) ||
+           ((flags & SPCFLAG_INT3) && external_interrupt_ready(3));
+}
+
+static void serve_external_interrupts(bool reset_stop)
+{
+    int vector = -1;
+    if (external_interrupt_ready(6)) {
+        if (SPCFLAGS_TEST(SPCFLAG_DSP)) {
+            vector = DSPdoInterrupt();
+            if (vector >= 0) {
+                MFPInterrupt(vector);
+                regs.stopped = 0;
+                if (reset_stop) SPCFLAGS_CLEAR(SPCFLAG_STOP);
+                return;
+            }
+            TriggerDSP(false);
+        }
+        if (SPCFLAGS_TEST(SPCFLAG_MFP)) {
+            vector = MFPdoInterrupt();
+            if (vector) {
+                MFPInterrupt(vector);
+                regs.stopped = 0;
+                if (reset_stop) SPCFLAGS_CLEAR(SPCFLAG_STOP);
+                return;
+            }
+        }
+    }
+    if (external_interrupt_ready(5)) {
+        if (SPCFLAGS_TEST(SPCFLAG_INT5)) {
+            Interrupt(5);
+            SPCFLAGS_CLEAR(SPCFLAG_INT5);
+            regs.stopped = 0;
+            if (reset_stop) SPCFLAGS_CLEAR(SPCFLAG_STOP);
+            return;
+        }
+        if (SPCFLAGS_TEST(SPCFLAG_SCC)) {
+            vector = SCCdoInterrupt();
+            if (vector) {
+                SCCInterrupt(vector);
+                regs.stopped = 0;
+                if (reset_stop) SPCFLAGS_CLEAR(SPCFLAG_STOP);
+                return;
+            }
+            SPCFLAGS_CLEAR(SPCFLAG_SCC);
+        }
+    }
+    if (SPCFLAGS_TEST(SPCFLAG_VBL) && external_interrupt_ready(4)) {
+        Interrupt(4);
+        SPCFLAGS_CLEAR(SPCFLAG_VBL);
+        regs.stopped = 0;
+        if (reset_stop) SPCFLAGS_CLEAR(SPCFLAG_STOP);
+        return;
+    }
+    if (SPCFLAGS_TEST(SPCFLAG_INT3) && external_interrupt_ready(3)) {
+        Interrupt(3);
+        SPCFLAGS_CLEAR(SPCFLAG_INT3);
+        regs.stopped = 0;
+        if (reset_stop) SPCFLAGS_CLEAR(SPCFLAG_STOP);
+    }
+}
+
+#define SERVE_VBL_MFP(resetStop) serve_external_interrupts(resetStop)
 
 #define SERVE_INTERNAL_IRQ()								\
 {															\
@@ -1472,6 +1458,7 @@ static bool modern040_serve_priority_irqs(bool resetStop)
 
 int m68k_do_specialties(void)
 {
+	peripheral_clock_service();
 	SERVE_INTERNAL_IRQ();
 #ifdef USE_JIT
 	// Block was compiled
@@ -1499,26 +1486,11 @@ int m68k_do_specialties(void)
 	}
 #endif
 	while (SPCFLAGS_TEST( SPCFLAG_STOP )) {
-		if ((regs.sr & 0x700) == 0x700)
-		{
-			panicbug("STOPed with interrupts disabled, exiting; pc=$%08x", m68k_getpc());
-			m68k_dumpstate (stderr, NULL);
-#if 0
-			quit_program = 1;
-#endif
-#ifdef FULL_HISTORY
-			ndebug::showHistory(20, false);
-			m68k_dumpstate (stderr, NULL);
-#endif
-			return 1;
-		}
-		// give unused time slices back to OS
-		SleepAndWait();
-
 		SERVE_INTERNAL_IRQ();
 		SERVE_VBL_MFP(true);
-		if (SPCFLAGS_TEST( SPCFLAG_BRK ))
+		if (!SPCFLAGS_TEST(SPCFLAG_STOP) || SPCFLAGS_TEST(SPCFLAG_BRK))
 			break;
+		SleepAndWait();
 	}
 	if (SPCFLAGS_TEST( SPCFLAG_TRACE ))
 		do_trace ();

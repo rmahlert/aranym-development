@@ -15,14 +15,14 @@ if SDL_GUI
 AM_CPPFLAGS += -I$(srcdir)/gui-sdl
 endif
 
-CFLAGS_NOWARN = $(DBGSP) $(ARCHFLAGS) $(SDL_CFLAGS) $(ZLIB_CFLAGS) $(DISASM_CFLAGS) $(SLIRP_CFLAGS)
+CFLAGS_NOWARN = $(DBGSP) $(ARCHFLAGS) $(SDL_CFLAGS) $(ZLIB_CFLAGS) $(DISASM_CFLAGS) $(SLIRP_CFLAGS) $(PORTMIDI_CFLAGS)
 AM_CFLAGS = $(CFLAGS_NOWARN) $(WFLAGS)
 AM_CXXFLAGS = $(CFLAGS_NOWARN) $(WFLAGS)
 AM_OBJCFLAGS = $(CFLAGS_NOWARN) $(WFLAGS)
 AM_OBJCXXFLAGS = $(CFLAGS_NOWARN) $(WFLAGS)
 AM_LDFLAGS = $(ARCHFLAGS)
 
-LIBS = @LIBS@ $(SDL_LIBS) $(JPEG_LIBS) $(ZLIB_LIBS) $(DISASM_LIBS) $(SLIRP_LIBS)
+LIBS = @LIBS@ $(SDL_LIBS) $(JPEG_LIBS) $(ZLIB_LIBS) $(DISASM_LIBS) $(SLIRP_LIBS) $(PORTMIDI_LIBS)
 
 BEOS_RESOURCES = $(srcdir)/Unix/beos/aranym.rdef
 
@@ -121,6 +121,10 @@ aranym_SOURCES = \
 	sdl_bmp.cpp \
 	md5.cpp \
 	mfp.cpp \
+	mfp_timer.cpp \
+	peripheral_clock.cpp \
+	midi_acia6850.cpp \
+	host_midi.cpp \
 	midi.cpp \
 	midi_file.cpp \
 	mmu.cpp \
@@ -219,6 +223,7 @@ aranym_SOURCES += \
 	gui-sdl/dlgKeyboard.cpp gui-sdl/dlgKeyboard.h \
 	gui-sdl/dlgKeypress.cpp gui-sdl/dlgKeypress.h \
 	gui-sdl/dlgNetwork.cpp gui-sdl/dlgNetwork.h \
+	gui-sdl/dlgMidi.cpp gui-sdl/dlgMidi.h \
 	gui-sdl/dlgOs.cpp gui-sdl/dlgOs.h \
 	gui-sdl/dlgPartition.cpp gui-sdl/dlgPartition.h \
 	gui-sdl/dlgUsb.cpp gui-sdl/dlgUsb.h \
@@ -385,10 +390,7 @@ endif
 endif
 
 if WANT_DSP
-aranym_SOURCES += dsp_core.c dsp_cpu.c
-if WANT_DSP_DISASM
-aranym_SOURCES += dsp_disasm.c
-endif
+aranym_SOURCES += dsp_core.c dsp_cpu.c dsp_disasm.c
 endif
 
 if NFPCI_SUPPORT
@@ -736,3 +738,7 @@ endif
 EXTRA_DIST += gui-osx/jit-arm64.entitlements.plist
 
 EXTRA_DIST += gui-osx/jit-x86_64.entitlements.plist
+
+EXTRA_DIST += include/peripheral_clock.h include/mfp_timer.h include/midi_acia6850.h include/host_midi.h include/dsp_host.h
+
+EXTRA_DIST += dsp-source.json

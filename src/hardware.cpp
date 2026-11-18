@@ -39,6 +39,7 @@
 #include "videl_zoom.h"
 #include "joypads.h"
 #include "scc.h"
+#include "peripheral_clock.h"
 
 #define DEBUG 0
 #include "debug.h"
@@ -68,9 +69,22 @@ enum {iMFP = 0, iMMU, iIKBD, iMIDI, iFDC, iRTC, iIDE, iDSP, iBLITTER, iVIDEL,
 	  iITEMS};
 
 BASE_IO *arhw[iITEMS];
+static bool acia_irq_sources[2] = {false, false};
+
+void set_acia_irq(bool midi_source, bool asserted)
+{
+	const unsigned source = midi_source ? 1 : 0;
+	if (acia_irq_sources[source] == asserted)
+		return;
+	acia_irq_sources[source] = asserted;
+	if (mfp)
+		mfp->setGPIPbit(0x10, acia_irq_sources[0] || acia_irq_sources[1] ? 0 : 0x10);
+}
 
 void HWInit()
 {
+	peripheral_clock_reset();
+	acia_irq_sources[0] = acia_irq_sources[1] = false;
 	arhw[iMFP] = mfp = new MFP(0xfffa00, 0x30);
 	arhw[iMMU] = mmu = new MMU(0xff8000, 8);
 	arhw[iIKBD] = ikbd = new IKBD(0xfffc00, 4);
@@ -113,6 +127,8 @@ void HWExit()
 
 void HWReset()
 {
+	peripheral_clock_reset();
+	acia_irq_sources[0] = acia_irq_sources[1] = false;
 	for(int i=0; i<iITEMS; i++) {
 		arhw[i]->reset();
 	}
@@ -149,7 +165,10 @@ uae_u32 HWget_l (uaecptr addr) {
 	D(bug("HWget_l %x <- %s at %08x", addr, debug_print_IO(addr), showPC()));
 	BASE_IO *ptr = getModule(addr);
 	if (ptr != NULL) {
-		return ptr->handleReadL(addr);
+		peripheral_clock_service();
+		const auto value = ptr->handleReadL(addr);
+		peripheral_clock_service();
+		return value;
 	}
 	BUS_ERROR(addr);
 }
@@ -158,7 +177,10 @@ uae_u16 HWget_w (uaecptr addr) {
 	D(bug("HWget_w %x <- %s at %08x", addr, debug_print_IO(addr), showPC()));
 	BASE_IO *ptr = getModule(addr);
 	if (ptr != NULL) {
-		return ptr->handleReadW(addr);
+		peripheral_clock_service();
+		const auto value = ptr->handleReadW(addr);
+		peripheral_clock_service();
+		return value;
 	}
 	BUS_ERROR(addr);
 }
@@ -167,7 +189,10 @@ uae_u8 HWget_b (uaecptr addr) {
 	D(bug("HWget_b %x <- %s at %08x", addr, debug_print_IO(addr), showPC()));
 	BASE_IO *ptr = getModule(addr);
 	if (ptr != NULL) {
-		return ptr->handleRead(addr);
+		peripheral_clock_service();
+		const auto value = ptr->handleRead(addr);
+		peripheral_clock_service();
+		return value;
 	}
 	BUS_ERROR(addr);
 }
@@ -176,7 +201,9 @@ void HWput_l (uaecptr addr, uae_u32 value) {
 	D(bug("HWput_l %x,%d ($%08x) -> %s at %08x", addr, value, value, debug_print_IO(addr), showPC()));
 	BASE_IO *ptr = getModule(addr);
 	if (ptr != NULL) {
+		peripheral_clock_service();
 		ptr->handleWriteL(addr, value);
+		peripheral_clock_service();
 		return;
 	}
 	BUS_ERROR(addr);
@@ -186,7 +213,9 @@ void HWput_w (uaecptr addr, uae_u16 value) {
 	D(bug("HWput_w %x,%d ($%04x) -> %s at %08x", addr, value, value, debug_print_IO(addr), showPC()));
 	BASE_IO *ptr = getModule(addr);
 	if (ptr != NULL) {
+		peripheral_clock_service();
 		ptr->handleWriteW(addr, value);
+		peripheral_clock_service();
 		return;
 	}
 	BUS_ERROR(addr);
@@ -196,7 +225,9 @@ void HWput_b (uaecptr addr, uae_u8 value) {
 	D(bug("HWput_b %x,%u ($%02x) -> %s at %08x", addr, value, value, debug_print_IO(addr), showPC()));
 	BASE_IO *ptr = getModule(addr);
 	if (ptr != NULL) {
+		peripheral_clock_service();
 		ptr->handleWrite(addr, value);
+		peripheral_clock_service();
 		return;
 	}
 	BUS_ERROR(addr);

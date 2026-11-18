@@ -106,7 +106,8 @@ enum {
 	OPT_PROBE_FIXED = 256,
 	OPT_FIXEDMEM_OFFSET,
 	OPT_NETBSD,
-	OPT_SET_OPTION
+	OPT_SET_OPTION,
+	OPT_MIDI_LIST
 };
 
 static struct option const long_options[] =
@@ -149,6 +150,7 @@ static struct option const long_options[] =
   {"fixedmem", required_argument, 0, OPT_FIXEDMEM_OFFSET },
 #endif
   {"option", required_argument, 0, OPT_SET_OPTION },
+  {"midi-list", no_argument, 0, OPT_MIDI_LIST },
   {NULL, 0, NULL, 0}
 };
 
@@ -1208,6 +1210,10 @@ struct Config_Tag midi_conf[]={
 	{ "File", Path_Tag, &MIDI(file), sizeof(MIDI(file)), 0},
 	{ "Sequencer", Path_Tag, &MIDI(sequencer), sizeof(MIDI(sequencer)), 0},
 	{ "Enabled", Bool_Tag, &MIDI(enabled), 0, 0},
+	{ "Input", String_Tag, &MIDI(input), sizeof(MIDI(input)), 0},
+	{ "Output", String_Tag, &MIDI(output), sizeof(MIDI(output)), 0},
+	{ "AppendOutput", Bool_Tag, &MIDI(append_output), 0, 0},
+	{ "SequencerDevice", Int_Tag, &MIDI(sequencer_device), 0, 0},
 	{ NULL , Error_Tag, NULL, 0, 0 }
 };
 
@@ -1216,6 +1222,9 @@ static void preset_midi() {
   safe_strncpy(MIDI(file), "", sizeof(MIDI(file)));
   safe_strncpy(MIDI(sequencer), "/dev/sequencer", sizeof(MIDI(sequencer)));
   MIDI(enabled) = false;
+  MIDI(input)[0] = MIDI(output)[0] = 0;
+  MIDI(append_output) = false;
+  MIDI(sequencer_device) = 0;
 }
 
 static void postload_midi() {
@@ -1701,6 +1710,7 @@ Options:\n\
   -P <X,Y> or <center>            set window position\n\
   -k, --locale <XY>               set NVRAM keyboard layout and language\n\
       --option section:key:value  set configuration value\n\
+      --midi-list                 list native MIDI input/output devices\n\
 ");
 #ifdef SDL_GUI
   printf("  -G, --setup                     open GUI/setup at startup\n");
@@ -1798,6 +1808,26 @@ static void print_version(void)
 	infoprint("Native features  : %s", PROVIDES_NATFEATS);
 }
 
+static void list_midi_devices()
+{
+    if (!HostMidiTransport::supports_portmidi()) {
+        std::fprintf(stderr, "Native MIDI support was not built in.\n");
+        exit(EXIT_FAILURE);
+    }
+    std::string error;
+    const auto devices = HostMidiTransport::devices(error);
+    if (!error.empty()) {
+        std::fprintf(stderr, "MIDI: %s\n", error.c_str());
+        exit(EXIT_FAILURE);
+    }
+    for (const auto &device : devices)
+        std::printf("%s%s%s: %s\n", device.input ? "input" : "",
+                    device.input && device.output ? "/" : "",
+                    device.output ? "output" : "", (device.interface_name + ": " + device.name).c_str());
+    if (devices.empty()) std::puts("No native MIDI devices found.");
+    exit(EXIT_SUCCESS);
+}
+
 static void early_cmdline_check(int argc, char **argv) {
 	for (int c = 0; c < argc; c++) {
 		char *p = argv[c];
@@ -1813,6 +1843,8 @@ static void early_cmdline_check(int argc, char **argv) {
 			}
 		} else if ((strcmp(p, "-h") == 0) || (strcmp(p, "--help") == 0)) {
 			usage(EXIT_SUCCESS);
+		} else if (strcmp(p, "--midi-list") == 0) {
+			list_midi_devices();
 		} else if ((strcmp(p, "-V") == 0) || (strcmp(p, "--version") == 0)) {
 			print_version();
 			exit(EXIT_SUCCESS);
@@ -2043,6 +2075,10 @@ static int process_cmdline(int argc, char **argv)
 				}
 				break;
 				
+			case OPT_MIDI_LIST:
+				list_midi_devices();
+				break;
+
 			case OPT_PROBE_FIXED:
 				/* processed in early_cmdline_check already */
 				break;

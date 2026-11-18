@@ -53,8 +53,9 @@ extern "C" {
 
 /*--- Constructor/destructor of HostAudio class ---*/
 
-HostAudio::HostAudio()
+HostAudio::HostAudio() : recording(false), enabled(false)
 {
+	memset(&obtained, 0, sizeof(obtained));
 	D(bug("HostAudio: HostAudio()"));
 
 	for (int i=0; i<MAX_AUDIO_CALLBACKS; i++) {

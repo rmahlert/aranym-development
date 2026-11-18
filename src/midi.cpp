@@ -24,6 +24,7 @@
 #include "memory-uae.h"
 #include "midi.h"
 #include "parameters.h"
+#include "peripheral_clock.h"
 
 #define DEBUG 0
 #include "debug.h"
@@ -32,7 +33,8 @@
 #include <cstdlib>
 #include <cstring>
 
-MIDI::MIDI(memptr addr, uint32 size) : ACIA(addr, size)
+MIDI::MIDI(memptr addr, uint32 size) : ACIA(addr, size),
+	device(this,transmit_byte,interrupt_changed),output_dropped(0)
 {
 	D(bug("midi: interface created at 0x%06x", getHWoffset()));
 
@@ -42,31 +44,133 @@ MIDI::MIDI(memptr addr, uint32 size) : ACIA(addr, size)
 MIDI::~MIDI(void)
 {
 	D(bug("midi: interface destroyed at 0x%06x", getHWoffset()));
+	close();
 }
 
 void MIDI::reset(void)
 {
 	D(bug("midi: reset"));
 
-	ACIA::reset();
+	const uint64_t now=peripheral_clock_now_ns();
+	device.reset(now);
+	transport.reset(now);
+	output_dropped=0;
+	set_acia_irq(true,false);
 }
-
 
 void MIDI::close(void)
 {
-	if (fd >= 0)
-	{
-		int i, j;
+	transport.close();
+}
 
-		for (j=0;j<128;j++) {
-			for (i=0;i<16;i++) {
-				WriteData(0x80 + i);
-				WriteData(j);
-				WriteData(0);
-			}
-		}
-	
-		::close(fd);
-		fd = -1;
+void MIDI::enable(bool enabled)
+{
+	bx_midi_options_t *options=&bx_options.midi;
+	if (!enabled) {
+		close();options->enabled=false;return;
+	}
+	HostMidiOptions requested;
+	requested.backend=options->type;
+	requested.input=options->input;
+	requested.output=options->output;
+	requested.append_output=options->append_output;
+	requested.sequencer_device=options->sequencer_device;
+	requested.wakeup=input_ready;
+	if (requested.output.empty()) {
+		if (requested.backend=="file" || requested.backend=="raw") requested.output=options->file;
+		else if (requested.backend=="sequencer") requested.output=options->sequencer;
+	}
+	if (transport.active() && requested.backend==host_options.backend &&
+		requested.input==host_options.input && requested.output==host_options.output &&
+		requested.append_output==host_options.append_output &&
+		requested.sequencer_device==host_options.sequencer_device) {
+		options->enabled=true;return;
+	}
+	close();host_options=requested;
+	options->enabled=transport.open_endpoints(requested,peripheral_clock_now_ns());
+	if (!options->enabled && requested.backend!="none")
+		panicbug("MIDI: %s",transport.error().c_str());
+}
+
+void MIDI::transmit_byte(void *opaque,uint8_t value,uint64_t time)
+{
+	MIDI *midi=static_cast<MIDI *>(opaque);
+	if (midi->transport.active() && !midi->transport.submit_output(value,time))
+		++midi->output_dropped;
+}
+
+void MIDI::interrupt_changed(void *,bool asserted)
+{
+	set_acia_irq(true,asserted);
+}
+
+void MIDI::input_ready(void *)
+{
+	TriggerInternalIRQ();
+}
+
+void MIDI::poll_host(uint64_t now)
+{
+	transport.service(now);
+	HostMidiByte incoming;
+	unsigned int count=0;
+	while (count++<256 && device.can_receive() && transport.poll_input(incoming))
+		device.queue_receive(incoming.byte,incoming.timestamp_ns);
+}
+
+void MIDI::service(uint64_t now, bool poll)
+{
+	if (poll) poll_host(now);
+	device.advance(now);
+}
+
+uint64_t MIDI::next_deadline_ns() const
+{
+	return device.next_deadline_ns();
+}
+
+bool MIDI::receive_byte(uint8_t value,uint64_t start,uint8_t errors)
+{
+	return device.queue_receive(value,start,0x15,errors);
+}
+
+uae_u8 MIDI::ReadStatus()
+{
+	const uint64_t now=peripheral_clock_event_time_ns();
+	return device.read_status(now);
+}
+
+void MIDI::WriteControl(uae_u8 value)
+{
+	const uint64_t now=peripheral_clock_event_time_ns();
+	device.write_control(value,now);
+}
+
+uae_u8 MIDI::ReadData()
+{
+	const uint64_t now=peripheral_clock_event_time_ns();
+	return device.read_data(now);
+}
+
+void MIDI::WriteData(uae_u8 value)
+{
+	const uint64_t now=peripheral_clock_event_time_ns();
+	device.write_data(value,now);
+}
+
+uae_u8 MIDI::handleRead(uaecptr addr)
+{
+	switch (addr-getHWoffset()) {
+	case 0:return ReadStatus();
+	case 2:return ReadData();
+	default:return 0;
+	}
+}
+
+void MIDI::handleWrite(uaecptr addr,uae_u8 value)
+{
+	switch (addr-getHWoffset()) {
+	case 0:WriteControl(value);break;
+	case 2:WriteData(value);break;
 	}
 }

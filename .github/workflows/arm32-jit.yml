@@ -19,11 +19,17 @@ jobs:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
+    - uses: actions/checkout@v4
+      with:
+        repository: PortMidi/portmidi
+        ref: 8341a6713842d2374c3aad8998d43b20ad0db435
+        path: build/portmidi
+        fetch-depth: 1
     - name: ARM32 cross compiler and target dependencies
       run: |
         dpkg --add-architecture armhf
         apt-get update
-        apt-get install -y curl autoconf automake build-essential gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf qemu-user-static python3 pkg-config meson ninja-build dpkg-dev libsdl2-dev:armhf libjpeg-dev:armhf libudev-dev:armhf libusb-1.0-0-dev:armhf libglib2.0-dev:armhf
+        apt-get install -y cmake libasound2-dev:armhf curl autoconf automake build-essential gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf qemu-user-static python3 pkg-config meson ninja-build dpkg-dev libsdl2-dev:armhf libjpeg-dev:armhf libudev-dev:armhf libusb-1.0-0-dev:armhf libglib2.0-dev:armhf
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
         echo 'PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig' >> "$GITHUB_ENV"
     - name: Cross-build pinned ARM32 SLIRP
@@ -53,17 +59,22 @@ jobs:
         ninja -C build/slirp-armhf
         ninja -C build/slirp-armhf install
         echo "PKG_CONFIG_PATH=$RUNNER_TEMP/slirp-armhf/lib/pkgconfig" >> "$GITHUB_ENV"
+    - name: Build pinned PortMidi native device support
+      run: |
+        python3 tools/build-portmidi.py --source build/portmidi --build-dir "$RUNNER_TEMP/portmidi-build" --prefix "$RUNNER_TEMP/portmidi" --cc arm-linux-gnueabihf-gcc --cxx arm-linux-gnueabihf-g++ --system-name Linux --processor arm
+        echo "PKG_CONFIG_PATH=$RUNNER_TEMP/portmidi/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
+        echo "LD_LIBRARY_PATH=$RUNNER_TEMP/portmidi/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
     - name: Compile full ARM32 guest JIT application
       run: |
         NO_CONFIGURE=1 ./autogen.sh
         mkdir -p build/rpi32
         cd build/rpi32
-        ../../configure --host=arm-linux-gnueabihf --prefix=/usr --datadir=/usr/share/aranym-unofficial --disable-opengl --enable-jit-compiler --disable-jit-fpu --disable-cxx-exceptions --enable-addressing=direct --enable-fpe=ieee --enable-slirp CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ LDFLAGS=-Wl,-rpath,/usr/lib/aranym-unofficial
+        ../../configure --enable-portmidi --host=arm-linux-gnueabihf --prefix=/usr --datadir=/usr/share/aranym-unofficial --disable-opengl --enable-jit-compiler --disable-jit-fpu --disable-cxx-exceptions --enable-addressing=direct --enable-fpe=ieee --enable-slirp CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ LDFLAGS=-Wl,-rpath,/usr/lib/aranym-unofficial
         make -j3
     - name: Package exact ARM32 application with sources
       run: |
         curl -L --fail --retry 3 -o build/dependency-source/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
-        DEB_HOST_ARCH=armhf python3 tools/package-linux.py --architecture armhf --cross-armhf --build-dir build/rpi32 --slirp-library "$RUNNER_TEMP/slirp-armhf/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --output build/rpi32-package
+        DEB_HOST_ARCH=armhf python3 tools/package-linux.py --portmidi-prefix "$RUNNER_TEMP/portmidi" --architecture armhf --cross-armhf --build-dir build/rpi32 --slirp-library "$RUNNER_TEMP/slirp-armhf/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --output build/rpi32-package
     - name: Install packaged application and inspect runtime dependencies
       run: |
         apt-get install -y ./build/rpi32-package/aranym-1.2.0-unofficial-arm-jit-test1-rpi-armhf.deb

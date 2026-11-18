@@ -201,11 +201,18 @@ Ramdisk = root.bin
 #  none -> No output
 #  file -> Output to file
 #  sequencer -> Use /dev/sequencer device under Linux
+#  portmidi -> Native host MIDI devices (see --midi-list)
+#  raw -> Raw input/output devices or byte captures
 Type = file
 # Output to file, filename
 File = /tmp/aranym-midi.bin
 # Output to Linux /dev/sequencer device
 Sequencer = /dev/sequencer
+Enabled = No
+Input =
+Output =
+AppendOutput = No
+SequencerDevice = 0
 
 
 [CDROMS]

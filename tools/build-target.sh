@@ -14,17 +14,38 @@ prepare_tree()
 	tar -C "$root" --exclude=.git --exclude=build --exclude=dist \
 		--exclude=lan-share --exclude=.deps --exclude='*.o' \
 		--exclude='*.a' --exclude='*.Po' --exclude='*.Plo' \
-		--exclude='*.exe' -cf - . | tar -C "$tree" -xf -
+		--exclude='*.exe' --exclude=__pycache__ --exclude='*.pyc' -cf - . | tar -C "$tree" -xf -
 	echo "$tree"
 }
 
 build_linux()
 {
+	linux_portmidi_prefix=${PORTMIDI_LINUX_PREFIX:-${PORTMIDI_PREFIX:-}}
+	linux_portmidi_prefix=$(verify_portmidi linux "$linux_portmidi_prefix")
 	build_dir=$(prepare_tree linux)
 	cd "$build_dir"
 	make distclean >/dev/null 2>&1 || true
-	./configure --disable-opengl --enable-jit-compiler
+	./configure --disable-opengl --enable-jit-compiler --enable-portmidi \
+		PORTMIDI_CFLAGS="-I$linux_portmidi_prefix/include" \
+		PORTMIDI_LIBS="-L$linux_portmidi_prefix/lib -lportmidi"
 	make -j"$jobs"
+}
+
+verify_portmidi()
+{
+	if [ -z "$2" ]; then
+		echo "Set PORTMIDI_PREFIX to the pinned PortMidi dependency installation." >&2
+		echo "For both targets, use PORTMIDI_LINUX_PREFIX and PORTMIDI_WINDOWS_PREFIX." >&2
+		exit 1
+	fi
+	python3 -B - "$root/tools" "$2" "$1" <<'PYVERIFY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from portmidi_dist import PortMidiDistribution
+dependency = PortMidiDistribution(sys.argv[2])
+dependency.library(sys.argv[3])
+print(dependency.prefix)
+PYVERIFY
 }
 
 build_windows()
@@ -51,6 +72,9 @@ build_windows()
 		exit 1
 	fi
 
+	windows_portmidi_prefix=${PORTMIDI_WINDOWS_PREFIX:-${PORTMIDI_PREFIX:-}}
+	windows_portmidi_prefix=$(verify_portmidi windows "$windows_portmidi_prefix")
+
 	build_dir=$(prepare_tree windows)
 	cd "$build_dir"
 	make distclean >/dev/null 2>&1 || true
@@ -65,7 +89,10 @@ build_windows()
         CXXCPP_FOR_BUILD="$CXXCPP_FOR_BUILD" \
         ./configure $configure_args \
             --enable-slirp \
+            --enable-portmidi \
             --enable-nfjpeg \
+            PORTMIDI_CFLAGS="-I$windows_portmidi_prefix/include" \
+            PORTMIDI_LIBS="-L$windows_portmidi_prefix/lib -lportmidi" \
             SDL2_CFLAGS="$SDL2_CFLAGS" SDL2_LIBS="$SDL2_LIBS"
 	make -j"$jobs"
 }

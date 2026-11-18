@@ -15,27 +15,32 @@
 	GNU General Public License for more details.
 
 	You should have received a copy of the GNU General Public License
-	along with this program; if not, write to the Free Software
-	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+	along with this program; if not, see <https://www.gnu.org/licenses/>.
 */
 
 #ifndef DSP_DISASM_H
 #define DSP_DISASM_H
 
+#include <stdint.h>
+#include <stdio.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+typedef enum {
+	DSP_TRACE_MODE,
+	DSP_DISASM_MODE
+} dsp_trace_disasm_t;
+
 /* Functions */
-void dsp56k_disasm_init(dsp_core_t *my_dsp_core);
-void dsp56k_disasm(void);
+extern void dsp56k_disasm_init(void);
+extern uint16_t dsp56k_disasm(dsp_trace_disasm_t value, FILE *fp);
+extern const char* dsp56k_getInstructionText(void);
 
 /* Registers change */
-void dsp56k_disasm_reg_read(void);
-void dsp56k_disasm_reg_compare(void);
-
-/* Function to mark register as changed */
-void dsp56k_disasm_force_reg_changed(int num_dsp_reg);
+extern void dsp56k_disasm_reg_save(void);
+extern void dsp56k_disasm_reg_compare(FILE *fp);
 
 #ifdef __cplusplus
 }

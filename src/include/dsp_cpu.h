@@ -15,18 +15,22 @@
 	GNU General Public License for more details.
 
 	You should have received a copy of the GNU General Public License
-	along with this program; if not, write to the Free Software
-	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+	along with this program; if not, see <https://www.gnu.org/licenses/>.
 */
 
 #ifndef DSP_CPU_H
 #define DSP_CPU_H
+
+#include <stdint.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Defines */
+#define BITMASK(x)	((1u<<(x))-1u)
+
 #define DSP_OMR_MA	0x00
 #define DSP_OMR_MB	0x01
 #define DSP_OMR_DE	0x02
@@ -47,6 +51,9 @@ extern "C" {
 #define DSP_SR_S1	0x0b
 #define DSP_SR_T	0x0d
 #define DSP_SR_LF	0x0f
+
+#define DSP_SP_SE	0x04
+#define DSP_SP_UF	0x05
 
 /* Registers numbers in dsp.registers[] */
 #define DSP_REG_X0	0x04
@@ -106,11 +113,18 @@ extern "C" {
 #define DSP_SPACE_P	0x02
 
 /* Functions */
-void dsp56k_init_cpu(void *th_dsp_core);	/* Set dsp_core to use */
+extern void dsp56k_init_cpu(void);		/* Set dsp_core to use */
+extern void dsp56k_execute_instruction(void);	/* Execute 1 instruction */
+extern uint16_t dsp56k_execute_one_disasm_instruction(FILE *out, uint16_t pc);	/* Execute 1 instruction in disasm mode */
 
-int dsp56k_exec_thread(void *th_dsp_core);	/* Thread execution */
+/* Clocked execution and physical interrupt inputs. */
+extern uint64_t dsp56k_run_cycles(uint64_t cycles);
+extern int dsp56k_interrupt_pending(void);
+extern void dsp56k_set_irq_line(uint32_t intr, uint32_t asserted);
 
-void dsp56k_execute_instruction(void);		/* Execute 1 instruction */
+/* Interrupt relative functions */
+void dsp_set_interrupt(uint32_t intr, uint32_t set);
+void dsp_set_interrupt_mask(uint32_t intr, uint32_t set);
 
 #ifdef __cplusplus
 }

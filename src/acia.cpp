@@ -46,6 +46,7 @@ void ACIA::reset()
 {
 	cr = rxdr = txdr = 0;
 	sr = 1<<ACIA_SR_TXEMPTY;
+	resetInterrupt();
 
 	D(bug("acia: reset"));
 }

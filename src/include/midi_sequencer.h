@@ -25,15 +25,10 @@
 
 class MidiSequencer: public MIDI
 {
-	private:
-		unsigned char packet[4];
-
 	public:
 		MidiSequencer(memptr, uint32);
 		~MidiSequencer();
 
-		void WriteData(uint8);
-		virtual void enable(bool bEnable);
 		virtual const char *type() { return "sequencer"; }
 };
 

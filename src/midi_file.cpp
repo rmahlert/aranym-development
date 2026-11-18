@@ -32,27 +32,8 @@
 MidiFile::MidiFile(memptr addr, uint32 size) : MIDI(addr, size)
 {
 	D(bug("midi_file: interface created at 0x%06x", getHWoffset()));
-	fd = -1;
 	if (bx_options.midi.enabled)
 		enable(true);
-}
-
-
-void MidiFile::enable(bool bEnable)
-{
-	bx_midi_options_t *m = &bx_options.midi;
-	if (!bEnable)
-		close();
-	if (strcmp(type(), m->type)==0 && strlen(m->file) > 0) {
-		if (bEnable && fd < 0)
-		{
-			fd = ::open(m->file, O_WRONLY|O_CREAT, 0664);
-			if (fd < 0) {
-				panicbug("midi_file: Can not open %s", m->file);
-			}
-		}
-	}
-	m->enabled = bEnable;
 }
 
 MidiFile::~MidiFile(void)
@@ -61,16 +42,4 @@ MidiFile::~MidiFile(void)
 
 	close();
 }
-
-void MidiFile::WriteData(uae_u8 value)
-{
-	D(bug("midi_file: WriteData(0x%02x)",value));
-
-	if (fd>=0) {
-		if (write(fd, &value, 1) != 1) {
-			panicbug("midi_file: error writing");
-		}
-	}
-}
-
 // don't remove this modeline with intended formatting for vim:ts=4:sw=4:

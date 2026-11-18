@@ -11,6 +11,8 @@ import shutil
 import subprocess
 import sys
 import tarfile
+sys.dont_write_bytecode = True
+from portmidi_dist import PortMidiDistribution
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,6 +40,7 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--emutos-source-archive", type=Path, required=True)
+    parser.add_argument("--portmidi-prefix", type=Path, required=True)
     parser.add_argument("--jit-build-dir", type=Path, help="require the actual guest JIT build")
     parser.add_argument("--architecture", choices=("arm64", "x86_64"), default="arm64")
     parser.add_argument("--x64-fpu-jit-test", action="store_true")
@@ -46,6 +49,10 @@ def main():
     if sys.platform != "darwin":
         parser.error("packaging requires native macOS tools")
     binary = args.binary.resolve(strict=True)
+    portmidi = PortMidiDistribution(args.portmidi_prefix)
+    pm_library = portmidi.library("darwin")
+    if not any("libportmidi" in name for name in dependencies(binary)):
+        raise RuntimeError("Mac application package requires linked PortMidi device support")
     architecture = args.architecture
     if os.uname().machine != architecture:
         parser.error("packaging requires a native runner matching --architecture")
@@ -121,6 +128,7 @@ def main():
         license_member = next(m for m in archive.getmembers() if m.name.endswith("/doc/license.txt"))
         (resources / "EmuTOS-LICENSE.txt").write_bytes(archive.extractfile(license_member).read())
     shutil.copy2(args.emutos_source_archive, output / "emutos-e0f0c233-source.tar.gz")
+    portmidi.stage_notices(resources, output)
 
     # Resolve dependencies before rewriting their load commands. Framework
     # dependencies outside the system SDK are deliberately rejected here.
@@ -133,8 +141,8 @@ def main():
 
     def stage_library(resolved):
         resolved = resolved.resolve(strict=True)
-        if not resolved.is_relative_to(brew_prefix) or ".framework" in str(resolved):
-            raise RuntimeError(f"unsupported non-Homebrew dependency: {resolved}")
+        if (not resolved.is_relative_to(brew_prefix) and resolved != pm_library) or ".framework" in str(resolved):
+            raise RuntimeError(f"unsupported dependency outside approved prefixes: {resolved}")
         destination = frameworks / resolved.name
         if destination.name in copied and copied[destination.name] != resolved:
             raise RuntimeError(f"conflicting library names: {destination.name}")
@@ -151,7 +159,7 @@ def main():
     while queue:
         original, packaged = queue.pop(0)
         run("lipo", str(packaged), "-verify_arch", architecture)
-        search = rpaths(original) + main_rpaths
+        search = rpaths(original) + main_rpaths + [str(portmidi.prefix / "lib")]
 
         def expand(name):
             return Path(name.replace("@loader_path", str(original.parent))
@@ -204,6 +212,8 @@ def main():
             run("codesign", "--force", "--sign", "-", str(library))
     if not any(name.startswith("libslirp") for name in copied):
         raise RuntimeError("Mac networking package requires a linked and bundled libslirp")
+    if not any(name.startswith("libportmidi") for name in copied):
+        raise RuntimeError("Mac MIDI package requires a linked and bundled PortMidi runtime")
     entitlements = "src/gui-osx/jit-arm64.entitlements.plist" if architecture == "arm64" else "src/gui-osx/jit-x86_64.entitlements.plist"
     signing_args = ["--entitlements", str(ROOT / entitlements)] if guest_jit else []
     run("codesign", "--force", "--sign", "-", "--options", "runtime", *signing_args, str(app))
@@ -211,7 +221,7 @@ def main():
     manifest = {"source_commit": sha, "architecture": architecture, "guest_jit": guest_jit,
                 "fpu_jit_available":fpu_jit,"fpu_jit_default":False,
                 "minimum_macos":info["LSMinimumSystemVersion"],
-                "slirp": True, "signing": "ad-hoc; not notarized", "libraries": records,
+                "slirp": True, "portmidi": portmidi.summary(), "signing": "ad-hoc; not notarized", "libraries": records,
                 "dynamic_libraries": dynamic_libraries,
                 "emutos": firmware}
     (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")

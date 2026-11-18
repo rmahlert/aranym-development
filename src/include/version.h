@@ -22,7 +22,7 @@
 #define VER_MAJOR	1
 #define VER_MINOR	2
 #define VER_MICRO	0
-#define BUILD_LABEL	" unofficial-fpu-jit-test2"
+#define BUILD_LABEL	" unofficial-dsp-midi-preview1"
 #define RELEASE_DATE "2026/11/17"
 
 

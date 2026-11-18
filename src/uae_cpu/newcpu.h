@@ -36,6 +36,7 @@
 #include "sysdeps.h"
 #include "registers.h"
 #include "spcflags.h"
+#include "peripheral_clock.h"
 #include "m68k.h"
 #include "memory-uae.h"
 
@@ -331,8 +332,14 @@ static inline void cpu_check_ticks(void)
 		cpu_do_check_ticks();
 }
 #else
-#define cpu_check_ticks()
-#define cpu_do_check_ticks()
+static inline void cpu_check_ticks()
+{
+    if (--peripheral_instruction_budget == 0) {
+        peripheral_instruction_budget = 64;
+        peripheral_clock_service();
+    }
+}
+#define cpu_do_check_ticks() peripheral_clock_service()
 #endif
 
 cpuop_func op_illg_1;

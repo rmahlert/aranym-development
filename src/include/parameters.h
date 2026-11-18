@@ -185,6 +185,10 @@ typedef struct {
 	char type[32];		/* MIDI output type */
 	char file[512];	/* /path/to/output */
 	char sequencer[256];	/* /dev/sequencer */
+	char input[512];
+	char output[512];
+	bool append_output;
+	int sequencer_device;
 	bool enabled;
 } bx_midi_options_t;
 

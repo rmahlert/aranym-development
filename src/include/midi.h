@@ -22,19 +22,41 @@
 #define _MIDI_H
 
 #include "acia.h"
+#include "host_midi.h"
+#include "midi_acia6850.h"
 
 class MIDI: public ACIA
 {
 	protected:
-		int fd;
 		virtual void close(void);
+		MidiAcia6850 device;
+		HostMidiTransport transport;
+		HostMidiOptions host_options;
+		uint64_t output_dropped;
+		static void transmit_byte(void *, uint8_t, uint64_t);
+		static void interrupt_changed(void *, bool);
+		static void input_ready(void *);
 
 	public:
 		MIDI(memptr, uint32);
 		virtual ~MIDI();
 		virtual void reset(void);
-		virtual void enable(bool bEnable) = 0;
+		virtual void enable(bool bEnable);
 		virtual const char *type() = 0;
+		virtual uae_u8 handleRead(uaecptr addr);
+		virtual void handleWrite(uaecptr addr, uae_u8 value);
+		virtual uae_u8 ReadStatus();
+		virtual void WriteControl(uae_u8 value);
+		virtual uae_u8 ReadData();
+		virtual void WriteData(uae_u8 value);
+		void poll_host(uint64_t now_ns);
+		void service(uint64_t now_ns, bool poll=true);
+		uint64_t next_deadline_ns() const;
+		bool receive_byte(uint8_t value, uint64_t start_ns, uint8_t errors=0);
+		bool host_active() const { return transport.active(); }
+		std::string host_error() const { return transport.error(); }
+		uint64_t input_drops() const { return device.input_drops(); }
+		uint64_t output_drops() const { return output_dropped; }
 };
 
 #endif /* _MIDI_H */

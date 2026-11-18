@@ -34,6 +34,7 @@
 #include "dlgVideo.h"
 #include "dlgKeyboard.h"
 #include "dlgNetwork.h"
+#include "dlgMidi.h"
 #include "dlgPartition.h"
 #include "dlgHotkeys.h"
 #include "dlgDisk.h"
@@ -182,6 +183,9 @@ int DlgMain::processDialog(void)
 			break;
 		case NETWORK:
 			SDLGui_Open(DlgNetworkOpen());
+			break;
+		case MIDI:
+			SDLGui_Open(DlgMidiOpen());
 			break;
 		case PARTITIONS:
 			SDLGui_Open(DlgPartitionOpen());

@@ -28,88 +28,12 @@
 #include "cpu_emulation.h"
 #include "memory-uae.h"
 #include "mfp.h"
+#include "peripheral_clock.h"
+#include <algorithm>
+#include <limits>
 
 #define DEBUG 0
 #include "debug.h"
-
-MFP_Timer::MFP_Timer(int value)
-{
-	name = 'A' + value;
-	reset();
-}
-
-void MFP_Timer::reset()
-{
-	control = start_data = current_data = 0;
-	state = false;
-}
-
-bool MFP_Timer::isRunning()
-{
-	return ((control & 0x0f) > 0);
-}
-
-void MFP_Timer::setControl(uint8 value)
-{
-	control = value & 0x0f;
-	if (value & 0x10)
-		state = false;
-	// D(bug("Set MFP Timer%c control to $%x", name, value));
-}
-
-uint8 MFP_Timer::getControl()
-{
-	return control | (state << 5);
-}
-
-void MFP_Timer::setData(uint8 value)
-{
-	// D(bug("Set MFP Timer%c data to %d", name, value));
-	start_data = value;
-	if (! isRunning())
-		current_data = value;
-}
-
-void MFP_Timer::resetCounter()
-{
-	// D(bug("reset of Timer%c", name));
-	if (isRunning()) {
-		state = true;
-		current_data = start_data;
-	}
-}
-
-uint8 MFP_Timer::getData()
-{
-	// D(bug("get MFP Timer%c data = %d", name, current_data));
-
-	if (isRunning() && current_data > 2)
-		current_data--;		// hack to overcome microseconds delays in TOS (e.g. at $E02570)
-
-	return current_data;
-}
-
-int MFP_Timer::compute_timer_freq()
-{
-#define MFP_FREQ	2457600UL
-	int freq;
-	switch(control) {
-		case 1: freq = MFP_FREQ /  4; break;
-		case 2: freq = MFP_FREQ / 10; break;
-		case 3: freq = MFP_FREQ / 16; break;
-		case 4: freq = MFP_FREQ / 50; break;
-		case 5: freq = MFP_FREQ / 64; break;
-		case 6: freq = MFP_FREQ /100; break;
-		case 7: freq = MFP_FREQ /200; break;
-		default: freq = MFP_FREQ / 64; break; // TOS default
-	}
-	if (start_data)
-		freq = freq / start_data;
-	else
-		freq = freq / 192; // TOS default
-
-	return freq;
-}
 
 /*************************************************************************/
 
@@ -134,16 +58,19 @@ void MFP::reset()
 	irq_pending = 0;
 	irq_inservice = 0;
 	irq_mask = 0;
-	timerCounter = 0;
+	timer_a_high = timer_b_high = true;
 
-	A.reset();
-	B.reset();
-	C.reset();
-	D.reset();
+	const auto now = peripheral_clock_now_ns();
+	A.reset(now);
+	B.reset(now);
+	C.reset(now);
+	D.reset(now);
+	update_irq();
 }
 
 uint8 MFP::handleRead(memptr addr)
 {
+	service(peripheral_clock_event_time_ns());
 	addr -= getHWoffset();
 	if (addr > getHWsize())
 		return 0;	// unhandled
@@ -168,7 +95,7 @@ uint8 MFP::handleRead(memptr addr)
 		case 0x09:	value = irq_enable;
 					break;
 
-		case 0x0b:	value = 0x20; //(irq_pending >> 8) | (tA->getControl() & 0x10);	// finish
+		case 0x0b:	value = irq_pending >> 8;
 					break;
 
 		case 0x0d:	// D(bug("Read: TimerC IRQ %s pending", (irq_pending & 0x20) ? "" : "NOT"));
@@ -251,9 +178,12 @@ static int map_gpip_to_ier[8] = {0, 1, 2, 3, 6, 7, 14, 15};
 	}
  
 	active_edge = value;
+	if (A.set_input(timer_a_high == bool(active_edge & 0x10))) IRQ(13, 1);
+	if (B.set_input(timer_b_high == bool(active_edge & 0x08))) IRQ(8, 1);
 }
 
 void MFP::handleWrite(memptr addr, uint8 value) {
+	service(peripheral_clock_event_time_ns());
 	addr -= getHWoffset();
 	if (addr > getHWsize())
 		return;	// unhandled
@@ -382,8 +312,8 @@ void MFP::handleWrite(memptr addr, uint8 value) {
 		case 0x1b:	B.setControl(value);
 					break;
 
-		case 0x1d:	C.setControl(value >> 4);
-					D.setControl(value & 0x0f);
+		case 0x1d:	C.setControl((value >> 4) & 7);
+					D.setControl(value & 7);
 					break;
 
 		case 0x1f:	A.setData(value);
@@ -406,6 +336,7 @@ void MFP::handleWrite(memptr addr, uint8 value) {
 		default:
 			break;
 	};
+	update_irq();
 }
 
 /*
@@ -413,6 +344,12 @@ void MFP::handleWrite(memptr addr, uint8 value) {
  */
 void MFP::setGPIPbit(int mask, int value)
 {
+	setGPIPbit_at(mask, value, peripheral_clock_event_time_ns());
+}
+
+void MFP::setGPIPbit_at(int mask, int value, std::uint64_t when_ns)
+{
+	service(when_ns);
 	static int map_gpip_to_ier[8] = {0, 1, 2, 3, 6, 7, 14, 15};	
 	mask &= 0xff;
 
@@ -453,8 +390,8 @@ void MFP::setGPIPbit(int mask, int value)
 
         0:  IO port 0 : Printer Busy
         1:  IO port 1 : Printer Acknowledge (RS232 Carrier detect on ST)
-        2:  IO port 2 : MIDI Interrupt (RS232 CTS on ST)
-        3:  IO port 3 : DSP Interrupt (Blitter on ST)
+        2:  IO port 2 : RS232 CTS
+        3:  IO port 3 : Blitter (DSP HREQ has a direct CPU IPL6 line)
         4:  timer D
         5:  timer C
         6:  IO port 4 : ACIA (IKBD/MIDI)
@@ -471,127 +408,99 @@ void MFP::setGPIPbit(int mask, int value)
 
 void MFP::IRQ(int int_level, int count)
 {
-	int i = 1 << int_level;
-
-	if (int_level == 5) C.resetCounter(); // special hack for TimerC
-
-        /* interrupt enabled ? */
-        if( (irq_enable & i) == 0) {
-				// panicbug("interrupt %d not enabled", int_level);
-                return;
-		}
-
-	if (int_level == 5) timerCounter += count; // special hack for TimerC
-
-        /* same interrupt already pending */
-        if( (irq_pending & i) ) {
-				D(bug("same interrupt %d already pending", int_level));
-                return;
-		}
-        
-        
-        /* ok, we will request an interrupt to the mfp */
-#if 0
-        if(int_level) {
-          panicbug( "mfp ask interrupt %d\n", int_level);
-        }
-#endif
-        irq_pending |= i;
-        /* interrupt masked ? */
-        if( ! (irq_mask & i) ) {
-                /* irq_pending set but no irq : stop here */
-               D(bug("irq_pending set but no irq"));
-          return;
-        }
-                /* highest priority ? */
-        if(irq_inservice > i) {
-                /* no, do nothing (the mfp will check when the current
-                  interrupt resumes, i.e. when irq_inservice is being cleared). */
-				D(bug("irq_inservice has higher priority"));
-                return;
-        }
-        /* say we want to interrupt the cpu */  
-        TriggerMFP(true);
-        /* when UAE CPU finds this flag set, according to the current IPL,
-          the function MFP::doInterrupt() will be called. This function 
-          will then decide what to do, and will treat the request that 
-          has the highest priority at that time. 
-        */
+    if (int_level < 0 || int_level > 15 || count <= 0)
+        return;
+    const unsigned bit = 1u << int_level;
+    if (irq_enable & bit)
+        irq_pending |= bit;
+    update_irq();
 }
 
-// return : vector number, or zero if no interrupt
+bool MFP::irq_asserted() const
+{
+    const unsigned pending = irq_pending & irq_mask & irq_enable;
+    for (unsigned bit = 0x8000; bit; bit >>= 1) {
+        if (irq_inservice & bit)
+            return false;
+        if (pending & bit)
+            return true;
+    }
+    return false;
+}
+
+void MFP::update_irq()
+{
+    TriggerMFP(irq_asserted());
+}
+
 int MFP::doInterrupt()
 {
-        int j, vector;
-        unsigned i;
-        
-        /* what's happening here ? */
-#if 0
-        panicbug( "starting mfp_do_interrupt\n");
-        panicbug( "ier %04x, ipr %04x, isr %04x, imr %04x\n",
-               irq_enable, irq_pending, irq_inservice, irq_mask);
-#endif
+    service(peripheral_clock_event_time_ns());
+    const unsigned pending = irq_pending & irq_mask & irq_enable;
+    for (int level = 15; level >= 0; --level) {
+        const unsigned bit = 1u << level;
+        if (irq_inservice & bit)
+            break;
+        if (!(pending & bit))
+            continue;
+        irq_pending &= ~bit;
+        if (vr & MFP_VR_SEI)
+            irq_inservice |= bit;
+        update_irq();
+        return (vr & MFP_VR_VECTOR) | level;
+    }
+    update_irq();
+    return 0;
+}
 
-        /* any pending interrupts? */
-        for(j = 15, i = 0x8000; i; j--, i>>=1) {
-                if(irq_pending & i & irq_mask)
-                        break;
-        }
-        if(i == 0) {
-          /* this shouldn't happen :-) */
-                panicbug( "mfp_do_interrupt called with no pending interrupt\n");
-                TriggerMFP(false);
-                return 0;
-        }
-        if(irq_inservice >= i) {
-                /* Still busy. We shouldn't come here. */
-				
-				/*	Running MagiC this happens all the time. 
-					The panicbug log makes the whole console output unusable.
-					Thus it is commented out.
-                
-				panicbug( "mfp_do_interrupt called when "
-                        "another higher priority interrupt is running\n");
-				*/
-			
-                TriggerMFP(false);
-                return 0;
-        }
-        
-        /* ok, do the interrupt, i.e. "pass the vector". */
-        vector = (vr & MFP_VR_VECTOR) + j;
-	
-	if (j != 5 || --timerCounter <= 0) {	// special hack for TimerC
-        irq_pending &= ~i;
-        TriggerMFP(false);
-	}
+void MFP::service(std::uint64_t now_ns)
+{
+    if (A.advance_to(now_ns)) IRQ(13, 1);
+    if (B.advance_to(now_ns)) IRQ(8, 1);
+    if (C.advance_to(now_ns)) IRQ(5, 1);
+    if (D.advance_to(now_ns)) IRQ(4, 1);
+}
 
-        if(vr & MFP_VR_SEI) {
-                /* software mode of interrupt : irq_inservice will remain set until
-                   explicitely cleared by writing on it */
-                irq_inservice |= i;
-        } else {
-                /* automatic mode of interrupt : irq_inservice automatically cleared
-                   when the interrupt starts (which is now). In this case,
-                   we must keep the flag raised if another unmasked 
-                   interrupt remains pending, since irq_inservice will not tell us 
-                   to re-raise the flag.
-                */
-                if((irq_pending & irq_mask)) {
-                  /* if other unmasked interrupt pending, keep the flag */
-                  TriggerMFP(true);
-                }
+std::uint64_t MFP::next_deadline_ns() const
+{
+    auto deadline = std::numeric_limits<std::uint64_t>::max();
+    unsigned eligible = irq_enable & irq_mask & ~irq_pending;
+    for (unsigned bit = 0x8000; bit; bit >>= 1) {
+        if (irq_inservice & bit) {
+            eligible &= ~((bit << 1) - 1);
+            break;
         }
+    }
+    if (eligible & (1u << 13)) deadline = std::min(deadline, A.next_deadline_ns());
+    if (eligible & (1u << 8)) deadline = std::min(deadline, B.next_deadline_ns());
+    if (eligible & (1u << 5)) deadline = std::min(deadline, C.next_deadline_ns());
+    if (eligible & (1u << 4)) deadline = std::min(deadline, D.next_deadline_ns());
+    return deadline;
+}
 
-#if 0
-        panicbug( "MFP::doInterrupt : vector %d\n", vector);
-#endif
-        return vector;
+void MFP::timer_input(unsigned timer, bool active)
+{
+    service(peripheral_clock_event_time_ns());
+    if (timer == 0 && A.set_input(active)) IRQ(13, 1);
+    if (timer == 1 && B.set_input(active)) IRQ(8, 1);
 }
 
 int MFP::timerC_ms_ticks()
 {
-	int freq = C.compute_timer_freq();
+    const int frequency = C.compute_timer_freq();
+    return frequency ? std::max(1, (1000 + frequency - 1) / frequency) : 5;
+}
 
-	return 1000 / freq;
+void MFP::setTimerAInput(bool high, std::uint64_t when_ns)
+{
+    service(when_ns);
+    timer_a_high = high;
+    if (A.set_input(high == bool(active_edge & 0x10))) IRQ(13, 1);
+}
+
+void MFP::setTimerBInput(bool high, std::uint64_t when_ns)
+{
+    service(when_ns);
+    timer_b_high = high;
+    if (B.set_input(high == bool(active_edge & 0x08))) IRQ(8, 1);
 }

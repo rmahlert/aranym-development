@@ -166,6 +166,7 @@ extern void Quit680x0(void);	// Quit 680x0
 
 // Interrupt functions
 extern int MFPdoInterrupt(void);
+extern int DSPdoInterrupt(void);
 extern int SCCdoInterrupt(void);
 extern void TriggerInternalIRQ(void);
 extern void TriggerInt3(void);		// Trigger interrupt level 3
@@ -173,6 +174,7 @@ extern void TriggerVBL(void);		// Trigger interrupt level 4
 extern void TriggerInt5(void);		// Trigger interrupt level 5
 extern void TriggerSCC(bool);		// Trigger interrupt level 5
 extern void TriggerMFP(bool);		// Trigger interrupt level 6
+extern void TriggerDSP(bool);		// DSP host interrupt, level 6
 extern void TriggerNMI(void);		// Trigger interrupt level 7
 
 #ifdef FLIGHT_RECORDER

@@ -38,7 +38,8 @@ enum MAINDLG {
 	SCREENSHOT = 21,
 	CLOSE = 22,
 	text_hotkeys = 23,
-	HELP = 24
+	HELP = 24,
+	MIDI = 25
 };
 
 static SGOBJ maindlg[] = {
@@ -67,6 +68,7 @@ static SGOBJ maindlg[] = {
 	{ SGBUTTON, SG_SELECTABLE|SG_EXIT|SG_DEFAULT, 0, 47, 22, 12, 1, N_("Close"), 0 },
 	{ SGTEXT, 0, 0, 27, 18, 22, 1, N_(" Quick Access Buttons "), 0 },
 	{ SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 3, 22, 12, 1, N_("Help"), 0 },
+	{ SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 19, 13, 18, 1, N_("MIDI"), 0 },
 	{ SGTEXT, 0, 0, 1, 17, 74, 1, active_config, 0 },
 	{ -1, 0, 0, 0, 0, 0, 0, NULL, 0 }
 };

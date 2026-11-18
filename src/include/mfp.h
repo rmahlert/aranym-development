@@ -25,27 +25,7 @@
 #define _MFP_H
 
 #include "icio.h"
-
-class MFP_Timer {
-private:
-	uint8 control;
-	uint8 start_data, current_data;
-	bool state;
-	char name;
-
-protected:
-	bool isRunning();
-
-public:
-	MFP_Timer(int);
-	void reset();
-	void setControl(uint8);
-	uint8 getControl();
-	void setData(uint8);
-	uint8 getData();
-	void resetCounter();
-	int compute_timer_freq();
-};
+#include "mfp_timer.h"
 
 class MFP_TimerA:public MFP_Timer {
 public:
@@ -93,8 +73,8 @@ private:
 	MFP_TimerC C;
 	MFP_TimerD D;
 	// USART usart;
-	int timerCounter;
 	int vr;
+	bool timer_a_high, timer_b_high;
 
 public:
 	MFP(memptr addr, uint32 size);
@@ -103,11 +83,19 @@ public:
 	virtual void handleWrite(memptr, uint8);
 	void IRQ(int, int count);
 	void setGPIPbit(int mask, int value);
+	void setGPIPbit_at(int mask, int value, std::uint64_t when_ns);
 	int doInterrupt(void);
 	int timerC_ms_ticks();
+	void service(std::uint64_t now_ns);
+	std::uint64_t next_deadline_ns() const;
+	void timer_input(unsigned timer, bool active);
+	void setTimerAInput(bool high, std::uint64_t when_ns);
+	void setTimerBInput(bool high, std::uint64_t when_ns);
+	bool irq_asserted() const;
 
 private:
 	void set_active_edge(uint8 value);
+	void update_irq();
 };
 
 #endif /* _MFP_H */

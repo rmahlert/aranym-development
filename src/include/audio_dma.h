@@ -20,36 +20,34 @@
 
 #ifndef AUDIODMA_H
 #define AUDIODMA_H
-
 #include "icio.h"
-
-/*--- AUDIODMA class ---*/
+#include <stdint.h>
 
 class AUDIODMA : public BASE_IO {
-	private:
-		int freqs[4];
-		uint32	current;
-		uint16	mode;
-
-		int freq;
-
-		void updateCurrent();
-		void updateControl();
-
-	public:
-		AUDIODMA(memptr, uint32);
-		~AUDIODMA();
-		void reset();
-
-		virtual uae_u8 handleRead(uaecptr addr);
-		virtual void handleWrite(uaecptr addr, uae_u8 value);
-
-		void updateMode(void);
-
-		/* Only for audio callback */
-		uint16	control;
-		uint32	start, end;
-		int	start_tic;
+    struct Channel {
+        uint32 start, end, current, active_end;
+        bool running, repeat, frame_start;
+    } play, record;
+    uint16 control, mode;
+    bool play_line, record_line;
+    void changeControl(uint16 value, uint64_t when);
+    void soundLine(bool recording, bool high, uint64_t when);
+    void finish(Channel &channel, bool recording, uint64_t when);
+public:
+    AUDIODMA(memptr, uint32);
+    ~AUDIODMA();
+    void reset();
+    virtual uae_u8 handleRead(uaecptr addr);
+    virtual void handleWrite(uaecptr addr, uae_u8 value);
+    void updateMode();
+    bool playback_active() const { return play.running; }
+    bool playback_frame_start() const { return play.frame_start; }
+    bool recording_active() const { return record.running; }
+    unsigned playback_tracks() const { return ((mode >> 8) & 3) + 1; }
+    unsigned monitor_track() const { return (mode >> 12) & 3; }
+    unsigned legacy_frequency() const { return mode & 3; }
+    bool eight_bit() const { return !(mode & 0x40); }
+    bool playback_word(unsigned slot, int16_t &sample, uint64_t when);
+    void record_word(int16_t sample, unsigned slot, unsigned tracks, uint64_t when);
 };
-
-#endif /* AUDIODMA_H */
+#endif

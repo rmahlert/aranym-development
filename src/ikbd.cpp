@@ -68,6 +68,7 @@ IKBD::~IKBD()
 
 void IKBD::reset()
 {
+	ACIA::reset();
 	inread = inwrite = 0;
 	outwrite = 0;
 	intype = IKBD_PACKET_UNKNOWN;
@@ -98,6 +99,7 @@ uint8 IKBD::ReadStatus()
 void IKBD::WriteControl(uint8 value)
 {
 	cr = value;
+	ThrowInterrupt();
 
 	D(bug("ikbd: WriteControl(0x%02x)",cr));
 
@@ -110,6 +112,8 @@ uint8 IKBD::ReadData()
 {
 	if (inread != inwrite) {
 
+		sr &= ~((1<<ACIA_SR_INTERRUPT)|(1<<ACIA_SR_RXFULL));
+		set_acia_irq(false, false);
 		rxdr = inbuffer[inread++];
 		D(bug("ikbd: %08x: ReadData()=0x%02x at position %d", m68k_getpc(), rxdr, inread-1));
 
@@ -119,7 +123,7 @@ uint8 IKBD::ReadData()
 			/* Queue empty */
 
 			/* Update MFP GPIP */
-			getMFP()->setGPIPbit(0x10, 0x10);
+			set_acia_irq(false, false);
 
 			sr &= ~((1<<ACIA_SR_INTERRUPT)|(1<<ACIA_SR_RXFULL));
 
@@ -561,20 +565,18 @@ void IKBD::send(uint8 value)
 	ThrowInterrupt();
 }
 
+void IKBD::resetInterrupt()
+{
+    set_acia_irq(false, false);
+}
+
 void IKBD::ThrowInterrupt(void)
 {
-	/* Check ACIA interrupt on reception */
-	if ((cr & (1<<ACIA_CR_REC_INTER))==0)
-		return;
-		
-	/* set Interrupt Request */
-	sr |= (1<<ACIA_SR_INTERRUPT);
-
-	/* Check MFP IER */
-	if ((getMFP()->handleRead(0xfffa09) & 0x40)==0)
-		return;
-
-	/* signal ACIA interrupt */
-	getMFP()->setGPIPbit(0x10, 0x10);	/* Force GPIP value transition so MFP layer generates interrupt */
-	getMFP()->setGPIPbit(0x10, 0);
+    const bool asserted = (cr & (1 << ACIA_CR_REC_INTER)) &&
+                          (sr & (1 << ACIA_SR_RXFULL));
+    if (asserted)
+        sr |= 1 << ACIA_SR_INTERRUPT;
+    else
+        sr &= ~(1 << ACIA_SR_INTERRUPT);
+    set_acia_irq(false, asserted);
 }

@@ -12,6 +12,7 @@
 #
 # Environment:
 #   MINGW_ROOT       prefix holding the MinGW DLLs (default /tmp/mingw)
+#   PORTMIDI_PREFIX  verified prefix built with tools/build-portmidi.py
 #   EASYARAMINT_DIR  optional EasyARAnyM drives to include as a component
 #   OUTPUT_DIR       where to write the packages (default dist/windows)
 #   VERSION_SUFFIX   appended to the package name (default -unofficial)
@@ -57,6 +58,11 @@ if ! grep -Eq '^[[:space:]]*#define[[:space:]]+ETHERNET_SUPPORT[[:space:]]+1([[:
 	echo "$0: refusing to package a build that the MiNTNet driver cannot use" >&2
 	exit 1
 fi
+if ! grep -Eq '^[[:space:]]*#define[[:space:]]+HAVE_PORTMIDI[[:space:]]+1([[:space:]]|$)' "$config_header"; then
+    echo "$0: Windows packages require PortMidi input/output support" >&2
+    exit 1
+fi
+: "${PORTMIDI_PREFIX:?build the pinned PortMidi prefix before packaging}"
 # EasyMiNT starts NFJPEG.PRG during boot. Without the host service that
 # program stops at a key prompt instead of reaching the desktop unattended.
 if test -n "${EASYARAMINT_DIR:-}" && test -f "$EASYARAMINT_DIR/config" &&
@@ -75,6 +81,12 @@ if ! "$package_objdump" -p "$exe" 2>/dev/null |
 	echo "$0: $exe does not import the SLIRP runtime" >&2
 	echo "$0: refusing to package a Windows build whose SLIRP option cannot work" >&2
 	exit 1
+fi
+if ! "$package_objdump" -p "$exe" 2>/dev/null |
+    sed -n 's/^[[:space:]]*DLL Name:[[:space:]]*//p' |
+    grep -Eiq '^libportmidi\.dll$'; then
+    echo "$0: executable does not import the pinned PortMidi runtime" >&2
+    exit 1
 fi
 if test "${PRESERVE_USER_DATA:-0}" = 1 &&
    "$package_objdump" -p "$exe" 2>/dev/null |
@@ -104,6 +116,22 @@ echo "staging $name"
 for f in aranym.exe aranym-jit.exe aranym-mmu.exe; do
 	test -f "$build_dir/$f" && cp -a "$build_dir/$f" "$stage/"
 done
+
+python3 -B - "$root" "$PORTMIDI_PREFIX" "$stage" <<'PY'
+from pathlib import Path
+import shutil, sys
+sys.path.insert(0, str(Path(sys.argv[1]) / 'tools'))
+from portmidi_dist import PortMidiDistribution
+dependency = PortMidiDistribution(sys.argv[2])
+library = dependency.library('windows')
+data = library.read_bytes()
+offset = int.from_bytes(data[0x3c:0x40], 'little')
+if data[:2] != b'MZ' or data[offset:offset + 4] != b'PE\0\0' or int.from_bytes(data[offset + 4:offset + 6], 'little') != 0x8664:
+    raise RuntimeError('PortMidi runtime is not a Windows x86-64 DLL')
+stage = Path(sys.argv[3])
+shutil.copy2(library, stage / library.name)
+dependency.stage_notices(stage / 'LICENSES/PortMidi', stage / 'source')
+PY
 
 echo "resolving DLL dependencies"
 if ! MINGW_ROOT="$MINGW_ROOT" "$root/tools/collect-mingw-dlls.sh" \

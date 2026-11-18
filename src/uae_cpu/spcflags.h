@@ -30,7 +30,7 @@ enum {
 	SPCFLAG_INT3		= 0x800,
 	SPCFLAG_INT5		= 0x1000,
 	SPCFLAG_SCC		= 0x2000,
-//	SPCFLAG_MODE_CHANGE		= 0x4000,
+	SPCFLAG_DSP		= 0x4000,
 	SPCFLAG_ALL			= SPCFLAG_STOP
 					| SPCFLAG_INTERNAL_IRQ
 					| SPCFLAG_BRK
@@ -44,6 +44,7 @@ enum {
 					| SPCFLAG_INT5
 					| SPCFLAG_SCC
 					| SPCFLAG_MFP
+					| SPCFLAG_DSP
 					,
 
 	SPCFLAG_ALL_BUT_EXEC_RETURN	= SPCFLAG_ALL & ~SPCFLAG_JIT_EXEC_RETURN
@@ -51,21 +52,21 @@ enum {
 };
 
 #define SPCFLAGS_TEST(m) \
-	(regs.spcflags & (m))
+	(__atomic_load_n(&regs.spcflags, __ATOMIC_ACQUIRE) & (m))
 
 /* Macro only used in m68k_reset() */
 #define SPCFLAGS_INIT(m) do { \
-	regs.spcflags = (m); \
+	__atomic_store_n(&regs.spcflags, (m), __ATOMIC_RELEASE); \
 } while (0)
 
 #ifndef ENABLE_EXCLUSIVE_SPCFLAGS
 
 #define SPCFLAGS_SET(m) do { \
-	regs.spcflags |= (m); \
+	__atomic_fetch_or(&regs.spcflags, (m), __ATOMIC_ACQ_REL); \
 } while (0)
 
 #define SPCFLAGS_CLEAR(m) do { \
-	regs.spcflags &= ~(m); \
+	__atomic_fetch_and(&regs.spcflags, ~(m), __ATOMIC_ACQ_REL); \
 } while (0)
 
 #define SleepAndWait()	usleep(1000)
@@ -91,13 +92,13 @@ extern  SDL_mutex *spcflags_lock;
 
 #define SPCFLAGS_SET(m) do { 				\
 	SDL_LockMutex(spcflags_lock);		\
-	regs.spcflags |= (m);					\
+	__atomic_fetch_or(&regs.spcflags, (m), __ATOMIC_ACQ_REL);					\
 	SDL_UnlockMutex(spcflags_lock);	\
 } while (0)
 
 #define SPCFLAGS_CLEAR(m) do {				\
 	SDL_LockMutex(spcflags_lock);		\
-	regs.spcflags &= ~(m);					\
+	__atomic_fetch_and(&regs.spcflags, ~(m), __ATOMIC_ACQ_REL);					\
 	SDL_UnlockMutex(spcflags_lock);	\
 } while (0)
 
@@ -109,24 +110,26 @@ extern  SDL_mutex *spcflags_lock;
 #undef HAVE_HARDWARE_LOCKS
 extern  SDL_mutex *spcflags_lock;
 extern  SDL_cond *stop_condition;
+bool cpu_stop_has_pending_work();
 
 #define SPCFLAGS_SET(m) do { 				\
 	SDL_LockMutex(spcflags_lock);		\
-	regs.spcflags |= (m);					\
-	if (regs.spcflags & SPCFLAG_STOP)			\
+	__atomic_fetch_or(&regs.spcflags, (m), __ATOMIC_ACQ_REL);					\
+	if (SPCFLAGS_TEST(SPCFLAG_STOP))			\
 		SDL_CondSignal(stop_condition);			\
 	SDL_UnlockMutex(spcflags_lock);	\
 } while (0)
 
 #define SPCFLAGS_CLEAR(m) do {				\
 	SDL_LockMutex(spcflags_lock);		\
-	regs.spcflags &= ~(m);					\
+	__atomic_fetch_and(&regs.spcflags, ~(m), __ATOMIC_ACQ_REL);					\
 	SDL_UnlockMutex(spcflags_lock);	\
 } while (0)
 
 #define SleepAndWait() do { \
 	SDL_LockMutex(spcflags_lock);		\
-	SDL_CondWait(stop_condition, spcflags_lock); \
+	while (SPCFLAGS_TEST(SPCFLAG_STOP) && !cpu_stop_has_pending_work()) \
+		SDL_CondWait(stop_condition, spcflags_lock); \
 	SDL_UnlockMutex(spcflags_lock);	\
 } while (0)
 

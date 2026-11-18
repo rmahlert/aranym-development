@@ -47,6 +47,7 @@ enum ikbd_packet_t {
 /*--- IKBD class ---*/
 
 class IKBD: public ACIA {
+	void resetInterrupt() override;
 	private:
 		/* IKBD keyboard state */
 

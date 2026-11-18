@@ -28,6 +28,7 @@
 #include "main.h"
 #include "input.h"
 #include "hardware.h"
+#include "peripheral_clock.h"
 #include "scc.h"
 #include "parameters.h"
 #include "host.h"			// for the HostScreen
@@ -147,67 +148,21 @@ void do_vbl_irq()
  */
 void invoke200HzInterrupt()
 {
-	int ms_ticks = getMFP()->timerC_ms_ticks();
-
-	/* syncing to 200 Hz */
-	uint32 newTicks = (uint32) host->clock->getClock();
-
-	// correct lastTicks at start-up
-	if (lastTicks == 0) { lastTicks = newTicks - ms_ticks; }
-
-	int count = (newTicks - lastTicks) / ms_ticks;
-	if (count == 0) {
-#if DEBUG
-		early_interrupts++;
-#endif
-		return;
-	}
-
-#if DEBUG
-	total_interrupts++;
-	if (count > 1) {
-		multiple_interrupts++;
-		if (count == 2) multiple_interrupts2++;
-		if (count == 3) multiple_interrupts3++;
-		if (count == 4) multiple_interrupts4++;
-		if (count > max_mult_interrupts) {
-			max_mult_interrupts = count;
-			D(bug("Max multiple interrupts increased to %d", count));
-		}
-	}
-#endif
-
-#ifdef RTC_TIMER
-	if (using_rtc_timer) {
-		// do not generate multiple interrupts, let it synchronize over time
-		count = 1;
-	}
-#endif
-
-	int milliseconds = (count * ms_ticks);
-	lastTicks += milliseconds;
-
-
-#ifdef DEBUGGER
-	if (!debugging || irqindebug)
-#endif
-	{
-		getMFP()->IRQ(5, count);
-		getSCC()->IRQ();	/* jc: after or before getMFP does not change anything */
-	}
-
-#define VBL_MS	20
-	static int VBL_counter = 0;
-	VBL_counter += milliseconds;
-	if (VBL_counter >= VBL_MS) {
-		VBL_counter -= VBL_MS;
-		do_vbl_irq();
-	}
-	{
-		Parallel *parallel = getYAMAHA()->parallel;
-		if (parallel)
-			parallel->check_pipe();
-	}
+    peripheral_clock_service();
+    const auto now = peripheral_clock_now_ns();
+    static uint64_t last_system_ns = 0, last_vbl_ns = 0;
+    if (now < last_system_ns) last_system_ns = now;
+    if (now < last_vbl_ns) last_vbl_ns = now;
+    if (now - last_system_ns >= 5000000) {
+        last_system_ns += ((now - last_system_ns) / 5000000) * 5000000;
+        getSCC()->IRQ();
+        Parallel *parallel = getYAMAHA()->parallel;
+        if (parallel) parallel->check_pipe();
+    }
+    if (now - last_vbl_ns >= 20000000) {
+        last_vbl_ns += ((now - last_vbl_ns) / 20000000) * 20000000;
+        do_vbl_irq();
+    }
 }
 
 #ifdef RTC_TIMER
@@ -418,6 +373,7 @@ bool InitAll(void)
 	// Init 680x0 emulation
 	if (!Init680x0())
 		return false;
+	peripheral_clock_start();
 
 #ifdef DEBUGGER
 	if (bx_options.startup.debugger && !startupGUI) {
@@ -496,6 +452,7 @@ bool InitAll(void)
 
 void ExitAll(void)
 {
+	peripheral_clock_shutdown();
 	delete bootOs;
 
 	/* Pause audio before killing hw then host */

@@ -103,6 +103,8 @@ AC_ARG_ENABLE(atc,
 
 AC_ARG_ENABLE(realstop,        [AS_HELP_STRING([--enable-realstop],[enable real STOP instruction (default=yes)])], [WANT_REALSTOP=$enableval], [WANT_REALSTOP=yes])
 
+AC_ARG_ENABLE(portmidi, [AS_HELP_STRING([--enable-portmidi],[enable native host MIDI through PortMidi (default=auto)])], [WANT_PORTMIDI=$enableval], [WANT_PORTMIDI=auto])
+
 AC_ARG_ENABLE(dsp,             [AS_HELP_STRING([--enable-dsp],[enable DSP 56001 (default=yes)])], [WANT_DSP=$enableval], [WANT_DSP=yes])
 
 AC_ARG_ENABLE(dsp-disasm,      [AS_HELP_STRING([--enable-dsp-disasm],[enable DSP 56001 disassembler (default=no)])], [WANT_DSP_DISASM=$enableval], [WANT_DSP_DISASM=no])
@@ -2414,6 +2416,18 @@ AM_CONDITIONAL([ENABLE_PARALLELPARPORT], test "$WANT_PARALLELPARPORT" = yes)
 
 if test "$ac_cv_func_pipe" = "yes" -a "$ac_cv_func_fork" = "yes"; then
 	AC_DEFINE([ENABLE_PARALLELPIPE], 1, [Define if you want to use pipes for parallel port output])
+fi
+
+dnl Optional native host MIDI transport.
+have_portmidi=no
+if test "$WANT_PORTMIDI" != no; then
+    PKG_CHECK_MODULES([PORTMIDI], [portmidi >= 2.0.7], [have_portmidi=yes], [have_portmidi=no])
+fi
+if test "$WANT_PORTMIDI" = yes && test "$have_portmidi" != yes; then
+    AC_MSG_ERROR([PortMidi requested but PortMidi 2.0.7 or newer was not found])
+fi
+if test "$have_portmidi" = yes; then
+    AC_DEFINE([HAVE_PORTMIDI], 1, [Define if PortMidi host MIDI is available])
 fi
 
 dnl Linux /dev/sequencer MIDI support

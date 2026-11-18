@@ -29,8 +29,6 @@ class MidiFile: public MIDI
 		MidiFile(memptr, uint32);
 		~MidiFile();
 
-		void WriteData(uint8);
-		virtual void enable(bool bEnable);
 		virtual const char *type() { return "file"; }
 };
 
