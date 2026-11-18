@@ -165,7 +165,7 @@ HostSurface *VidelZoom::getSurface(void)
 	}
 
 	/* Refresh dirty parts of non zoomed surface to zoomed surface */
-	refreshScreen();
+	refreshScreen(videl_hsurf);
 
 	return surface;
 }
@@ -182,12 +182,8 @@ void VidelZoom::forceRefresh(void)
 		surface->getWidth(), surface->getHeight());
 }
 
-void VidelZoom::refreshScreen(void)
+void VidelZoom::refreshScreen(HostSurface *videl_hsurf)
 {
-	HostSurface *videl_hsurf = VIDEL::getSurface();
-	if (!videl_hsurf) {
-		return;
-	}
 	SDL_Surface *videl_surf = videl_hsurf->getSdlSurface();
 	if (!videl_surf) {
 		return;

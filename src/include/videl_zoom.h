@@ -33,7 +33,7 @@ class VidelZoom : public VIDEL
 		int prevWidth, prevHeight, prevBpp;
 		int *xtable, *ytable;
 
-		void refreshScreen(void);
+		void refreshScreen(HostSurface *videl_hsurf);
 
 	public:
 		VidelZoom(memptr, uint32);
