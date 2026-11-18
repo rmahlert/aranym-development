@@ -1324,11 +1324,10 @@ static void process_mouse_event(const SDL_Event &event)
 		}
 	}
 	else if (event.type == SDL_MOUSEMOTION) {
-		if (!video->IgnoreMouseMotionEvent()) {
+		if (!video->isGrabMotion(event.motion.x, event.motion.y)) {
 			xrel = event.motion.xrel;
 			yrel = event.motion.yrel;
 		}
-		else video->IgnoreMouseMotionEvent(false);
 
 #ifdef NFVDI_SUPPORT
 		if (fvdi != NULL) {

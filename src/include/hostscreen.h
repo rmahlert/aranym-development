@@ -78,7 +78,7 @@ class HostScreen: public DirtyRects
 	SDL_bool hiddenMouse;
 	bool canGrabMouseAgain;
 	bool capslockState;
-	bool ignoreMouseMotionEvent;
+	int grabMouseX, grabMouseY;
 	
 	int atari_mouse_xpos;
 	int atari_mouse_ypos;
@@ -174,8 +174,7 @@ class HostScreen: public DirtyRects
 	// Mouse handling
 	void WarpMouse(int x, int y);
 
-	bool IgnoreMouseMotionEvent() { return ignoreMouseMotionEvent; }
-	void IgnoreMouseMotionEvent(bool ignore) { ignoreMouseMotionEvent = ignore; }
+	bool isGrabMotion(int x, int y);
 	bool CanGrabMouseAgain() { return canGrabMouseAgain; }
 	void CanGrabMouseAgain(bool enable) { canGrabMouseAgain = enable; }
 	bool CapslockState() { return capslockState; }

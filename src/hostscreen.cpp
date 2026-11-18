@@ -176,7 +176,7 @@ HostScreen::HostScreen(void)
 	hiddenMouse(SDL_FALSE),
 	canGrabMouseAgain(false),
 	capslockState(false),
-	ignoreMouseMotionEvent(false),
+	grabMouseX(-1), grabMouseY(-1),
 	atari_mouse_xpos(-1),
 	atari_mouse_ypos(-1),
 	recording(false),
@@ -930,7 +930,7 @@ SDL_bool HostScreen::grabMouse(SDL_bool grab)
 	if (grab) {
 		canGrabMouseAgain = true;
 		if (!current && bx_options.startup.grabMouseAllowed)
-			IgnoreMouseMotionEvent(true);
+			SDL_GetMouseState(&grabMouseX, &grabMouseY);
 	}
 
 	// show hint in the window caption
@@ -959,6 +959,13 @@ SDL_bool HostScreen::grabMouse(SDL_bool grab)
 	return current;
 }
 
+
+bool HostScreen::isGrabMotion(int x, int y)
+{
+	const bool atGrab = grabMouseX >= 0 && x == grabMouseX && y == grabMouseY;
+	grabMouseX = grabMouseY = -1;
+	return atGrab;
+}
 
 void HostScreen::grabTheMouse()
 {
