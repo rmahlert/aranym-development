@@ -321,7 +321,7 @@ EXTRA_DIST += \
  src/modern040/softfloat-mingw/target.h src/modern040/runtime/core.cpp src/modern040/runtime/core.hpp \
  src/modern040/runtime/c-api.cpp src/modern040/runtime/c-api.h src/modern040/runtime/fpu-frontend.cpp \
  src/modern040/runtime/softfloat-adapter.cpp src/modern040/runtime/softfloat-adapter.hpp src/modern040/runtime/mmu-walk.cpp \
- src/modern040/runtime/mmu-walk.hpp src/modern040/adapter.h src/modern040/aranym-adapter.cpp \
+ src/modern040/runtime/mmu-walk.hpp src/modern040/adapter.h src/modern040/aranym-adapter.cpp src/modern040/aranym-fpu-control.h \
  src/uae_cpu/compiler/imported/upstream-compemu.cpp src/uae_cpu/compiler/imported/upstream-compstbl.cpp src/uae_cpu/compiler/imported/upstream-comptbl.h
 
 EXTRA_DIST += \

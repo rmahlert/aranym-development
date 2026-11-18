@@ -367,6 +367,25 @@ int frame_storage_identity(void*,const m040_bus_request*request,uint64_t*key) {
     if(test_ram_boundary(address,int(request->size),true,true)) {*key=address;return M040_FRAME_RAM;}
     return M040_FRAME_UNKNOWN;
 }
+int physical_transfer(const m040_bus_request *request,uint32_t *value) {
+    const bool write=request->kind==M040_WRITE;
+    switch(request->size) {
+    case 1:
+        if(write)phys_put_byte(request->address,*value);
+        else *value=phys_get_byte(request->address);
+        break;
+    case 2:
+        if(write)phys_put_word(request->address,*value);
+        else *value=phys_get_word(request->address);
+        break;
+    case 4:
+        if(write)phys_put_long(request->address,*value);
+        else *value=phys_get_long(request->address);
+        break;
+    default:return M040_BUS_UNKNOWN_FAULT;
+    }
+    return M040_BUS_COMPLETED;
+}
 int memory(void *,const m040_bus_request *request,uint32_t *value) {
     AranymModernPerfScope sample(3);
     if(aranym_modern_perf_enabled()&&request->kind<3)++aranym_modern_perf().memory[request->kind];
@@ -396,23 +415,20 @@ int memory(void *,const m040_bus_request *request,uint32_t *value) {
     // explicit bus operation must recheck its own effective FC and boundary.
     read_page=write_page=request->address^(uae_u32(ARAM_PAGE_MASK)+1);
 #endif
+    const uint64_t end=uint64_t(physical)+request->size;
+    if((physical>=0x800 && end<=RAMSize) ||
+       (physical>=FastRAMBase && end<=uint64_t(FastRAMBase)+FastRAMSize)) {
+        const int result=physical_transfer(request,value);
+        regs.s=saved_super;
+        return result;
+    }
     VOLATILE int ok=1;
     /* TRY uses ARAnyM's process-global excep_env in longjmp builds.  A bus
      * callback is nested inside the outer CPU/JIT exception frame, so retain
      * that owner before installing this short-lived probe frame. */
     SAVE_EXCEPTION;
     TRY(prb) {
-        if(request->kind==M040_WRITE) {
-            if(request->size==1)phys_put_byte(request->address,*value);
-            else if(request->size==2)phys_put_word(request->address,*value);
-            else if(request->size==4)phys_put_long(request->address,*value);
-            else ok=0;
-        } else {
-            if(request->size==1)*value=phys_get_byte(request->address);
-            else if(request->size==2)*value=phys_get_word(request->address);
-            else if(request->size==4)*value=phys_get_long(request->address);
-            else ok=0;
-        }
+        ok=physical_transfer(request,value);
     } CATCH(prb) {ok=0;}
     RESTORE_EXCEPTION;
     regs.s=saved_super;return ok;
@@ -572,6 +588,8 @@ void modern040_execute() {
     }
 }
 
+#include "aranym-fpu-control.h"
+
 // One genuine modern interpreter operation at the native JIT fallback boundary.
 // Architectural state crosses the C ABI only here, not around translated ops.
 void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
@@ -585,7 +603,11 @@ void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
 #if defined(HAVE_GET_WORD_UNSWAPPED) && !defined(FULLMMU)
     profile_opcode=do_byteswap_16(profile_opcode);
 #endif
-    AranymModernPerfStep profile_step(true,profile_opcode,m68k_getpc());from_old();
+    AranymModernPerfStep profile_step(true,profile_opcode,m68k_getpc());
+#if defined(CPU_x86_64) && defined(MODERN040_FPU_JIT)
+    if(modern040_fpu_control_step(profile_opcode,entry_pc)) {++attempted;return;}
+#endif
+    from_old();
     const uae_u32 old_cacr=regs.cacr;
     const bool old_translation=aranym_modern_translation_active(regs.tc,
         regs.itt0,regs.itt1,regs.dtt0,regs.dtt1);

@@ -927,23 +927,44 @@ bool aranym_modern_fpu_mode() {
 }
 extern void aranym_modern_fpu_native_completed();
 static uae_u16 aranym_fpu_native_status;
-static bool fpu_normal_register(unsigned reg) {
+uae_u32 aranym_fpu_sgl_operands[2][4];
+static bool fpu_normal_register(unsigned reg, bool allow_zero=false) {
     const auto *bytes=reinterpret_cast<const uae_u8*>(fpu_register_address(reg));
-    uae_u16 sign_exponent;uae_u32 significand;
+    uae_u16 sign_exponent;
+    uae_u64 significand;
     memcpy(&sign_exponent,bytes+8,sizeof sign_exponent);
-    memcpy(&significand,bytes+4,sizeof significand);
+    memcpy(&significand,bytes,sizeof significand);
     const unsigned exponent=sign_exponent&0x7fff;
-    // Bound both operands away from underflow/overflow and reject every
-    // exceptional or noncanonical encoding before native arithmetic.
-    return exponent>=0x3000 && exponent<=0x4fff && (significand&0x80000000u);
+    return (exponent>=0x3000 && exponent<=0x4fff && (significand>>63)) ||
+        (allow_zero && !exponent && !significand);
 }
-static uae_u32 REGPARAM2 aranym_fpu_ram_move_guard(uae_u32 instruction, uae_u32 offset)
+static void fpu_sgl_operand(unsigned slot,unsigned reg) {
+    const auto *bytes=reinterpret_cast<const uae_u8*>(fpu_register_address(reg));
+    memcpy(aranym_fpu_sgl_operands[slot],bytes,10);
+    aranym_fpu_sgl_operands[slot][0]=0;
+    aranym_fpu_sgl_operands[slot][1]&=0xffffff00u;
+}
+static const uae_u16 fpu_extended_control=0x037f, fpu_single_control=0x007f;
+static void fpu_select_precision(unsigned op) {
+    const auto &control=(op==0x24 || op==0x27)?fpu_single_control:fpu_extended_control;
+    __asm__ volatile("fldcw %0"::"m"(control));
+}
+static bool fpu_integer_store_safe(unsigned reg) {
+    const auto *bytes=reinterpret_cast<const uae_u8*>(fpu_register_address(reg));
+    uae_u16 sign_exponent;
+    memcpy(&sign_exponent,bytes+8,sizeof sign_exponent);
+    return !(fpu.fpcr&~0x30u) && (sign_exponent&0x7fffu)<16383+30 && fpu_normal_register(reg,true);
+}
+static uae_u32 REGPARAM2 aranym_fpu_ram_operand_guard(uae_u32 instruction, uae_u32 offset)
 {
-    if (fpu.fpcr || aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,regs.dtt0,regs.dtt1))
+    if (aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,regs.dtt0,regs.dtt1))
         return 0;
     const unsigned extra=instruction>>16, mode=(instruction>>3)&7, reg=instruction&7;
     const bool store=(extra>>13)==3, single=((extra>>10)&7)==1;
-    const unsigned size=single?4:8;
+    const unsigned op=extra&127, destination=(extra>>7)&7;
+    const bool integer_store=store && ((extra>>10)&7)==0;
+    if (integer_store?!fpu_integer_store_safe(destination):fpu.fpcr!=0) return 0;
+    const unsigned size=single || integer_store?4:8;
     const uae_u32 base=regs.regs[8+reg];
     const uae_u32 address=mode==7?offset:mode==4?base-size:base+offset;
     const uint64_t end=uint64_t(address)+size;
@@ -953,6 +974,7 @@ static uae_u32 REGPARAM2 aranym_fpu_ram_move_guard(uae_u32 instruction, uae_u32 
     if (store) {
         static const bool track_frames=getenv("ARANYM_MODERN040_FRAME_IRQ")!=nullptr;
         if (track_frames) return 0;
+        if (integer_store) return 1;
         const auto *bytes=reinterpret_cast<const uae_u8*>(fpu_register_address((extra>>7)&7));
         uae_u64 significand;
         uae_u16 sign_exponent;
@@ -975,47 +997,63 @@ static uae_u32 REGPARAM2 aranym_fpu_ram_move_guard(uae_u32 instruction, uae_u32 
         if (!exponent) {
             uae_u32 low=0;
             if (!single) memcpy(&low,memory+4,sizeof low);
-            if ((high&0x7fffffffu) || low) return 0;
+            if ((high&0x7fffffffu) || low || op==0x24) return 0;
         }
     }
-    static const uae_u16 control=0x037f;
-    __asm__ volatile("fldcw %0"::"m"(control));
+    if (op && !fpu_normal_register(destination,true)) return 0;
+    if (op==0x27) fpu_sgl_operand(0,destination);
+    fpu_select_precision(op);
     return 1;
 }
 static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
-    if(fpu.fpcr!=0)return 0;
     const unsigned opclass=extra>>13,source=(extra>>10)&7,destination=(extra>>7)&7,op=extra&0x7f;
+    if(opclass==3 && source==0 && !op && (opcode&0x38)==0)return fpu_integer_store_safe(destination);
+    if(fpu.fpcr!=0)return 0;
     bool safe=false;
     if(opclass==0) {
-        safe=fpu_normal_register(source);
-        if(op==0x20 || op==0x22 || op==0x23 || op==0x28 || op==0x38)
+        safe=fpu_normal_register(source,op==0x22 || op==0x27);
+        if(op==0x24 || op==0x27 || op==0x22)
+            safe=safe&&fpu_normal_register(destination,true);
+        else if(op==0x20 || op==0x23 || op==0x28 || op==0x38)
             safe=safe&&fpu_normal_register(destination);
         if(op==0x04) {
             uae_u16 sign_exponent;
             memcpy(&sign_exponent,reinterpret_cast<const uae_u8*>(fpu_register_address(source))+8,sizeof sign_exponent);
             safe=safe&&!(sign_exponent&0x8000);
         }
-    } else if(opclass==2 && (opcode&0x3f)==0x3c && (source==1 || source==5)) {
-        uae_u32 bits;
-        memcpy(&bits,regs.pc_p+4,sizeof bits);
-        bits=SDL_SwapBE32(bits);
+    } else if(opclass==2 && ((opcode&0x38)==0 || (opcode&0x3f)==0x3c) && (source==1 || source==5)) {
+        uae_u32 bits=regs.regs[opcode&7];
+        const bool immediate=(opcode&0x3f)==0x3c;
+        if(immediate) {
+            memcpy(&bits,regs.pc_p+4,sizeof bits);
+            bits=SDL_SwapBE32(bits);
+        }
         const unsigned shift=source==1?23:20;
         const unsigned mask=source==1?0xff:0x7ff;
         const unsigned exponent=(bits>>shift)&mask;
-        if(exponent==0 || exponent==mask)return 0;
+        if(exponent==mask)return 0;
+        if(!exponent) {
+            uae_u32 low=0;
+            if(source==5)memcpy(&low,regs.pc_p+8,sizeof low);
+            if((bits&0x7fffffffu) || low || (op!=0x22 && op!=0x27 && op!=0x38))return 0;
+        }
         safe=op==0x00 || op==0x18 || op==0x1a || op==0x3a ||
-             (op==0x04 ? (bits&0x80000000u)==0 : fpu_normal_register(destination));
+             (op==0x04 ? (bits&0x80000000u)==0 : fpu_normal_register(destination,op==0x22 || op==0x24 || op==0x27));
     } else if(opclass==2) {
-        // The compiler admits only integer Dn/immediate inputs.
-        safe=op==0x00 || op==0x18 || op==0x1a || op==0x3a || fpu_normal_register(destination);
-        // SQRT of a dynamic signed integer is left to SoftFloat for now.
+        safe=op==0x00 || op==0x18 || op==0x1a || op==0x3a || fpu_normal_register(destination,op==0x22 || op==0x24 || op==0x27);
         if(op==0x04)safe=false;
+        if(op==0x24 && !regs.regs[opcode&7])safe=false;
+        if(op==0x27) {
+            const uae_s32 value=regs.regs[opcode&7];
+            safe=safe && value>=-0x1000000 && value<=0x1000000;
+        }
     } else if(opclass==3)safe=fpu_normal_register(destination);
     if(safe) {
-        // Guest rounding defaults are exact x87 extended/nearest. Mask host
-        // traps; guest exceptions remain architectural software decisions.
-        static const uae_u16 control=0x037f;
-        __asm__ volatile("fldcw %0"::"m"(control));
+        if(op==0x27) {
+            fpu_sgl_operand(0,destination);
+            if(opclass==0)fpu_sgl_operand(1,source);
+        }
+        fpu_select_precision(op);
     }
     return safe;
 }
@@ -1033,6 +1071,8 @@ static uae_u32 aranym_fpu_result_condition() {
 }
 static void REGPARAM2 aranym_fpu_native_commit(uae_u32 extra) {
     const bool store=(extra>>13)==3;
+    if(!store && ((extra&127)==0x24 || (extra&127)==0x27))
+        __asm__ volatile("fldcw %0"::"m"(fpu_extended_control));
     if(!store)fpu.fpsr.condition_codes=aranym_fpu_result_condition();
     const unsigned sw=aranym_fpu_native_status;
     uae_u32 status=0;
@@ -6523,7 +6563,7 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                     if (fpu_code_ok) {
                         const uae_u16 extra=do_get_mem_word(pc_hist[i].location+1);
                         const unsigned format=(extra>>10)&7;
-                        fpu_ram_words=aranym_fpu_ram_move_words(cft_map(opcode),extra);
+                        fpu_ram_words=aranym_fpu_ram_operand_words(cft_map(opcode),extra);
                         if ((cft_map(opcode)&0x3f)==0x3c && (extra>>13)==2 && (format==1 || format==5))
                             fpu_code_ok=instruction_guest_pc>=0x800 && code_words>=(format==1?4u:6u);
                         else
@@ -6649,7 +6689,7 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                             compemu_raw_mov_l_ri(REG_PAR2,extra);
                         }
                         raw_dec_sp(STACK_SHADOW_SPACE);
-                        compemu_raw_call((uintptr)(fpu_ram_words?aranym_fpu_ram_move_guard:aranym_fpu_native_guard));
+                        compemu_raw_call((uintptr)(fpu_ram_words?aranym_fpu_ram_operand_guard:aranym_fpu_native_guard));
                         raw_inc_sp(STACK_SHADOW_SPACE);
                         compemu_raw_test_l_rr(REG_RESULT,REG_RESULT);
                         compemu_raw_jcc_l_oponly(NATIVE_CC_NE);

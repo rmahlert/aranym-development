@@ -258,7 +258,8 @@ extern struct jit_disable_opcodes jit_disable;
 
 extern void comp_fpp_opp (uae_u32 opcode, uae_u16 extra);
 #ifdef MODERN040_FPU_JIT
-unsigned aranym_fpu_ram_move_words(uae_u32 opcode, uae_u16 extra);
+extern uae_u32 aranym_fpu_sgl_operands[2][4];
+unsigned aranym_fpu_ram_operand_words(uae_u32 opcode, uae_u16 extra);
 #endif
 extern void comp_fbcc_opp (uae_u32 opcode);
 extern void comp_fscc_opp (uae_u32 opcode, uae_u16 extra);

@@ -1132,10 +1132,14 @@ static const fpu_register power10[]		= {
 };
 
 #ifdef MODERN040_FPU_JIT
-unsigned aranym_fpu_ram_move_words(uae_u32 opcode, uae_u16 extra)
+unsigned aranym_fpu_ram_operand_words(uae_u32 opcode, uae_u16 extra)
 {
 	const unsigned format = (extra >> 10) & 7, opclass = extra >> 13;
-	if ((format != 1 && format != 5) || (opclass != 2 && opclass != 3) || (extra & 127))
+	const unsigned op = extra & 127;
+	const bool move = (opclass == 2 || opclass == 3) && op == 0 && (format == 1 || format == 5);
+	const bool integer_store = opclass == 3 && !op && format == 0;
+	const bool arithmetic = opclass == 2 && format == 1 && (op == 0x22 || op == 0x24 || op == 0x27);
+	if (!move && !integer_store && !arithmetic)
 		return 0;
 	const unsigned mode = (opcode >> 3) & 7;
 	if (mode >= 2 && mode <= 4) return 2;
@@ -1155,15 +1159,20 @@ void comp_fpp_opp(uae_u32 opcode, uae_u16 extra)
     if(opclass==0 || opclass==2) {
         switch(operation) {
         case 0x00:case 0x04:case 0x18:case 0x1a:
-        case 0x20:case 0x22:case 0x23:case 0x28:case 0x38:case 0x3a:
+        case 0x20:case 0x22:case 0x23:case 0x24:case 0x27:case 0x28:case 0x38:case 0x3a:
             allowed=true;break;
         default:break;
         }
         const bool float_immediate=(opcode&0x3f)==0x3c && (format==1 || format==5);
-        if(opclass==2 && !float_immediate && ((format!=0 && format!=4 && format!=6) ||
+        const bool single_dn=(opcode&0x38)==0 && format==1 &&
+            (operation==0x22 || operation==0x24 || operation==0x27 || operation==0x38);
+        if(opclass==2 && (operation==0x24 || operation==0x27) &&
+           !(single_dn || ((opcode&0x38)==0 && format==0) || (float_immediate && format==1)))
+            allowed=false;
+        if(opclass==2 && !single_dn && !float_immediate && ((format!=0 && format!=4 && format!=6) ||
                 !((opcode&0x38)==0 || (opcode&0x3f)==0x3c)))allowed=false;
-    } else if(opclass==3)allowed=format==2;
-    if(!allowed && !aranym_fpu_ram_move_words(opcode,extra)){FAIL(1);return;}
+    } else if(opclass==3)allowed=format==2 || (format==0 && !operation && (opcode&0x38)==0);
+    if(!allowed && !aranym_fpu_ram_operand_words(opcode,extra)){FAIL(1);return;}
 #endif
 	int reg;
 	int src;
@@ -2074,6 +2083,13 @@ void comp_fpp_opp(uae_u32 opcode, uae_u16 extra)
 				FAIL(1);				/* Illegal instruction */
 				return;
 			}
+#ifdef MODERN040_FPU_JIT
+			if ((extra >> 13) == 0) {
+				fmov_ext_rm(FS1, (uintptr)aranym_fpu_sgl_operands[1]);
+				src = FS1;
+			}
+			fmov_ext_rm(reg, (uintptr)aranym_fpu_sgl_operands[0]);
+#endif
 			fmul_rr(reg, src);
 			MAKE_FPSR(reg);
 			break;
