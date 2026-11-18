@@ -324,6 +324,8 @@ libaranym_a_SOURCES += uae_cpu/compiler/arm64/compemu_arm.cpp uae_cpu/compiler/a
 else
 aranym_SOURCES += \
 	uae_cpu/compiler/compemu.h \
+	uae_cpu/compiler/compemu_fpu_leaf.h \
+	uae_cpu/compiler/compemu_fpu_numeric.h \
 	uae_cpu/compiler/flags_arm.h \
 	uae_cpu/compiler/flags_x86.h \
 	$(empty)

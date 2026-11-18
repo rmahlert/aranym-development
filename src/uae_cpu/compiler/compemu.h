@@ -259,9 +259,13 @@ extern struct jit_disable_opcodes jit_disable;
 extern void comp_fpp_opp (uae_u32 opcode, uae_u16 extra);
 #ifdef MODERN040_FPU_JIT
 extern uae_u32 aranym_fpu_sgl_operands[2][4];
+bool aranym_fpu_compile_supported(uae_u32 opcode, uae_u16 extra);
 unsigned aranym_fpu_ram_operand_words(uae_u32 opcode, uae_u16 extra);
 #endif
 extern void comp_fbcc_opp (uae_u32 opcode);
+#if defined(CPU_x86_64) && defined(MODERN040_FPU_JIT)
+void aranym_compile_fpu_branch(uae_u32 opcode);
+#endif
 extern void comp_fscc_opp (uae_u32 opcode, uae_u16 extra);
 void comp_fdbcc_opp (uae_u32 opcode, uae_u16 extra);
 void comp_ftrapcc_opp (uae_u32 opcode, uaecptr oldpc);

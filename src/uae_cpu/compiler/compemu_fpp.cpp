@@ -781,6 +781,10 @@ void comp_ftrapcc_opp (uae_u32 /* opcode */, uaecptr /* oldpc */)
 
 void comp_fbcc_opp(uae_u32 opcode)
 {
+#if defined(CPU_x86_64) && defined(MODERN040_FPU_JIT)
+	aranym_compile_fpu_branch(opcode);
+	return;
+#endif
 	uae_u32 start_68k_offset = m68k_pc_offset;
 	uae_u32 off;
 	uae_u32 v1;
@@ -1143,17 +1147,13 @@ unsigned aranym_fpu_ram_operand_words(uae_u32 opcode, uae_u16 extra)
 		return 0;
 	const unsigned mode = (opcode >> 3) & 7;
 	if (mode >= 2 && mode <= 4) return 2;
-	if (mode == 5 || (opcode & 63) == 0x38) return 3;
+	if (mode == 5 || mode == 6 || (opcode & 63) == 0x38) return 3;
 	if ((opcode & 63) == 0x39) return 4;
 	return 0;
 }
-#endif
 
-void comp_fpp_opp(uae_u32 opcode, uae_u16 extra)
+bool aranym_fpu_compile_supported(uae_u32 opcode,uae_u16 extra)
 {
-#ifdef MODERN040_FPU_JIT
-    // Admit only operations whose native x87 result/status semantics have
-    // paired coverage. All remaining encodings use the pinned SoftFloat body.
     const unsigned opclass=extra>>13,operation=extra&0x7f,format=(extra>>10)&7;
     bool allowed=false;
     if(opclass==0 || opclass==2) {
@@ -1165,14 +1165,22 @@ void comp_fpp_opp(uae_u32 opcode, uae_u16 extra)
         }
         const bool float_immediate=(opcode&0x3f)==0x3c && (format==1 || format==5);
         const bool single_dn=(opcode&0x38)==0 && format==1 &&
-            (operation==0x22 || operation==0x24 || operation==0x27 || operation==0x38);
+            (operation==0x00 || operation==0x18 || operation==0x1a || operation==0x22 ||
+             operation==0x24 || operation==0x27 || operation==0x38 || operation==0x3a);
         if(opclass==2 && (operation==0x24 || operation==0x27) &&
            !(single_dn || ((opcode&0x38)==0 && format==0) || (float_immediate && format==1)))
             allowed=false;
         if(opclass==2 && !single_dn && !float_immediate && ((format!=0 && format!=4 && format!=6) ||
                 !((opcode&0x38)==0 || (opcode&0x3f)==0x3c)))allowed=false;
-    } else if(opclass==3)allowed=format==2 || (format==0 && !operation && (opcode&0x38)==0);
-    if(!allowed && !aranym_fpu_ram_operand_words(opcode,extra)){FAIL(1);return;}
+    } else if(opclass==3)allowed=format==2 || ((format==0 || format==1) && !operation && (opcode&0x38)==0);
+    return allowed || aranym_fpu_ram_operand_words(opcode,extra)!=0;
+}
+#endif
+
+void comp_fpp_opp(uae_u32 opcode, uae_u16 extra)
+{
+#ifdef MODERN040_FPU_JIT
+    if(!aranym_fpu_compile_supported(opcode,extra)){FAIL(1);return;}
 #endif
 	int reg;
 	int src;

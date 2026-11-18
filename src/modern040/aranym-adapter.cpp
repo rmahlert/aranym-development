@@ -20,6 +20,9 @@
 #include "modern040-frame.h"
 #include "fpu/fpu.h"
 #include "runtime/c-api.h"
+#if defined(CPU_x86_64) && defined(MODERN040_FPU_JIT)
+#include "runtime/softfloat-adapter.hpp"
+#endif
 #include "adapter.h"
 #include "compiler/compemu.h"
 #include "native-ea-plan.hpp"
@@ -531,6 +534,7 @@ void modern040_reset_requested(){initialized=false;import_snapshot_valid=false;m
 }
 #ifdef MODERN040_FPU_JIT
 void aranym_modern_fpu_native_completed(){native_fpu_active=true;}
+bool *aranym_modern_fpu_activity_address(){return &native_fpu_active;}
 #endif
 bool modern040_restart_pending() {
     if(!initialized)return false;
@@ -590,6 +594,94 @@ void modern040_execute() {
 
 #include "aranym-fpu-control.h"
 
+#if defined(CPU_x86_64) && defined(MODERN040_FPU_JIT)
+unsigned aranym_fpu_branch_mask(unsigned predicate) {
+    unsigned mask=0;
+    for(unsigned flags=0;flags<16;++flags)
+        if(modern040_fpu_condition(predicate,flags<<24))mask|=1u<<flags;
+    return mask;
+}
+
+namespace {
+modern040::Extended96 native_fp_words(unsigned reg) {
+    uint32_t bits[3]{};
+    std::memcpy(bits,fpu_register_address(reg),10);
+    return {bits[2]<<16,bits[1],bits[0]};
+}
+
+void set_native_fp_words(unsigned reg,const modern040::Extended96 &value) {
+    uint32_t bits[3]={value[2],value[1],value[0]>>16};
+    std::memcpy(fpu_register_address(reg),bits,10);
+}
+
+bool modern040_fpu_arithmetic_step(uae_u32 opcode,uae_u32 pc) {
+    if((opcode&0xffc0)!=0xf200)return false;
+    static const bool bypass=std::getenv("ARANYM_FPU_SOFTFLOAT_REFERENCE") ||
+        std::getenv("ARANYM_UPSTREAM_JIT_MOVEM_BUS_FIXTURE");
+    if(bypass || legacy_fpu || CPUType!=4 || !aranym_modern_fpu_mode() || (fpu.fpcr&0xff00) ||
+       regs.t0 || regs.t1 || aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,regs.dtt0,regs.dtt1) ||
+       modern040_restart_pending() || modern040_irq_restart_pending() || !modern040_fpu_code(pc,6))
+        return false;
+
+    const unsigned extra=phys_get_word(pc+2),opclass=extra>>13;
+    const unsigned src=(extra>>10)&7,dst=(extra>>7)&7;
+    unsigned length=4;
+    modern040::Extended96 operand;
+    if(opclass==0) {
+        operand=native_fp_words(src);
+    } else if(opclass==2 && (extra&0xfc00)!=0x5c00) {
+        const unsigned ea=opcode&63;
+        const bool immediate=ea==0x3c;
+        if(ea>=8 && !immediate)return false;
+        if(immediate) {
+            static constexpr unsigned sizes[8]={4,4,12,0,2,8,2,0};
+            if(!sizes[src])return false;
+            length+=sizes[src];
+            if(!modern040_fpu_code(pc,length+2))return false;
+        }
+        const auto value=!immediate?regs.regs[ea]:(src==4 || src==6)?phys_get_word(pc+4):phys_get_long(pc+4);
+        switch(src) {
+        case 0:operand=modern040::softfloat_from_integer(uae_s32(value)).words;break;
+        case 1:operand=modern040::softfloat_from_single(value).words;break;
+        case 2:
+            if(!immediate)return false;
+            operand=modern040::softfloat_from_extended(value,phys_get_long(pc+8),phys_get_long(pc+12)).words;
+            break;
+        case 4:operand=modern040::softfloat_from_integer(uae_s16(value)).words;break;
+        case 5:
+            if(!immediate)return false;
+            operand=modern040::softfloat_from_double(value,phys_get_long(pc+8)).words;break;
+        case 6:operand=modern040::softfloat_from_integer(uae_s8(value)).words;break;
+        default:return false;
+        }
+    } else {
+        return false;
+    }
+
+    modern040::FpuExecution result;
+    if(!modern040::softfloat_execute_040(extra&127,native_fp_words(dst),operand,
+                                         fpu.fpcr,fpu.fpsr.quotient,result))return false;
+    const auto &words=result.value.words;
+    const unsigned exponent=(words[0]>>16)&0x7fff;
+    const bool special=exponent==0x7fff, fraction=(words[1]&0x7fffffffu) || words[2];
+    const auto condition=((words[0]&0x80000000u)>>4) |
+        ((!exponent && !words[1] && !words[2])?0x04000000u:0) |
+        (special?(fraction?0x01000000u:0x02000000u):0);
+    const auto status=result.value.status&0xff00;
+    const auto quotient=result.write_quotient?result.quotient:fpu.fpsr.quotient;
+    fpu_set_fpsr(condition|quotient|status|modern040::accrued_exceptions(fpu.fpsr.accrued_exception,status));
+    fpu.fpsr.condition_codes=condition;
+    if(result.write_destination)set_native_fp_words(dst,words);
+    if(result.write_secondary)set_native_fp_words(result.secondary_register,result.secondary);
+    fpu.instruction_address=pc;
+    regs.fault_pc=pc;
+    native_fpu_active=true;
+    m68k_setpc(pc+length);
+    return true;
+}
+}
+#endif
+
 // One genuine modern interpreter operation at the native JIT fallback boundary.
 // Architectural state crosses the C ABI only here, not around translated ops.
 void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
@@ -605,7 +697,7 @@ void REGPARAM2 aranym_upstream_modern_step(uae_u32 encoded_opcode) {
 #endif
     AranymModernPerfStep profile_step(true,profile_opcode,m68k_getpc());
 #if defined(CPU_x86_64) && defined(MODERN040_FPU_JIT)
-    if(modern040_fpu_control_step(profile_opcode,entry_pc)) {++attempted;return;}
+    if(modern040_fpu_control_step(profile_opcode,entry_pc) || modern040_fpu_arithmetic_step(profile_opcode,entry_pc)) {++attempted;return;}
 #endif
     from_old();
     const uae_u32 old_cacr=regs.cacr;
