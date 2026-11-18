@@ -102,6 +102,9 @@ static constexpr bool use_long_double = true;
 static void build_comp(void);
 #ifdef EXPERIMENTAL_UPSTREAM_MODERN040
 #include "../../modern040/native-ea-plan.hpp"
+#ifdef MODERN040_FPU_JIT
+#include "../../modern040/runtime/softfloat-adapter.hpp"
+#endif
 #include "modern040_performance.h"
 extern void REGPARAM2 aranym_upstream_modern_step(uae_u32 opcode);
 void REGPARAM2 aranym_upstream_hybrid_step(uae_u32 opcode);
@@ -988,11 +991,7 @@ static void REGPARAM2 aranym_fpu_native_commit(uae_u32 extra) {
     // An exact extended store preserves the preceding arithmetic status.
     // The paired SoftFloat frontend retains INEX2 across this transfer.
     if((extra>>13)!=3)fpu.fpsr.exception_status=status;
-    if(status&0x6000)fpu.fpsr.accrued_exception|=0x80;
-    if(status&0x1000)fpu.fpsr.accrued_exception|=0x40;
-    if(status&0x0800)fpu.fpsr.accrued_exception|=0x20;
-    if(status&0x0400)fpu.fpsr.accrued_exception|=0x10;
-    if(status&0x0300)fpu.fpsr.accrued_exception|=0x08;
+    fpu.fpsr.accrued_exception=modern040::accrued_exceptions(fpu.fpsr.accrued_exception, status);
     fpu.instruction_address=regs.fault_pc;
     aranym_modern_fpu_native_completed();
 }

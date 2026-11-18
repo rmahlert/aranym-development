@@ -142,13 +142,7 @@ static void install_fpu_result(unsigned destination,const modern040::FpuValue &v
     const std::uint32_t condition=(value.words[0]&0x80000000?0x08000000u:0)|
         (zero?0x04000000u:0)|(infinity?0x02000000u:0)|(nan?0x01000000u:0);
     const auto status=value.status&0x0000ff00u;
-    std::uint32_t accrued=state.fpsr&0xf8u;
-    if(status&0x00006000u)accrued|=0x80; // SNAN/OPERR -> IOP
-    if(status&0x00001000u)accrued|=0x40;
-    if(status&0x00000800u)accrued|=0x20;
-    if(status&0x00000400u)accrued|=0x10;
-    if(status&0x00000300u)accrued|=0x08;
-    state.fpsr=(state.fpsr&0x00ff0000u)|condition|status|accrued;
+    state.fpsr=(state.fpsr&0x00ff0000u)|condition|status|modern040::accrued_exceptions(state.fpsr, status);
 }
 int m040_fpu_binary(uint32_t operation,uint32_t destination,uint32_t source) {
     if(busy)return M040_BUSY;

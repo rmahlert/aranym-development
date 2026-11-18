@@ -4,6 +4,18 @@
 #include <cstdint>
 namespace modern040 {
 using Extended96=std::array<std::uint32_t,3>;
+inline std::uint32_t accrued_exceptions(std::uint32_t fpsr, std::uint32_t status) {
+    std::uint32_t accrued = fpsr & 0xf8;
+    constexpr unsigned snan = 0x4000, operr = 0x2000, overflow = 0x1000;
+    constexpr unsigned underflow = 0x0800, divide_zero = 0x0400;
+    constexpr unsigned inexact2 = 0x0200, inexact1 = 0x0100;
+    if (status & (snan | operr)) accrued |= 0x80;
+    if (status & overflow) accrued |= 0x40;
+    if ((status & underflow) && (status & inexact2)) accrued |= 0x20;
+    if (status & divide_zero) accrued |= 0x10;
+    if (status & (overflow | inexact2 | inexact1)) accrued |= 0x08;
+    return accrued;
+}
 enum class FpuBinary { Add,Sub,Mul,Div };
 struct FpuValue { Extended96 words{};std::uint32_t status=0; };
 struct FpuExecution {

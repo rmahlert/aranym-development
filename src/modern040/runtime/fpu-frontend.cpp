@@ -17,15 +17,6 @@ std::uint32_t condition(const Extended96&words) {
     return (words[0]&0x80000000?0x08000000u:0)|(zero?0x04000000u:0)|
            (infinity?0x02000000u:0)|(nan?0x01000000u:0);
 }
-std::uint32_t accrued(std::uint32_t status) {
-    std::uint32_t value=regs.fpsr&0xf8u;
-    if(status&0x00006000u)value|=0x80;
-    if(status&0x00001000u)value|=0x40;
-    if(status&0x00000800u)value|=0x20;
-    if(status&0x00000400u)value|=0x10;
-    if(status&0x00000300u)value|=0x08;
-    return value;
-}
 int arithmetic_vector(std::uint32_t status) {
     static constexpr int vectors[8]={49,49,50,51,53,52,54,48};
     const auto enabled=(status&regs.fpcr&0xff00u)>>8;
@@ -278,7 +269,7 @@ bool execute_modern_fpu(uae_u16 opcode) {
         const auto status=converted.status&0x0000ff00u;
         if(const auto vector=arithmetic_vector(status)) {
             regs.fpiar=regs.instruction_pc;regs.fpu_state=1;
-            regs.fpsr=(regs.fpsr&0x00ff0000u)|condition(regs.fp[source])|status|accrued(status);
+            regs.fpsr=(regs.fpsr&0x00ff0000u)|condition(regs.fp[source])|status|accrued_exceptions(regs.fpsr, status);
             Exception(vector);return true;
         }
         if(mode==0) {
@@ -295,7 +286,7 @@ bool execute_modern_fpu(uae_u16 opcode) {
             else write(address,sizes[format],converted.words[0]);
         }
         regs.fpiar=regs.instruction_pc;regs.fpu_state=1;
-        regs.fpsr=(regs.fpsr&0x00ff0000u)|condition(regs.fp[source])|status|accrued(status);
+        regs.fpsr=(regs.fpsr&0x00ff0000u)|condition(regs.fp[source])|status|accrued_exceptions(regs.fpsr, status);
         return true;
     }
     if(opclass==4||opclass==5) {
@@ -348,7 +339,7 @@ bool execute_modern_fpu(uae_u16 opcode) {
         FpuValue value;if(!softfloat_constant(extra&0x7f,regs.fpcr,value))return false;
         regs.fpiar=regs.instruction_pc;regs.fpu_state=1;regs.pc=regs.instruction_pc+4;
         const auto status=value.status&0xff00;
-        regs.fpsr=(regs.fpsr&0x00ff0000u)|condition(value.words)|status|accrued(status);
+        regs.fpsr=(regs.fpsr&0x00ff0000u)|condition(value.words)|status|accrued_exceptions(regs.fpsr, status);
         if(const auto vector=arithmetic_vector(status)){Exception(vector);return true;}
         regs.fp[(extra>>7)&7]=value.words;
         return true;
@@ -366,7 +357,7 @@ bool execute_modern_fpu(uae_u16 opcode) {
     regs.fpiar=regs.instruction_pc;
     regs.fpu_state=1;
     const auto quotient=executed.write_quotient?executed.quotient:(regs.fpsr&0x00ff0000u);
-    regs.fpsr=quotient|condition(executed.value.words)|status|accrued(status);
+    regs.fpsr=quotient|condition(executed.value.words)|status|accrued_exceptions(regs.fpsr, status);
     if(const auto vector=arithmetic_vector(status)){Exception(vector);return true;}
     if(executed.write_destination)regs.fp[destination]=executed.value.words;
     if(executed.write_secondary)regs.fp[executed.secondary_register]=executed.secondary;

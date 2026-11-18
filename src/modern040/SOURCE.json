@@ -5,13 +5,13 @@
   "types_sha256": "929c3b03e0c58b9cb3c7ec2c13570eb0d9e10d923eaa3a887bd4d85a22ba65a9",
   "local_inputs": {
     "src/modern040/runtime/core.cpp": "eada9c6d76b264090912f5f938d61950b7870de76ca203a3051a15fb96bb88c0",
-    "src/modern040/runtime/c-api.cpp": "7224dbf968846e62c4072b8d943cbbbe4190c9cd730070486bb593a1f3385323",
+    "src/modern040/runtime/c-api.cpp": "4b36f69361590406b5ae554d6b2ff0163f062da6f3213f2d6536fc333ed0ca7d",
     "src/modern040/runtime/core.hpp": "bdf6d3757104ed3ea1252b1509408bb7b22c13801ded5ce5bda1de2731c9bdb0",
     "src/modern040/runtime/c-api.h": "ff587e245b365a122fa99f96b4df53d75b783696be5d407125c59b187916a5c9",
     "src/modern040/runtime/restart.hpp": "616500f578cab537a2aa91198eec42adad846807e5188240420c98862f814ae4",
-    "src/modern040/runtime/fpu-frontend.cpp": "bb39d524d832f1c026d94acd5591753f51748f435725d5057f382bb94953ce35",
+    "src/modern040/runtime/fpu-frontend.cpp": "98b456cd69d23902214607aa906103614a9f7ae5110c9240c780fa99abdc74b1",
     "src/modern040/runtime/softfloat-adapter.cpp": "d69149cd3accef279b3f8a00c6a7944b3095a7a599d124154ced5fca104aa35d",
-    "src/modern040/runtime/softfloat-adapter.hpp": "d6b5b9c152391db69816094ba1e007d432d5a75d87ced7caa089418b2396ec0d",
+    "src/modern040/runtime/softfloat-adapter.hpp": "4e83844a5d6b8fbb97a7a40cf04aeaf1f33ed17a997d7e8e1b6c60da6f8af3ec",
     "src/modern040/runtime/mmu-walk.cpp": "aa7ea6e597056ca9da08d49860b26469f7adb828e31720b9e7094e06da24a327",
     "src/modern040/runtime/mmu-walk.hpp": "cacb3cca85567e442f70471be7dd92b1a1357d3ae5639b95b71e48a3398f1c9c",
     "src/modern040/fpu-constants.hpp": "b96de2bc5c030dbe49078439f31b864c8d923516e6e0d09ff86fc67664c85ceb"
