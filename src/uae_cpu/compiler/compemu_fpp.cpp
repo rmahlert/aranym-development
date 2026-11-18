@@ -1131,6 +1131,20 @@ static const fpu_register power10[]		= {
 #endif
 };
 
+#ifdef MODERN040_FPU_JIT
+unsigned aranym_fpu_ram_move_words(uae_u32 opcode, uae_u16 extra)
+{
+	const unsigned format = (extra >> 10) & 7, opclass = extra >> 13;
+	if ((format != 1 && format != 5) || (opclass != 2 && opclass != 3) || (extra & 127))
+		return 0;
+	const unsigned mode = (opcode >> 3) & 7;
+	if (mode >= 2 && mode <= 4) return 2;
+	if (mode == 5 || (opcode & 63) == 0x38) return 3;
+	if ((opcode & 63) == 0x39) return 4;
+	return 0;
+}
+#endif
+
 void comp_fpp_opp(uae_u32 opcode, uae_u16 extra)
 {
 #ifdef MODERN040_FPU_JIT
@@ -1145,10 +1159,11 @@ void comp_fpp_opp(uae_u32 opcode, uae_u16 extra)
             allowed=true;break;
         default:break;
         }
-        if(opclass==2 && ((format!=0 && format!=4 && format!=6) ||
+        const bool float_immediate=(opcode&0x3f)==0x3c && (format==1 || format==5);
+        if(opclass==2 && !float_immediate && ((format!=0 && format!=4 && format!=6) ||
                 !((opcode&0x38)==0 || (opcode&0x3f)==0x3c)))allowed=false;
     } else if(opclass==3)allowed=format==2;
-    if(!allowed){FAIL(1);return;}
+    if(!allowed && !aranym_fpu_ram_move_words(opcode,extra)){FAIL(1);return;}
 #endif
 	int reg;
 	int src;

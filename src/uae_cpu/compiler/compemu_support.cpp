@@ -937,8 +937,52 @@ static bool fpu_normal_register(unsigned reg) {
     // exceptional or noncanonical encoding before native arithmetic.
     return exponent>=0x3000 && exponent<=0x4fff && (significand&0x80000000u);
 }
+static uae_u32 REGPARAM2 aranym_fpu_ram_move_guard(uae_u32 instruction, uae_u32 offset)
+{
+    if (fpu.fpcr || aranym_modern_translation_active(regs.tc,regs.itt0,regs.itt1,regs.dtt0,regs.dtt1))
+        return 0;
+    const unsigned extra=instruction>>16, mode=(instruction>>3)&7, reg=instruction&7;
+    const bool store=(extra>>13)==3, single=((extra>>10)&7)==1;
+    const unsigned size=single?4:8;
+    const uae_u32 base=regs.regs[8+reg];
+    const uae_u32 address=mode==7?offset:mode==4?base-size:base+offset;
+    const uint64_t end=uint64_t(address)+size;
+    const bool backed=end<=RAMSize || (address>=FastRAMBase && end<=uint64_t(FastRAMBase)+FastRAMSize);
+    if (!backed || (address&1) || address<0x800 || !test_ram_boundary(address,size,regs.s,store))
+        return 0;
+    if (store) {
+        static const bool track_frames=getenv("ARANYM_MODERN040_FRAME_IRQ")!=nullptr;
+        if (track_frames) return 0;
+        const auto *bytes=reinterpret_cast<const uae_u8*>(fpu_register_address((extra>>7)&7));
+        uae_u64 significand;
+        uae_u16 sign_exponent;
+        memcpy(&significand,bytes,sizeof significand);
+        memcpy(&sign_exponent,bytes+8,sizeof sign_exponent);
+        const int exponent=(sign_exponent&0x7fff)-16383;
+        const int limit=single?127:1023;
+        if ((sign_exponent&0x7fff) || significand) {
+            if (!(significand>>63) || exponent<=-limit || exponent>=limit)
+                return 0;
+        }
+    } else {
+        const auto *memory=phys_get_real_address(address);
+        uae_u32 high;
+        memcpy(&high,memory,sizeof high);
+        high=SDL_SwapBE32(high);
+        const unsigned shift=single?23:20, mask=single?0xff:0x7ff;
+        const unsigned exponent=(high>>shift)&mask;
+        if (exponent==mask) return 0;
+        if (!exponent) {
+            uae_u32 low=0;
+            if (!single) memcpy(&low,memory+4,sizeof low);
+            if ((high&0x7fffffffu) || low) return 0;
+        }
+    }
+    static const uae_u16 control=0x037f;
+    __asm__ volatile("fldcw %0"::"m"(control));
+    return 1;
+}
 static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
-    (void)opcode;
     if(fpu.fpcr!=0)return 0;
     const unsigned opclass=extra>>13,source=(extra>>10)&7,destination=(extra>>7)&7,op=extra&0x7f;
     bool safe=false;
@@ -951,6 +995,16 @@ static uae_u32 REGPARAM2 aranym_fpu_native_guard(uae_u32 opcode,uae_u32 extra) {
             memcpy(&sign_exponent,reinterpret_cast<const uae_u8*>(fpu_register_address(source))+8,sizeof sign_exponent);
             safe=safe&&!(sign_exponent&0x8000);
         }
+    } else if(opclass==2 && (opcode&0x3f)==0x3c && (source==1 || source==5)) {
+        uae_u32 bits;
+        memcpy(&bits,regs.pc_p+4,sizeof bits);
+        bits=SDL_SwapBE32(bits);
+        const unsigned shift=source==1?23:20;
+        const unsigned mask=source==1?0xff:0x7ff;
+        const unsigned exponent=(bits>>shift)&mask;
+        if(exponent==0 || exponent==mask)return 0;
+        safe=op==0x00 || op==0x18 || op==0x1a || op==0x3a ||
+             (op==0x04 ? (bits&0x80000000u)==0 : fpu_normal_register(destination));
     } else if(opclass==2) {
         // The compiler admits only integer Dn/immediate inputs.
         safe=op==0x00 || op==0x18 || op==0x1a || op==0x3a || fpu_normal_register(destination);
@@ -6457,7 +6511,29 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 #else
                 const bool checked_move_code_ok=!checked_move||(instruction_guest_pc>=FastRAMBase&&uint64(instruction_guest_pc)<uint64(FastRAMBase)+FastRAMSize);
 #endif
-                if (comptbl[opcode] && optlev>1 && !unsafe_control_flow && !unsafe_flags && checked_move_code_ok) {
+#ifdef MODERN040_FPU_JIT
+                unsigned fpu_ram_words=0;
+                bool fpu_code_ok=true;
+                if (checked_instruction.mnemo==i_FPP) {
+                    const unsigned code_words=tt_code.words?tt_code.words:
+                        instruction_guest_pc<ROMBase?
+                            modern040::native_ea::code_span(instruction_guest_pc,0,RAMSize).words:
+                            modern040::native_ea::code_span(instruction_guest_pc,ROMBase,ROMSize).words;
+                    fpu_code_ok=code_words>=2;
+                    if (fpu_code_ok) {
+                        const uae_u16 extra=do_get_mem_word(pc_hist[i].location+1);
+                        const unsigned format=(extra>>10)&7;
+                        fpu_ram_words=aranym_fpu_ram_move_words(cft_map(opcode),extra);
+                        if ((cft_map(opcode)&0x3f)==0x3c && (extra>>13)==2 && (format==1 || format==5))
+                            fpu_code_ok=instruction_guest_pc>=0x800 && code_words>=(format==1?4u:6u);
+                        else
+                            fpu_code_ok=code_words>=fpu_ram_words;
+                    }
+                }
+#else
+                const bool fpu_code_ok=true;
+#endif
+                if (comptbl[opcode] && optlev>1 && !unsafe_control_flow && !unsafe_flags && checked_move_code_ok && fpu_code_ok) {
 					failure=0;
 					if (!was_comp) {
 						comp_pc_p=(uae_u8*)pc_hist[i].location;
@@ -6557,10 +6633,23 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
                         raw_mov_q_mi((uintptr)&regs.pc_oldp,native_pc);
                         compemu_raw_mov_l_mi((uintptr)&regs.pc,instruction_guest_pc);
                         compemu_raw_mov_l_mi((uintptr)&regs.fault_pc,instruction_guest_pc);
-                        compemu_raw_mov_l_ri(REG_PAR1,cft_map(opcode));
-                        compemu_raw_mov_l_ri(REG_PAR2,do_get_mem_word(pc_hist[i].location+1));
+                        const uae_u32 numeric_opcode=cft_map(opcode), extra=do_get_mem_word(pc_hist[i].location+1);
+                        if (fpu_ram_words) {
+                            uae_u32 offset=0;
+                            if (fpu_ram_words==3)
+                                offset=uae_s16(do_get_mem_word(pc_hist[i].location+2));
+                            if (fpu_ram_words==4) {
+                                memcpy(&offset,pc_hist[i].location+2,sizeof offset);
+                                offset=SDL_SwapBE32(offset);
+                            }
+                            compemu_raw_mov_l_ri(REG_PAR1,numeric_opcode|(extra<<16));
+                            compemu_raw_mov_l_ri(REG_PAR2,offset);
+                        } else {
+                            compemu_raw_mov_l_ri(REG_PAR1,numeric_opcode);
+                            compemu_raw_mov_l_ri(REG_PAR2,extra);
+                        }
                         raw_dec_sp(STACK_SHADOW_SPACE);
-                        compemu_raw_call((uintptr)aranym_fpu_native_guard);
+                        compemu_raw_call((uintptr)(fpu_ram_words?aranym_fpu_ram_move_guard:aranym_fpu_native_guard));
                         raw_inc_sp(STACK_SHADOW_SPACE);
                         compemu_raw_test_l_rr(REG_RESULT,REG_RESULT);
                         compemu_raw_jcc_l_oponly(NATIVE_CC_NE);
