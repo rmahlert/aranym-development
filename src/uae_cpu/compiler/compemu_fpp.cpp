@@ -1142,7 +1142,8 @@ unsigned aranym_fpu_ram_operand_words(uae_u32 opcode, uae_u16 extra)
 	const unsigned op = extra & 127;
 	const bool move = (opclass == 2 || opclass == 3) && op == 0 && (format == 1 || format == 5);
 	const bool integer_store = opclass == 3 && !op && format == 0;
-	const bool arithmetic = opclass == 2 && format == 1 && (op == 0x22 || op == 0x24 || op == 0x27);
+	const bool arithmetic = opclass == 2 && format == 1 &&
+		(op == 0x22 || op == 0x24 || op == 0x27 || op == 0x28 || op == 0x38);
 	if (!move && !integer_store && !arithmetic)
 		return 0;
 	const unsigned mode = (opcode >> 3) & 7;
