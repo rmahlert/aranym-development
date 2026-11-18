@@ -22,12 +22,13 @@ def correct(text):
         '// Pinned WinUAE bodies plus explicit MOVEM CM cursor correction; GPL-2.0-or-later.',1)
     return text,dict(upstream_pin='d82bc2549f27943d11dc59482d5388daf1c0f337',before_sha256=BEFORE,after_sha256=digest(text),functions=changes,
         correction='Consume instruction EA extensions only on indexed MOVEM CM restart. Reuse stacked calculated data EA; never recalculate index or read an operand pointer.',
-        helper='tests/cpu-core-upgrade/runner/restart.hpp:consume_movem_restart_ea',
+        helper='src/modern040/runtime/restart.hpp:consume_movem_restart_ea',
         manual=dict(path='MC68040UM.pdf',sha256='aed5a038586dd2f610068efa01919fc552dc65bfd1a9274a333bad29dbd48894',page=238),
         wider_scope='No vendor pin, default or installer admission change. Targeted and full fault/bus qualification are separate requirements.')
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--input',type=Path,default=ROOT/'src/modern040/restart.cpp');p.add_argument('--output',type=Path);p.add_argument('--metadata-output',type=Path,default=ROOT/'src/modern040/MOVEM-RESTART-CORRECTION.json');p.add_argument('--apply',action='store_true');a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--input',type=Path,default=ROOT/'src/modern040/restart.cpp');p.add_argument('--output',type=Path);p.add_argument('--metadata-output',type=Path);p.add_argument('--apply',action='store_true');a=p.parse_args()
     after,record=correct(a.input.read_text())
-    if a.apply:(a.output or a.input).write_text(after);a.metadata_output.write_text(json.dumps(record,indent=2)+'\n')
+    if a.apply:(a.output or a.input).write_text(after)
+    if a.apply and a.metadata_output:a.metadata_output.write_text(json.dumps(record,indent=2)+'\n')
     print(json.dumps(record,indent=2))
 if __name__=='__main__':main()

@@ -51,7 +51,7 @@ image is included. Keep your current configuration and boot drive.
 
 [Release notes, portable packages, validation and checksums](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test2) ·
 [Matching source bundle](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test2/aranym-1.2.0-unofficial-fpu-jit-test2-source.tar.gz) ·
-[Platform status and known limitations](UNOFFICIAL.md)
+[Platform status and known limitations](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test2)
 
 FPU JIT is off by default. To try it, set `JIT = Yes`, `JITSafe = Yes` and
 `JITFPU = Yes` in your existing `[JIT]` configuration. Set `JITFPU = No` to
@@ -71,7 +71,7 @@ remain available. Community Raspberry Pi 5 testing of the integer JIT reported
 a Kronos 2.50 CPU score of **6,238**, versus **1,567** for its stored
 “Rpi5 Std FVDI” reference (about **3.98×**). This is a setup-dependent CPU
 benchmark comparison. Current FPU measurements and their workload limits are
-in [the platform notes](UNOFFICIAL.md#performance-measurements).
+in [the platform notes](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test2).
 
 ## Reporting issues
 

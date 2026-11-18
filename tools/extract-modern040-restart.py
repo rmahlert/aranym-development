@@ -15,7 +15,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--upstream',type=Path,required=True)
     args=parser.parse_args(); upstream=args.upstream.resolve()
-    spec=importlib.util.spec_from_file_location('runner_build',ROOT/'tests/cpu-core-upgrade/runner/build.py')
+    spec=importlib.util.spec_from_file_location('runner_build',ROOT/'tools/modern040-extract.py')
     build=importlib.util.module_from_spec(spec);spec.loader.exec_module(build)
     inputs={}
     for name in ['cpuemu_31.cpp','cpummu.cpp','newcpu_common.cpp','od-unix/machdep/m68k.h']:
@@ -69,8 +69,6 @@ def main():
     trace_tool=importlib.util.module_from_spec(spec);spec.loader.exec_module(trace_tool)
     corrected,trace_correction=trace_tool.correct(corrected)
     target=ROOT/'src/modern040/restart.cpp';target.write_text(corrected)
-    (target.parent/'MOVEM-RESTART-CORRECTION.json').write_text(json.dumps(correction,indent=2)+'\n')
-    (target.parent/'TRACE-RESTART-CORRECTION.json').write_text(json.dumps(trace_correction,indent=2)+'\n')
     record={'upstream_pin':PIN,'inputs':inputs,'body_sha256':hashes,
             'extracted_families':len(functions),'mapped_opcodes':len(mapping),'excluded_families':excluded,
             'restart_sha256':sha(target),

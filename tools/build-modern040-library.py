@@ -18,19 +18,15 @@ def main():
     if out==ROOT or ROOT in out.parents:raise RuntimeError('choose an out-of-tree build directory')
     marker=out/'owned-modern040-library.json'
     if out.exists() and any(out.iterdir()) and not marker.is_file():raise RuntimeError('unmarked existing output refused')
-    source=ROOT/'src/modern040';runner=ROOT/'tests/cpu-core-upgrade/runner'
+    source=ROOT/'src/modern040';runner=source/'runtime'
     upstream=a.upstream.resolve(strict=True)
     if subprocess.check_output(['git','-C',str(upstream),'rev-parse','HEAD'],text=True).strip()!=PIN:raise RuntimeError('WinUAE source is not the required pin')
     pins=json.loads((source/'SOURCE.json').read_text())
     assert sha(source/'integer.cpp')==pins['integer_sha256']
-    frame=json.loads((source/'PHYSICAL-WRITEBACK-FRAME-CORRECTION.json').read_text())
-    bitfield_frame=json.loads((source/'PHYSICAL-BITFIELD-FRAME-CORRECTION.json').read_text())
-    assert frame['after_sha256']==bitfield_frame['before_sha256']
-    assert pins['integer_sha256']==bitfield_frame['after_sha256']
     restart=json.loads((source/'RESTART-SOURCE.json').read_text())
     assert sha(source/'restart.cpp')==restart['restart_sha256']
     assert sha(source/'include/uae/types.h')==pins['types_sha256']
-    for n,h in pins['runner_inputs'].items():assert sha(ROOT/n)==h,n
+    for n,h in pins['local_inputs'].items():assert sha(ROOT/n)==h,n
     out.mkdir(parents=True,exist_ok=True)
     marker.write_text('{"purpose":"source-built experimental modern040 library"}\n')
     cxx_command=shlex.split(a.cxx)

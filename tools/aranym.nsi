@@ -705,7 +705,6 @@ Section -networkdriver
   File "aranym\network\nfeth-config"
   File "aranym\network\netsetup.prg"
   File "aranym\network\eth0-config.sh"
-  File "aranym\network\README-setup.txt"
   SetOverwrite on
 SectionEnd
 

@@ -204,7 +204,7 @@ def main():
             run("codesign", "--force", "--sign", "-", str(library))
     if not any(name.startswith("libslirp") for name in copied):
         raise RuntimeError("Mac networking package requires a linked and bundled libslirp")
-    entitlements = "tests/arm64-platform/entitlements.plist" if architecture == "arm64" else "tests/macos-intel/entitlements.plist"
+    entitlements = "src/gui-osx/jit-arm64.entitlements.plist" if architecture == "arm64" else "src/gui-osx/jit-x86_64.entitlements.plist"
     signing_args = ["--entitlements", str(ROOT / entitlements)] if guest_jit else []
     run("codesign", "--force", "--sign", "-", "--options", "runtime", *signing_args, str(app))
     run("codesign", "--verify", "--deep", "--strict", str(app))
