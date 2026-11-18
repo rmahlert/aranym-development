@@ -344,7 +344,7 @@ void MFP::handleWrite(memptr addr, uint8 value) {
  */
 void MFP::setGPIPbit(int mask, int value)
 {
-	setGPIPbit_at(mask, value, peripheral_clock_event_time_ns());
+	setGPIPbit_at(mask, value, peripheral_clock_last_event_ns());
 }
 
 void MFP::setGPIPbit_at(int mask, int value, std::uint64_t when_ns)

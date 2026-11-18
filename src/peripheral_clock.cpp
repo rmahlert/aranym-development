@@ -83,6 +83,11 @@ std::uint64_t peripheral_clock_now_ns()
     return elapsed;
 }
 
+std::uint64_t peripheral_clock_last_event_ns()
+{
+    return servicing ? service_time : last_service_time;
+}
+
 std::uint64_t peripheral_clock_event_time_ns()
 {
     if (servicing) return service_time;

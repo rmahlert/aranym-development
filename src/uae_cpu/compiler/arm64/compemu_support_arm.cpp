@@ -370,6 +370,7 @@ blockinfo* dormant;
 static void disable_jit_runtime(const char* reason)
 {
 	jit_log("JIT disabled: %s", reason);
+	bx_options.jit.jit = false;
 	currprefs.cachesize = 0;
 	changed_prefs.cachesize = 0;
 	cache_size = 0;
@@ -3406,14 +3407,16 @@ void build_comp(void)
     jit_log("<JIT compiler> : supposedly %d compileable opcodes!", count);
 
 	/* Initialise state */
+	if (currprefs.cachesize == 0) {
+		disable_jit_runtime("zero-sized ARM64 translation cache; using interpreter");
+		return;
+	}
 	create_popalls();
 	if (!pushall_call_handler || !popall_execute_normal) {
 		disable_jit_runtime("failed to initialize JIT dispatcher stubs (popallspace)");
 		return;
 	}
 	alloc_cache();
-	if (currprefs.cachesize == 0)
-		return;
 	if (!compiled_code) {
 		disable_jit_runtime("failed to allocate ARM64 JIT code cache");
 		return;
