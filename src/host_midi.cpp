@@ -26,6 +26,7 @@
 #endif
 #include <windows.h>
 #include <io.h>
+#include <system_error>
 #else
 #include <pthread.h>
 #include <signal.h>
@@ -301,6 +302,9 @@ struct TransportState {
     std::string error_text;
     bool done = false;
     int input_fd = -1, output_fd = -1;
+#ifdef _WIN32
+    HANDLE disk_input = INVALID_HANDLE_VALUE;
+#endif
     std::array<unsigned char, 8> oss_input{};
     unsigned oss_input_count = 0;
 #ifdef HAVE_PORTMIDI
@@ -381,6 +385,10 @@ struct TransportState {
                 fail("Cannot open MIDI input '" + options.input + "': " + std::strerror(errno));
                 return false;
             }
+#ifdef _WIN32
+            HANDLE handle = reinterpret_cast<HANDLE>(_get_osfhandle(input_fd));
+            if (GetFileType(handle) == FILE_TYPE_DISK) disk_input = handle;
+#endif
         }
         if (!options.output.empty()) {
             output_fd = ::open(options.output.c_str(), O_WRONLY |
@@ -561,18 +569,35 @@ struct TransportState {
         input_fd = output_fd = -1;
     }
 
+    ssize_t read_input_bytes(unsigned char *bytes, std::size_t capacity)
+    {
+#ifdef _WIN32
+        if (disk_input != INVALID_HANDLE_VALUE) {
+            DWORD count;
+            if (ReadFile(disk_input, bytes, static_cast<DWORD>(capacity), &count, nullptr))
+                return count;
+            const DWORD error = GetLastError();
+            if (error != ERROR_HANDLE_EOF) {
+                fail("MIDI input: " + std::system_category().message(error));
+                stopping.store(true, std::memory_order_release);
+            }
+            return 0;
+        }
+#endif
+        const auto count = ::read(input_fd, bytes, capacity);
+        if (count < 0 && errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
+            fail("MIDI input: " + std::string(std::strerror(errno)));
+            stopping.store(true, std::memory_order_release);
+        }
+        return count;
+    }
+
     void read_raw(std::uint32_t epoch)
     {
         if (input_fd < 0 || !input.free()) return;
         unsigned char bytes[64];
-        const auto count = ::read(input_fd, bytes, std::min<std::size_t>(sizeof(bytes), input.free()));
-        if (count < 0) {
-            if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
-                fail("MIDI input: " + std::string(std::strerror(errno)));
-                stopping.store(true, std::memory_order_release);
-            }
-            return;
-        }
+        const auto count = read_input_bytes(bytes, std::min<std::size_t>(sizeof(bytes), input.free()));
+        if (count <= 0) return;
         const auto timestamp = to_guest(host_time_ns());
         for (ssize_t i = 0; i < count; ++i) {
             if (backend != Backend::Sequencer) {
