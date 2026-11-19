@@ -43,8 +43,8 @@ def main():
     parser.add_argument("--portmidi-prefix", type=Path, required=True)
     parser.add_argument("--jit-build-dir", type=Path, help="require the actual guest JIT build")
     parser.add_argument("--architecture", choices=("arm64", "x86_64"), default="arm64")
-    parser.add_argument("--x64-fpu-jit-test", action="store_true")
-    parser.add_argument("--arm-fpu-jit-test",action="store_true")
+    parser.add_argument("--x64-fpu-jit", "--x64-fpu-jit-test", dest="x64_fpu_jit", action="store_true")
+    parser.add_argument("--arm-fpu-jit", "--arm-fpu-jit-test", dest="arm_fpu_jit", action="store_true")
     args = parser.parse_args()
     if sys.platform != "darwin":
         parser.error("packaging requires native macOS tools")
@@ -56,20 +56,20 @@ def main():
     architecture = args.architecture
     if os.uname().machine != architecture:
         parser.error("packaging requires a native runner matching --architecture")
-    if args.arm_fpu_jit_test and architecture != "arm64":
+    if args.arm_fpu_jit and architecture != "arm64":
         parser.error("ARM FPU packaging requires arm64")
-    if args.x64_fpu_jit_test and architecture != "x86_64":
+    if args.x64_fpu_jit and architecture != "x86_64":
         parser.error("x64 FPU packaging requires x86_64")
-    fpu_jit = args.arm_fpu_jit_test or args.x64_fpu_jit_test
+    fpu_jit = args.arm_fpu_jit or args.x64_fpu_jit
     guest_jit = args.jit_build_dir is not None
     if guest_jit:
         build = args.jit_build_dir.resolve(strict=True)
         flags = (build / "Makefile").read_text()
         if binary != (build / "src/aranym").resolve() or not all(flag in flags for flag in ("-DUSE_JIT=1", "-DARANYM_ARM64" if architecture == "arm64" else "-DCPU_x86_64")):
             parser.error("JIT packaging requires the actual target JIT build binary and flags")
-    if args.arm_fpu_jit_test and (not guest_jit or '-DARANYM_ARM_FPU_JIT=1' not in flags):
+    if args.arm_fpu_jit and (not guest_jit or '-DARANYM_ARM_FPU_JIT=1' not in flags):
         parser.error('ARM FPU packaging requires the connected native FPU build')
-    if args.x64_fpu_jit_test and (not guest_jit or '-DMODERN040_FPU_JIT' not in flags):
+    if args.x64_fpu_jit and (not guest_jit or '-DMODERN040_FPU_JIT' not in flags):
         parser.error('x64 FPU packaging requires the connected modern040 FPU build')
     output = args.output.resolve()
     app = output / "ARAnyM-Unofficial.app"
@@ -90,12 +90,12 @@ def main():
     info.update({
         "CFBundleExecutable": "aranym",
         "CFBundleName": "ARAnyM Unofficial",
-        "CFBundleDisplayName": "ARAnyM Unofficial Intel FPU JIT Test 2" if args.x64_fpu_jit_test else "ARAnyM Unofficial ARM FPU JIT Test 2" if args.arm_fpu_jit_test else "ARAnyM Unofficial ARM64 JIT Integration" if guest_jit else "ARAnyM 1.2.0 Unofficial Beta 1 ARM64 Interpreter",
+        "CFBundleDisplayName": "ARAnyM 1.2.0 Unofficial Beta 2" if fpu_jit else "ARAnyM Unofficial ARM64 JIT Integration" if guest_jit else "ARAnyM 1.2.0 Unofficial Beta 1 ARM64 Interpreter",
         "CFBundleIdentifier": "org.aranym.unofficial." + architecture,
         "CFBundleShortVersionString": "1.2.0",
         "CFBundleVersion": "1.2.0",
         "ARAnyMSourceCommit": sha,
-        "ARAnyMBuildLabel": "1.2.0 Unofficial FPU JIT Test 2" if fpu_jit else architecture + " JIT integration" if guest_jit else "1.2.0 Unofficial Beta 1",
+        "ARAnyMBuildLabel": "1.2.0 Unofficial Beta 2" if fpu_jit else architecture + " JIT integration" if guest_jit else "1.2.0 Unofficial Beta 1",
         "ARAnyMGuestJIT": guest_jit,
         "ARAnyMFPUJITAvailable":fpu_jit,
         "ARAnyMArchitecture": architecture,
@@ -207,6 +207,29 @@ def main():
     with (contents / "Info.plist").open("wb") as stream:
         plistlib.dump(info, stream)
 
+    cellar = Path(run("brew", "--cellar")).resolve(strict=True)
+    formula_names = set()
+    notices = {}
+    for library in sorted(set(copied.values())):
+        if not library.is_relative_to(cellar):
+            continue
+        formula, version, *_ = library.relative_to(cellar).parts
+        if formula in formula_names:
+            continue
+        formula_names.add(formula)
+        keg = cellar / formula / version
+        notices[formula] = []
+        for notice in sorted(keg.iterdir()):
+            if not re.fullmatch(r"(?:licenses?|licences?|copying|copyright|notices?)(?:[._-].*)?",
+                                notice.name, re.IGNORECASE):
+                continue
+            if not notice.is_file() or not notice.resolve().is_relative_to(keg):
+                continue
+            destination = resources / "Licenses" / formula / notice.name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(notice, destination)
+            notices[formula].append(notice.name)
+
     for library in frameworks.iterdir():
         if not library.is_symlink():
             run("codesign", "--force", "--sign", "-", str(library))
@@ -218,23 +241,25 @@ def main():
     signing_args = ["--entitlements", str(ROOT / entitlements)] if guest_jit else []
     run("codesign", "--force", "--sign", "-", "--options", "runtime", *signing_args, str(app))
     run("codesign", "--verify", "--deep", "--strict", str(app))
-    manifest = {"source_commit": sha, "architecture": architecture, "guest_jit": guest_jit,
+    manifest = {"release": info["ARAnyMBuildLabel"], "source_commit": sha, "architecture": architecture, "guest_jit": guest_jit,
                 "fpu_jit_available":fpu_jit,"fpu_jit_default":False,
                 "minimum_macos":info["LSMinimumSystemVersion"],
                 "slirp": True, "portmidi": portmidi.summary(), "signing": "ad-hoc; not notarized", "libraries": records,
-                "dynamic_libraries": dynamic_libraries,
+                "dynamic_libraries": dynamic_libraries, "homebrew_notices": notices,
                 "emutos": firmware}
     (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    (output / "homebrew-dependencies.json").write_text(run("brew", "info", "--json=v2", "--installed") + "\n")
+    (output / "homebrew-dependencies.json").write_text(run("brew", "info", "--json=v2", "--formula", *sorted(formula_names)) + "\n")
     introduction = ("ARAnyM " + architecture + " JIT integration build; guest correctness gates remain required. SLIRP is included.\n" if guest_jit else
                     "ARAnyM 1.2.0 Unofficial Beta 1 - ARM64 interpreter.\nGuest ARM64 JIT is not connected in this baseline. SLIRP is included.\n")
+    if fpu_jit:
+        introduction = f"ARAnyM 1.2.0 Unofficial Beta 2 for macOS {architecture}.\n"
     (output / "README.txt").write_text(
         introduction +
-        ("Intel FPU JIT Test2: opt in with JITFPU = Yes and JITSafe = Yes. Guarded native x87 arithmetic uses extended precision and the pinned SoftFloat fallback. Enabled FPSP arithmetic exception continuation remains unsupported.\n" if args.x64_fpu_jit_test else "")+
-        ("ARM FPU JIT Test2: opt in with JITFPU = Yes and JITSafe = Yes. Native arithmetic retains the existing ARM IEEE64 precision; other modes/values use the interpreter. Requires macOS15+.\n" if args.arm_fpu_jit_test else "")+
+        ("Intel FPU JIT: opt in with JITFPU = Yes and JITSafe = Yes. The x86-64 JIT uses extended precision with a pinned SoftFloat fallback. Enabled FPSP arithmetic exception continuation remains unsupported.\n" if args.x64_fpu_jit else "")+
+        ("ARM FPU JIT: opt in with JITFPU = Yes and JITSafe = Yes. Native arithmetic retains the existing ARM IEEE64 precision; other modes/values use the interpreter. Requires macOS15+.\n" if args.arm_fpu_jit else "")+
         "Select SLIRP in Network settings or use the bundled slirp.config.example ETH0 settings.\n"
         "Guest: 10.0.2.15/24, gateway 10.0.2.2, DNS 10.0.2.3; requires the MiNT NatFeat Ethernet driver.\n"
-        "Ad-hoc signed, not notarized. No guest desktop acceptance yet.\n"
+        "Ad-hoc signed, not notarized.\n"
         f"Source commit: {sha}\n"
         "Exact ARAnyM source archive accompanies this artifact.\n"
         "EmuTOS snapshot built from pinned upstream source; matching source archive and build recipe included.\n"

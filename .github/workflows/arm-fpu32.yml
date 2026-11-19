@@ -1,6 +1,6 @@
-name: Raspberry Pi ARM32 FPU JIT testing package
+name: ARAnyM 1.2.0 Unofficial Beta 2 – Raspberry Pi ARM32
 'on':
-  workflow_dispatch: null
+  workflow_dispatch:
   push:
     branches:
     - arm-fpu-jit-20261116
@@ -29,7 +29,7 @@ jobs:
       run: |
         dpkg --add-architecture armhf
         apt-get update
-        apt-get install -y cmake libasound2-dev:armhf curl autoconf automake build-essential gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf qemu-user-static python3 pkg-config meson ninja-build dpkg-dev libsdl2-dev:armhf libjpeg-dev:armhf libudev-dev:armhf libusb-1.0-0-dev:armhf libglib2.0-dev:armhf
+        apt-get install -y bzip2 cmake libasound2-dev:armhf curl autoconf automake build-essential gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf qemu-user-static python3 pkg-config meson ninja-build dpkg-dev libsdl2-dev:armhf libjpeg-dev:armhf libudev-dev:armhf libusb-1.0-0-dev:armhf libglib2.0-dev:armhf
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
         echo 'PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig' >> "$GITHUB_ENV"
     - name: Cross-build pinned ARM32 SLIRP
@@ -69,23 +69,26 @@ jobs:
         NO_CONFIGURE=1 ./autogen.sh
         mkdir -p build/rpi32
         cd build/rpi32
-        ../../configure --enable-portmidi --host=arm-linux-gnueabihf --prefix=/usr --datadir=/usr/share/aranym-unofficial --disable-opengl --enable-jit-compiler --enable-jit-fpu --disable-cxx-exceptions --enable-addressing=direct --enable-fpe=ieee --enable-slirp CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ LDFLAGS=-Wl,-rpath,/usr/lib/aranym-unofficial
+        ../../configure --enable-portmidi --host=arm-linux-gnueabihf --prefix=/usr --datadir=/usr/share/aranym-unofficial --disable-opengl --enable-sdl2 --enable-jit-compiler --enable-jit-fpu --disable-cxx-exceptions --enable-addressing=direct --enable-fpe=ieee --enable-slirp CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ LDFLAGS=-Wl,-rpath,/usr/lib/aranym-unofficial
         make -j3
     - name: Package exact ARM32 application with sources
       run: |
         curl -L --fail --retry 3 -o build/dependency-source/emutos-source.tar.gz https://api.github.com/repos/emutos/emutos/tarball/e0f0c2333d39a487e73d8b17f62b70a95441cd32
-        DEB_HOST_ARCH=armhf python3 tools/package-linux.py --portmidi-prefix "$RUNNER_TEMP/portmidi" --arm-fpu-jit-test --architecture armhf --cross-armhf --build-dir build/rpi32 --slirp-library "$RUNNER_TEMP/slirp-armhf/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --output build/rpi32-package
+        DEB_HOST_ARCH=armhf python3 tools/package-linux.py --portmidi-prefix "$RUNNER_TEMP/portmidi" --arm-fpu-jit --architecture armhf --cross-armhf --build-dir build/rpi32 --slirp-library "$RUNNER_TEMP/slirp-armhf/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --output build/rpi32-package
     - name: Install packaged application and inspect runtime dependencies
       run: |
-        apt-get install -y ./build/rpi32-package/aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-armhf.deb
+        apt-get install -y ./build/rpi32-package/aranym-1.2.0-unofficial-beta2-rpi-armhf.deb
+        python3 tools/check-macos-package.py --installed-linux --runtime --diagnostics build/rpi32-package-checks --qemu qemu-arm-static
     - name: Archive ARM32 package and corresponding source
       run: |
-        tar -czf aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-armhf.tar.gz -C build/rpi32-package --exclude=deb-root --exclude=debian .
-        sha256sum aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-armhf.tar.gz
+        tar -czf aranym-1.2.0-unofficial-beta2-rpi-armhf.tar.gz -C build/rpi32-package --exclude=deb-root --exclude=debian .
+        sha256sum aranym-1.2.0-unofficial-beta2-rpi-armhf.tar.gz
     - uses: actions/upload-artifact@v4
       with:
         name: aranym-rpi-armhf-guest-jit-${{ github.sha }}
-        path: aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-armhf.tar.gz
+        path: |
+          aranym-1.2.0-unofficial-beta2-rpi-armhf.tar.gz
+          build/rpi32-package/aranym-1.2.0-unofficial-beta2-rpi-armhf.deb
     - uses: actions/upload-artifact@v4
       if: always()
       with:
@@ -93,3 +96,4 @@ jobs:
         path: |
           build/rpi32/config.log
           build/rpi32-package/build-manifest.json
+          build/rpi32-package-checks/

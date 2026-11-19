@@ -23,9 +23,9 @@
 #define VER_MINOR	2
 #define VER_MICRO	0
 #ifndef BUILD_LABEL
-#define BUILD_LABEL	" unofficial-dsp-midi-preview2"
+#define BUILD_LABEL	" unofficial-beta2"
 #endif
-#define RELEASE_DATE "2026/11/17"
+#define RELEASE_DATE "2026/11/18"
 
 
 #define NAME_STRING "ARAnyM"

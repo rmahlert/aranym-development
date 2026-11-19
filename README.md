@@ -16,6 +16,15 @@ Credit for the original emulator belongs to the ARAnyM developers and contributo
 
 ## Recent updates
 
+- **Falcon DSP56001.** Updated the emulator with work from Hatari, including DSP
+  instruction timing and host-port transfers. Hardware timing comparisons are ongoing.
+- **MIDI.** Select separate input and output ports in Setup → MIDI, or list host
+  devices with `aranym --midi-list`. The emulated 6850 now schedules serial
+  transfers and interrupts. Physical interface latency and Cubase timing still
+  need measurements.
+- **VIDEL and fVDI.** Improved redraws, Falcon palette handling and mouse capture
+  when the emulator window regains focus.
+
 - **SLIRP networking:** user-mode networking on Windows, both Mac architectures
   and Linux, with receive-thread, socket polling and shutdown fixes.
 - **MiNTNet / NatFeat Ethernet:** corrected interrupt acknowledgement and receive
@@ -25,8 +34,10 @@ Credit for the original emulator belongs to the ARAnyM developers and contributo
   Intel Mac.
 - **ARM JIT:** ARM64 guest JIT for Apple Silicon and 64-bit Raspberry Pi,
   ARM32 JIT for 32-bit Pi, and guarded native FPU arithmetic on both.
-- **FPU performance:** reduced x64 guard overhead; ARM guards now check and reuse
-  operands directly in generated code. Native arithmetic remains opt-in.
+- **FPU performance.** The x86-64 JIT accelerates common arithmetic, memory
+  transfers and comparisons used by Kronos and HighWire. Floating-point flags and
+  classic round-to-nearest-even conversions have been corrected. ARM retains
+  its native FPU paths. Enable native arithmetic with `JITFPU = Yes`.
 - **Compatibility:** corrected finite FCMP status, interpreter fault PCs and
   original fault addresses/data function codes in x64 and ARM32 signal faults.
 - **Display:** Windows redraw and high-resolution desktop fixes.
@@ -37,21 +48,21 @@ Credit for the original emulator belongs to the ARAnyM developers and contributo
 
 ## Latest testing downloads
 
-**Unofficial FPU JIT Test 2** includes the application only; no guest hard disk
-image is included. Keep your current configuration and boot drive.
+**Unofficial Beta 2** updates the emulator application. Keep your existing
+configuration, guest programs and boot drive.
 
 | Platform | Direct download |
 | --- | --- |
-| Windows x86-64 | [Installer (.exe)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test2/aranym-1.2.0-unofficial-fpu-jit-test2-windows-x86_64-setup.exe) |
-| Linux x86-64 — Ubuntu 24.04 | [Debian package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test2/aranym-1.2.0-unofficial-fpu-jit-test2-linux-amd64.deb) |
-| Mac Intel — macOS 15+ | [App bundle (.tar.gz)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test2/aranym-1.2.0-unofficial-fpu-jit-test2-macos-x86_64.tar.gz) |
-| Mac Apple Silicon — macOS 15+ | [App bundle (.tar.gz)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test2/aranym-1.2.0-unofficial-arm-fpu-jit-test2-macos-arm64.tar.gz) |
-| Raspberry Pi 64-bit — Bookworm or newer | [arm64 package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test2/aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-arm64.deb) |
-| Raspberry Pi 32-bit — Bookworm or newer | [armhf package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test2/aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-armhf.deb) |
+| Windows x86-64 | [Installer (.exe)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-windows-x86_64-setup.exe) |
+| Linux x86-64 — Ubuntu 24.04 | [Debian package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-linux-amd64.deb) |
+| Mac Intel — macOS 15+ | [App bundle (.tar.gz)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-macos-x86_64.tar.gz) |
+| Mac Apple Silicon — macOS 15+ | [App bundle (.tar.gz)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-macos-arm64.tar.gz) |
+| Raspberry Pi 64-bit — Bookworm or newer | [arm64 package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-rpi-arm64.deb) |
+| Raspberry Pi 32-bit — Bookworm or newer | [armhf package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-rpi-armhf.deb) |
 
-[Release notes, portable packages, validation and checksums](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test2) ·
-[Matching source bundle](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-fpu-jit-test2/aranym-1.2.0-unofficial-fpu-jit-test2-source.tar.gz) ·
-[Platform status and known limitations](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test2)
+[Release notes, portable packages, validation and checksums](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-beta2) ·
+[Matching source bundle](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-source.tar.gz) ·
+[Platform status and known limitations](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-beta2)
 
 FPU JIT is off by default. To try it, set `JIT = Yes`, `JITSafe = Yes` and
 `JITFPU = Yes` in your existing `[JIT]` configuration. Set `JITFPU = No` to
@@ -71,14 +82,15 @@ remain available. Community Raspberry Pi 5 testing of the integer JIT reported
 a Kronos 2.50 CPU score of **6,238**, versus **1,567** for its stored
 “Rpi5 Std FVDI” reference (about **3.98×**). This is a setup-dependent CPU
 benchmark comparison. Current FPU measurements and their workload limits are
-in [the platform notes](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-fpu-jit-test2).
+in [the platform notes](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-beta2).
 
 ## Reporting issues
 
 Please [report problems with these unofficial builds](https://github.com/rmahlert/aranym-development/issues/new)
 in this repository. Include the build/version, host OS and architecture, steps
 to reproduce, relevant configuration settings and console log. For display
-problems, include a screenshot; for networking, say whether you use SLIRP or TAP.
+problems, include a screenshot; for networking, say whether you use SLIRP or TAP. For MIDI timing reports, include
+the host interface, selected ports, music software and how you measured timing.
 
 ## Original project information
 

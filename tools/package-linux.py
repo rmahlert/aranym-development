@@ -37,8 +37,8 @@ def main():
     parser.add_argument("--portmidi-prefix", type=Path, required=True)
     parser.add_argument("--architecture", choices=("amd64", "arm64", "armhf"), default="amd64")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument('--fpu-jit-test',action='store_true',help='package the qualified x86-64 FPU JIT testing profile')
-    parser.add_argument('--arm-fpu-jit-test',action='store_true')
+    parser.add_argument('--x64-fpu-jit', '--fpu-jit-test', dest='x64_fpu_jit', action='store_true')
+    parser.add_argument('--arm-fpu-jit', '--arm-fpu-jit-test', dest='arm_fpu_jit', action='store_true')
     parser.add_argument('--dsp-midi-preview',action='store_true',help='package the Raspberry Pi DSP/MIDI preview with ARM FPU JIT support')
     cross_options = parser.add_mutually_exclusive_group()
     cross_options.add_argument('--cross-armhf',action='store_true',help='cross-build ARM32 package; requires explicit QEMU qualification separately')
@@ -48,9 +48,9 @@ def main():
         parser.error("Debian packaging requires Linux")
     arch=args.architecture
     cross = args.cross_armhf or args.cross_arm64
-    arm_fpu_available = args.arm_fpu_jit_test or args.dsp_midi_preview
-    if args.fpu_jit_test and arch!='amd64':
-        parser.error('--fpu-jit-test requires amd64')
+    arm_fpu_available = args.arm_fpu_jit or args.dsp_midi_preview
+    if args.x64_fpu_jit and arch!='amd64':
+        parser.error('--x64-fpu-jit requires amd64')
     if arm_fpu_available and arch not in ('arm64','armhf'):
         parser.error('ARM FPU and DSP/MIDI preview packages require an ARM target')
     if args.cross_armhf and arch!='armhf':
@@ -66,19 +66,16 @@ def main():
     package_basename=("aranym-1.2.0-unofficial-beta1-linux-amd64" if arch=="amd64" else
           "aranym-1.2.0-unofficial-arm-jit-test1-rpi-"+arch)
     backend={"amd64":"x86-64 modern040 JIT", "arm64":"ARM64 guest JIT", "armhf":"ARM32 guest JIT"}[arch]
-    if args.fpu_jit_test:
-        label="Unofficial FPU JIT Test 2"
-        version="1.2.0~unofficial.fpujit.test2"
-        package_basename="aranym-1.2.0-unofficial-fpu-jit-test2-linux-amd64"
-    if args.arm_fpu_jit_test:
-        label="Unofficial ARM FPU JIT Test 2"
-        version="1.2.0~unofficial.fpujit.test2"
-        package_basename="aranym-1.2.0-unofficial-arm-fpu-jit-test2-rpi-"+arch
+    if args.x64_fpu_jit or args.arm_fpu_jit:
+        label = "Unofficial Beta 2"
+        version = "1.2.0~unofficial.release.beta2"
+        platform_name = "linux-amd64" if arch == "amd64" else "rpi-" + arch
+        package_basename = "aranym-1.2.0-unofficial-beta2-" + platform_name
     if args.dsp_midi_preview:
         label="Unofficial DSP/MIDI Preview 2"
         version="1.2.0~unofficial.dspmidi.preview2"
         package_basename="aranym-1.2.0-unofficial-dsp-midi-preview2-rpi-"+arch
-    fpu_available=args.fpu_jit_test or arm_fpu_available
+    fpu_available=args.x64_fpu_jit or arm_fpu_available
     fpu_description="guarded native FPU JIT available; opt-in" if fpu_available else "FPU JIT disabled"
     commit = run("git", "-C", str(ROOT), "rev-parse", "HEAD")
     changed = run("git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no")
@@ -96,8 +93,8 @@ def main():
     required={"amd64":"-DEXPERIMENTAL_UPSTREAM_MODERN040", "arm64":"-DARANYM_ARM64", "armhf":"-DARANYM_ARM32"}[arch]
     if required not in flags or "-DUSE_JIT=1" not in flags:
         raise RuntimeError("missing requested guest JIT build profile")
-    if args.fpu_jit_test and not all(x in flags for x in ('-DUSE_JIT_FPU=1','-DMODERN040_FPU_JIT')):
-        raise RuntimeError('FPU JIT testing package requires the actual connected FPU build')
+    if args.x64_fpu_jit and not all(x in flags for x in ('-DUSE_JIT_FPU=1','-DMODERN040_FPU_JIT')):
+        raise RuntimeError('FPU JIT package requires the actual connected FPU build')
     if arm_fpu_available and '-DARANYM_ARM_FPU_JIT=1' not in flags:
         raise RuntimeError('ARM FPU package requires the connected native FPU build')
     elf=run("readelf", "-h", str(binary))
@@ -184,7 +181,7 @@ def main():
         f"Install the .deb with: sudo apt install ./{package_basename}.deb\n"
         "Launch aranym-unofficial. Use -c PATH to open your existing configuration.\n"+
         (("Default profile: ~/aranym-modern040-beta1.\n"+
-          ("Opt in with JITFPU = Yes in [JIT]. Guarded native arithmetic; other operations use SoftFloat. Enabled FPU exception/FPSP continuation remains unsupported.\n" if args.fpu_jit_test else "")) if arch=="amd64" else
+          ("Opt in with JITFPU = Yes in [JIT]. Guarded native arithmetic; other operations use SoftFloat. Enabled FPU exception/FPSP continuation remains unsupported.\n" if args.x64_fpu_jit else "")) if arch=="amd64" else
          "Use dpkg --print-architecture to select armhf or arm64 for your BeePi OS.\n"
          "Launch with -c PATH_TO_EXISTING_CONFIG. This package adds aranym-unofficial; point your BeePi launcher to it when ready.\n"+
          ("Opt in with JIT = Yes,JITSafe = Yes,JITFPU = Yes. ARM native arithmetic retains the existing IEEE64 register profile; other modes/values use the interpreter.\n" if arm_fpu_available else
@@ -204,7 +201,7 @@ def main():
     icons = stage / "usr/share/icons/hicolor/48x48/apps"
     icons.mkdir(parents=True)
     shutil.copy2(ROOT / "contrib/icon-48.png", icons / "aranym-unofficial.png")
-    manifest = {"source_commit": commit, "architecture": arch, "guest_jit": backend+"; "+fpu_description, "fpu_jit_available":fpu_available, "fpu_jit_default":False,
+    manifest = {"release": "1.2.0 " + label, "debian_version": version, "source_commit": commit, "architecture": arch, "guest_jit": backend+"; "+fpu_description, "fpu_jit_available":fpu_available, "fpu_jit_default":False,
                 "slirp": "4.9.1 (bundled)", "portmidi": portmidi.summary(), "cross_compiled":cross, "depends": depends, "emutos": firmware,
                 "files": {str(p.relative_to(stage)): sha(p) for p in sorted(stage.rglob("*")) if p.is_file()},
                 "sources": {p.name: sha(p) for p in sources.iterdir()}}

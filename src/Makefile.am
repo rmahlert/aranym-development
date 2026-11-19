@@ -560,10 +560,10 @@ $(SDL_STATIC_LIB)::
 endif
 endif
 
-aranym_rc_i386.o: $(srcdir)/Unix/cygwin/aranym.rc
+aranym_rc_i386.o: $(srcdir)/Unix/cygwin/aranym.rc $(srcdir)/include/version.h $(top_builddir)/version_date.h
 	$(WINDRES) -o $@ --output-format coff --target pe-i386 $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $< 
 
-aranym_rc_x86_64.o: $(srcdir)/Unix/cygwin/aranym.rc
+aranym_rc_x86_64.o: $(srcdir)/Unix/cygwin/aranym.rc $(srcdir)/include/version.h $(top_builddir)/version_date.h
 	$(WINDRES) -o $@ --output-format coff --target pe-x86-64 $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $< 
 
 

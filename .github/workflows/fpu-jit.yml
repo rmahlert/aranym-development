@@ -1,9 +1,9 @@
-name: Linux x86-64 FPU JIT package
+name: ARAnyM 1.2.0 Unofficial Beta 2 – Linux x86-64
 'on':
+  workflow_dispatch:
   push:
     branches:
     - fpu-jit-x64-20261116
-  workflow_dispatch: null
 permissions:
   contents: read
 jobs:
@@ -28,7 +28,7 @@ jobs:
     - name: Build dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake libasound2-dev autoconf automake build-essential clang python3 meson ninja-build pkg-config libsdl2-dev libjpeg-dev libglib2.0-dev libudev-dev libusb-1.0-0-dev dpkg-dev
+        sudo apt-get install -y bzip2 cmake libasound2-dev autoconf automake build-essential clang python3 meson ninja-build pkg-config libsdl2-dev libjpeg-dev libglib2.0-dev libudev-dev libusb-1.0-0-dev dpkg-dev
     - name: Pinned SLIRP runtime
       run: |
         mkdir -p build/dependency-source
@@ -57,7 +57,7 @@ jobs:
         NO_CONFIGURE=1 ./autogen.sh
         mkdir -p build/fpu-linux
         cd build/fpu-linux
-        ../../configure --enable-portmidi --prefix=/usr --datadir=/usr/share/aranym-unofficial --disable-opengl --enable-jit-compiler --enable-jit-fpu --enable-addressing=normal --enable-modern040-core --with-modern040-profile=aranym-modern040-beta1 --with-modern040-library="$RUNNER_TEMP/modern040/libmodern040.a" --enable-slirp --enable-nfjpeg --enable-disasm=builtin --disable-flightrecorder --disable-fullhistory CFLAGS='-O3 -fno-pie' CXXFLAGS='-O3 -fno-pie' LDFLAGS='-no-pie -Wl,-rpath,/usr/lib/aranym-unofficial'
+        ../../configure --enable-portmidi --prefix=/usr --datadir=/usr/share/aranym-unofficial --disable-opengl --enable-sdl2 --enable-jit-compiler --enable-jit-fpu --enable-addressing=normal --enable-modern040-core --with-modern040-profile=aranym-modern040-beta1 --with-modern040-library="$RUNNER_TEMP/modern040/libmodern040.a" --enable-slirp --enable-nfjpeg --enable-disasm=builtin --disable-flightrecorder --disable-fullhistory CFLAGS='-O3 -fno-pie' CXXFLAGS='-O3 -fno-pie' LDFLAGS='-no-pie -Wl,-rpath,/usr/lib/aranym-unofficial'
         grep -q -- '-DMODERN040_FPU_JIT' Makefile
         make -j3
     - name: Exact firmware and dependency sources
@@ -66,18 +66,20 @@ jobs:
         git -C build/winuae archive --format=tar.gz --prefix=winuae-d82bc254/ -o "$GITHUB_WORKSPACE/build/dependency-source/winuae-source.tar.gz" HEAD
     - name: Package application only
       run: |
-        python3 tools/package-linux.py --portmidi-prefix "$RUNNER_TEMP/portmidi" --fpu-jit-test --build-dir build/fpu-linux --slirp-library "$RUNNER_TEMP/slirp/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --winuae-source-archive build/dependency-source/winuae-source.tar.gz --output build/fpu-package
+        python3 tools/package-linux.py --portmidi-prefix "$RUNNER_TEMP/portmidi" --x64-fpu-jit --build-dir build/fpu-linux --slirp-library "$RUNNER_TEMP/slirp/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --winuae-source-archive build/dependency-source/winuae-source.tar.gz --output build/fpu-package
     - name: Install packaged application and inspect runtime dependencies
       run: |
-        sudo apt-get install -y ./build/fpu-package/aranym-1.2.0-unofficial-fpu-jit-test2-linux-amd64.deb
-        env -u LD_LIBRARY_PATH ldd /usr/bin/aranym-unofficial
+        sudo apt-get install -y ./build/fpu-package/aranym-1.2.0-unofficial-beta2-linux-amd64.deb
+        python3 tools/check-macos-package.py --installed-linux --runtime --diagnostics build/fpu-package-checks
     - name: Archive package and corresponding source
       run: |
-        tar -czf aranym-1.2.0-unofficial-fpu-jit-test2-linux-x86_64.tar.gz -C build/fpu-package --exclude=deb-root --exclude=debian .
+        tar -czf aranym-1.2.0-unofficial-beta2-linux-x86_64.tar.gz -C build/fpu-package --exclude=deb-root --exclude=debian .
     - uses: actions/upload-artifact@v4
       with:
         name: aranym-fpu-jit-linux-${{ github.sha }}
-        path: aranym-1.2.0-unofficial-fpu-jit-test2-linux-x86_64.tar.gz
+        path: |
+          aranym-1.2.0-unofficial-beta2-linux-x86_64.tar.gz
+          build/fpu-package/aranym-1.2.0-unofficial-beta2-linux-amd64.deb
     - uses: actions/upload-artifact@v4
       if: always()
       with:
@@ -85,3 +87,4 @@ jobs:
         path: |
           build/fpu-linux/config.log
           build/fpu-package/build-manifest.json
+          build/fpu-package-checks/
