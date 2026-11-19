@@ -1211,6 +1211,27 @@ void dsp56k_set_irq_line(uint32_t intr, uint32_t asserted)
 		dsp_set_interrupt(intr, asserted);
 }
 
+static bool dsp_idle_branch(uint16_t pc)
+{
+	if (dsp_core.pc != pc || cur_inst_len != 0 || dsp_core.halt_state != DSP_HALT_NONE)
+		return false;
+	if ((cur_inst & 0xffffc0) == 0x0aa980) {
+		const uint32_t status = dsp_core.periph[DSP_SPACE_X][DSP_HOST_HSR];
+		const unsigned bit = (status >> (cur_inst & 31)) & 1;
+		if (bit != ((cur_inst >> 5) & 1) || read_memory_p(pc + 1) != pc)
+			return false;
+	} else if (cur_inst != (0x0c0000u | pc) || pc > 0x0fff) {
+		return false;
+	}
+	const uint32_t sr = dsp_core.registers[DSP_REG_SR];
+	return !DSP_COUNT_IPS && !LOG_TRACE_LEVEL(TRACE_DSP_DISASM) &&
+		!(sr & (1u << DSP_SR_T)) && !dsp_core.loop_rep &&
+		(!(sr & (1u << DSP_SR_LF)) || pc != dsp_core.registers[DSP_REG_LA] + 1) &&
+		!dsp_core.agu_pipeline_reg[0] && !dsp_core.agu_pipeline_reg[1] &&
+		dsp_core.interrupt_state == DSP_INTERRUPT_NONE &&
+		!dsp_core.interrupt_pipeline_count && !dsp56k_interrupt_pending();
+}
+
 uint64_t dsp56k_run_cycles(uint64_t cycles)
 {
 	uint64_t instructions = 0;
@@ -1243,6 +1264,7 @@ uint64_t dsp56k_run_cycles(uint64_t cycles)
 			continue;
 		}
 		const int executing = dsp_core.halt_state == DSP_HALT_NONE;
+		const uint16_t pc = dsp_core.pc;
 		dsp56k_execute_instruction();
 		if (!dsp_core.instr_cycle) {
 			dsp_core.cycle_credit = 0;
@@ -1251,6 +1273,11 @@ uint64_t dsp56k_run_cycles(uint64_t cycles)
 		dsp_core.cycle_credit -= dsp_core.instr_cycle;
 		if (executing)
 			++instructions;
+		if (dsp_core.cycle_credit > 0 && dsp_idle_branch(pc)) {
+			const int64_t credit = dsp_core.cycle_credit - 1;
+			instructions += 1 + credit / dsp_core.instr_cycle;
+			dsp_core.cycle_credit = credit % dsp_core.instr_cycle + 1 - dsp_core.instr_cycle;
+		}
 		if (dsp_core.halt_state != DSP_HALT_NONE) {
 			if ((dsp_core.halt_state == DSP_HALT_WAIT && !dsp56k_interrupt_pending()) ||
 			    (dsp_core.halt_state == DSP_HALT_STOP && !dsp_core.stop_delay_cycles)) {

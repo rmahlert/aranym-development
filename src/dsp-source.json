@@ -6,7 +6,7 @@
     "src/dsp_cpu.c": {
       "upstream_path": "src/falcon/dsp_cpu.c",
       "upstream_sha256": "1b5b9bfab8b4a45cf7018c04abd30860d05da3f7be7ca5538844055bcb4d34f2",
-      "adapted_sha256": "1ca5684e14d85463b8a330c00c00e216dc1128d9f25ad381942db7f54a22cd4e"
+      "adapted_sha256": "85bc5c1ad954c4591b0a0530a665e96fc67916278b30e8851518be189045b64a"
     },
     "src/dsp_core.c": {
       "upstream_path": "src/falcon/dsp_core.c",
