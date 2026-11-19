@@ -208,15 +208,15 @@ def main():
         plistlib.dump(info, stream)
 
     cellar = Path(run("brew", "--cellar")).resolve(strict=True)
-    formula_names = set()
+    formula_versions = {}
     notices = {}
     for library in sorted(set(copied.values())):
         if not library.is_relative_to(cellar):
             continue
         formula, version, *_ = library.relative_to(cellar).parts
-        if formula in formula_names:
+        if formula in formula_versions:
             continue
-        formula_names.add(formula)
+        formula_versions[formula] = version
         keg = cellar / formula / version
         notices[formula] = []
         for notice in sorted(keg.iterdir()):
@@ -229,6 +229,27 @@ def main():
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(notice, destination)
             notices[formula].append(notice.name)
+
+    formulae = json.loads(run("brew", "info", "--json=v2", "--formula", *sorted(formula_versions)))
+    if "glib" in notices and not notices["glib"]:
+        glib = next(formula for formula in formulae["formulae"] if formula["name"] == "glib")
+        version = glib["versions"]["stable"]
+        if version != formula_versions["glib"].split("_")[0]:
+            raise RuntimeError("GLib source version differs from the bundled library")
+        run("brew", "fetch", "--build-from-source", "glib")
+        archive_path = Path(run("brew", "--cache", "--build-from-source", "glib"))
+        with archive_path.open("rb") as stream:
+            if hashlib.file_digest(stream, "sha256").hexdigest() != glib["urls"]["stable"]["checksum"]:
+                raise RuntimeError("GLib source checksum differs from the Homebrew formula")
+        license_name = "LGPL-2.1-or-later.txt"
+        with tarfile.open(archive_path) as archive:
+            member = archive.getmember(f"glib-{version}/LICENSES/{license_name}")
+            if not member.isfile():
+                raise RuntimeError("GLib license missing from the source archive")
+            destination = resources / "Licenses" / "glib" / license_name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(archive.extractfile(member).read())
+        notices["glib"].append(license_name)
 
     for library in frameworks.iterdir():
         if not library.is_symlink():
@@ -248,7 +269,7 @@ def main():
                 "dynamic_libraries": dynamic_libraries, "homebrew_notices": notices,
                 "emutos": firmware}
     (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    (output / "homebrew-dependencies.json").write_text(run("brew", "info", "--json=v2", "--formula", *sorted(formula_names)) + "\n")
+    (output / "homebrew-dependencies.json").write_text(json.dumps(formulae, indent=2) + "\n")
     introduction = ("ARAnyM " + architecture + " JIT integration build; guest correctness gates remain required. SLIRP is included.\n" if guest_jit else
                     "ARAnyM 1.2.0 Unofficial Beta 1 - ARM64 interpreter.\nGuest ARM64 JIT is not connected in this baseline. SLIRP is included.\n")
     if fpu_jit:

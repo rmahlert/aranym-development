@@ -317,6 +317,7 @@ AM_CONDITIONAL([OS_TYPE_unknown], test "$OS_TYPE" = "unknown")
 AM_CONDITIONAL([ANDROID_OS], test "$ANDROID_OS" = "yes")
 AM_CONDITIONAL([WITH_FINK], test "$WITH_FINK" = "yes")
 
+PKG_PROG_PKG_CONFIG
 have_slirp=no
 if test "$WANT_SLIRP" != no; then
 	case "$host_os" in

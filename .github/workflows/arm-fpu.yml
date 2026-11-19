@@ -97,7 +97,6 @@ jobs:
           build/arm-jit-package-checks/
   rpi64:
     name: Raspberry Pi ARM64 Debian Bookworm application package
-    needs: native
     runs-on: ubuntu-24.04-arm
     container: debian:bookworm
     timeout-minutes: 35

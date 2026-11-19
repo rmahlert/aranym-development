@@ -97,3 +97,4 @@ jobs:
           build/rpi32/config.log
           build/rpi32-package/build-manifest.json
           build/rpi32-package-checks/
+          build/rpi32-package/*.deb
