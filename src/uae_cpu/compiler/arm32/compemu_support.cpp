@@ -5017,6 +5017,8 @@ static void compile_block(cpu_history* pc_hist, int blocklen)
 					if (isnop)
 					{
 						flush(1);
+						if (!failure && isconst(PC_P))
+							compemu_raw_mov_l_mi((uintptr)&regs.pc_p, get_const(PC_P));
 						nop();
 						was_comp=0;
 					}
