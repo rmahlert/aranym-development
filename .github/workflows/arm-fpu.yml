@@ -36,6 +36,10 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y bzip2 cmake libasound2-dev autoconf automake build-essential python3 pkg-config libsdl2-dev libjpeg-dev libudev-dev libusb-1.0-0-dev
+    - uses: actions/setup-python@v5
+      if: runner.os == 'macOS'
+      with:
+        python-version: '3.12'
     - name: Mac dependencies
       if: runner.os == 'macOS'
       run: |
@@ -44,10 +48,6 @@ jobs:
         echo "CPPFLAGS=-I$(brew --prefix jpeg-turbo)/include" >> "$GITHUB_ENV"
         echo "LDFLAGS=-L$(brew --prefix jpeg-turbo)/lib -Wl,-headerpad_max_install_names" >> "$GITHUB_ENV"
         echo 'MACOSX_DEPLOYMENT_TARGET=15.0' >> "$GITHUB_ENV"
-    - uses: actions/setup-python@v5
-      if: runner.os == 'macOS'
-      with:
-        python-version: '3.12'
     - name: Build pinned PortMidi native device support
       run: |
         if test "${RUNNER_OS:-Linux}" = macOS; then

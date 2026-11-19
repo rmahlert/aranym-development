@@ -335,6 +335,18 @@ if test "$have_slirp" = yes; then
 	AC_DEFINE([HAVE_SLIRP], 1, [Define if libslirp is available])
 fi
 AM_CONDITIONAL([HAVE_SLIRP], test "$have_slirp" = yes)
+
+dnl Optional native host MIDI transport.
+have_portmidi=no
+if test "$WANT_PORTMIDI" != no; then
+    PKG_CHECK_MODULES([PORTMIDI], [portmidi >= 2.0.7], [have_portmidi=yes], [have_portmidi=no])
+fi
+if test "$WANT_PORTMIDI" = yes && test "$have_portmidi" != yes; then
+    AC_MSG_ERROR([PortMidi requested but PortMidi 2.0.7 or newer was not found])
+fi
+if test "$have_portmidi" = yes; then
+    AC_DEFINE([HAVE_PORTMIDI], 1, [Define if PortMidi host MIDI is available])
+fi
 if test "$OS_TYPE" = "unknown"; then
   OS_TYPE=`echo $host_os | sed -e 's/-/_/g' | sed -e 's/\./_/g'`
 fi
@@ -2416,18 +2428,6 @@ AM_CONDITIONAL([ENABLE_PARALLELPARPORT], test "$WANT_PARALLELPARPORT" = yes)
 
 if test "$ac_cv_func_pipe" = "yes" -a "$ac_cv_func_fork" = "yes"; then
 	AC_DEFINE([ENABLE_PARALLELPIPE], 1, [Define if you want to use pipes for parallel port output])
-fi
-
-dnl Optional native host MIDI transport.
-have_portmidi=no
-if test "$WANT_PORTMIDI" != no; then
-    PKG_CHECK_MODULES([PORTMIDI], [portmidi >= 2.0.7], [have_portmidi=yes], [have_portmidi=no])
-fi
-if test "$WANT_PORTMIDI" = yes && test "$have_portmidi" != yes; then
-    AC_MSG_ERROR([PortMidi requested but PortMidi 2.0.7 or newer was not found])
-fi
-if test "$have_portmidi" = yes; then
-    AC_DEFINE([HAVE_PORTMIDI], 1, [Define if PortMidi host MIDI is available])
 fi
 
 dnl Linux /dev/sequencer MIDI support
