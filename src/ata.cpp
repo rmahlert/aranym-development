@@ -384,7 +384,7 @@ Bit32u bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 			  (unsigned) BX_SELECTED_CONTROLLER(channel).current_command));
 		switch (BX_SELECTED_CONTROLLER(channel).current_command)
 		{
-		case 0xc4:						// READ MULTIPLE
+		case 0xc4:
 		case 0x20:						// READ SECTORS, with retries
 		case 0x21:						// READ SECTORS, without retries
 			if (io_len == 4 && BX_SELECTED_CONTROLLER(channel).buffer_index + 2 == BX_SELECTED_CONTROLLER(channel).pio_block_bytes)
@@ -814,7 +814,7 @@ Bit32u bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 			bug("read cmd 0xC0 (CFA ERASE SECTORS) not supported");
 			command_aborted(channel, 0xC0);
 			break;
-		case 0xc5:						// WRITE MULTIPLE has no input data for the host
+		case 0xc5:
 			return 0;
 		case 0xC7:
 			bug("read cmd 0xC7 (READ DMA QUEUED) not supported");
@@ -1110,7 +1110,7 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 		}
 		switch (BX_SELECTED_CONTROLLER(channel).current_command)
 		{
-		case 0xc5:						// WRITE MULTIPLE
+		case 0xc5:
 		case 0x30:						// WRITE SECTORS
 			if (!BX_SELECTED_CONTROLLER(channel).status.drq || (io_len != 2 && io_len != 4))
 				return;
@@ -1939,7 +1939,7 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 			raise_interrupt(channel);
 			break;
 
-		case 0xc4:						// READ MULTIPLE
+		case 0xc4:
 		case 0x20:						// READ SECTORS, with retries
 		case 0x21:						// READ SECTORS, without retries
 			if (!BX_SELECTED_IS_HD(channel) || (value == 0xc4 && !BX_SELECTED_CONTROLLER(channel).sectors_per_block))
@@ -1963,7 +1963,7 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 			raise_interrupt(channel);
 			break;
 
-		case 0xc5:						// WRITE MULTIPLE
+		case 0xc5:
 		case 0x30:						// WRITE SECTORS
 			if (!BX_SELECTED_IS_HD(channel) || (value == 0xc5 && !BX_SELECTED_CONTROLLER(channel).sectors_per_block))
 			{
@@ -2116,7 +2116,7 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 			}
 			break;
 
-		case 0xc6:						// SET MULTIPLE MODE
+		case 0xc6:
 		{
 			const unsigned count = BX_SELECTED_CONTROLLER(channel).sector_count;
 			if (!BX_SELECTED_IS_HD(channel) || count > ATA_MAX_MULTIPLE_SECTORS || (count & (count - 1)) != 0)
@@ -2718,7 +2718,6 @@ bool bx_hard_drive_c::transfer_pio_block(Bit8u channel, bool write)
 	ssize_t done = write ? disk->write(controller.buffer, bytes) : disk->read(controller.buffer, bytes);
 	if (done == (ssize_t) controller.pio_block_bytes)
 		return true;
-	// Report the first incomplete sector and leave subsequent sectors pending.
 	for (ssize_t n = 512; n <= done; n += 512)
 		increment_address(channel);
 	command_aborted(channel, controller.current_command);

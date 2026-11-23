@@ -326,8 +326,6 @@ void CROSSBAR::handleWrite(uaecptr addr, uae_u8 value)
     case 6: rec_tracks = value & 3; break;
     case 7:
         if ((value & CODEC_RESET) && !(in_source & CODEC_RESET)) {
-            // Falcon sound reset clears the matrix and DMA mode, but leaves
-            // the DMA buffer addresses, DSP program and GPIOs in place.
             input = output = attenuation = 0;
             extfreqdiv = intfreqdiv = rec_tracks = adc_input = gain = 0;
             dma_slot = dsp_slot = adc_slot = special_transfer = 0;

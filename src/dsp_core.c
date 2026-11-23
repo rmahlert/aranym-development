@@ -900,8 +900,6 @@ void dsp_core_ssi_configure(uint32_t address, uint32_t value)
 			if (crb_te == 0 && dsp_core.ssi.crb_te) {
 				dsp_core.ssi.waitFrameTX = 1;
 			}
-			/* Clearing RE lets the word already shifting into RX complete.
-			 * Re-enabling in network mode resumes at the next frame. */
 			if (crb_re && !dsp_core.ssi.crb_re && dsp_core.ssi.rx_frame_state == SSI_RX_ACTIVE)
 				dsp_core.ssi.rx_frame_state = SSI_RX_FINISH_WORD;
 			if (!crb_re && dsp_core.ssi.crb_re && dsp_core.ssi.rx_frame_state != SSI_RX_FINISH_WORD)

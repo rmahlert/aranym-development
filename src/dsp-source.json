@@ -11,7 +11,7 @@
     "src/dsp_core.c": {
       "upstream_path": "src/falcon/dsp_core.c",
       "upstream_sha256": "12097d28d38d33acc2b0f00e68993435b20bbea3b276a912b85f5cc26dfe8865",
-      "adapted_sha256": "b61093d27e2186f8dc40db2145debb64720730597ba44115067afc5447ac4cf9"
+      "adapted_sha256": "edd2f9a57a12a09b23f2396d3f39e90d102403f2724bbf59e2323531bb07fc95"
     },
     "src/dsp_disasm.c": {
       "upstream_path": "src/falcon/dsp_disasm.c",
@@ -41,7 +41,7 @@
     "src/audio_crossbar.cpp": {
       "upstream_path": "src/falcon/crossbar.c",
       "upstream_sha256": "67f842663afb509e741ebc8c718a20c24a52e9f7b7efbba96aacace0324158c7",
-      "adapted_sha256": "4715365c66afa0847fef6642e5ca98017e331f376bb4c3a24e7d8aeab6bae87d"
+      "adapted_sha256": "6aad52be552bd5b11db818bd82b6cccc0bef9fc90485d1f1b136bc73f93f6b0c"
     }
   },
   "adapter_files": {

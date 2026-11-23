@@ -155,7 +155,6 @@ void peripheral_clock_service()
     auto *midi = getMIDI();
     const bool live_receive = midi && midi->live_portmidi_input();
     auto *dma = getAUDIODMA();
-    // Without active audio DMA, keep a live MIDI input synchronized to host time.
     const bool bounded = clock_source == host_time &&
         (!live_receive || (dma && (dma->playback_active() || dma->recording_active())));
     const auto started_at = bounded ? Clock::now() : Clock::time_point{};
