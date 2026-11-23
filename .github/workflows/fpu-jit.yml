@@ -1,4 +1,4 @@
-name: ARAnyM 1.2.0 Unofficial Beta 2 – Linux x86-64
+name: ARAnyM 1.2.0 Unofficial Beta 3 – Linux x86-64
 'on':
   workflow_dispatch:
   push:
@@ -69,17 +69,17 @@ jobs:
         python3 tools/package-linux.py --portmidi-prefix "$RUNNER_TEMP/portmidi" --x64-fpu-jit --build-dir build/fpu-linux --slirp-library "$RUNNER_TEMP/slirp/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --winuae-source-archive build/dependency-source/winuae-source.tar.gz --output build/fpu-package
     - name: Install packaged application and inspect runtime dependencies
       run: |
-        sudo apt-get install -y ./build/fpu-package/aranym-1.2.0-unofficial-beta2-linux-amd64.deb
+        sudo apt-get install -y ./build/fpu-package/aranym-1.2.0-unofficial-beta3-linux-amd64.deb
         python3 tools/check-macos-package.py --installed-linux --runtime --diagnostics build/fpu-package-checks
     - name: Archive package and corresponding source
       run: |
-        tar -czf aranym-1.2.0-unofficial-beta2-linux-x86_64.tar.gz -C build/fpu-package --exclude=deb-root --exclude=debian .
+        tar -czf aranym-1.2.0-unofficial-beta3-linux-x86_64.tar.gz -C build/fpu-package --exclude=deb-root --exclude=debian .
     - uses: actions/upload-artifact@v4
       with:
         name: aranym-fpu-jit-linux-${{ github.sha }}
         path: |
-          aranym-1.2.0-unofficial-beta2-linux-x86_64.tar.gz
-          build/fpu-package/aranym-1.2.0-unofficial-beta2-linux-amd64.deb
+          aranym-1.2.0-unofficial-beta3-linux-x86_64.tar.gz
+          build/fpu-package/aranym-1.2.0-unofficial-beta3-linux-amd64.deb
     - uses: actions/upload-artifact@v4
       if: always()
       with:

@@ -36,7 +36,11 @@
 #include <limits>
 
 namespace {
+const unsigned SSI_FRAME_WORDS = 8;
 const uint64_t NEVER = std::numeric_limits<uint64_t>::max();
+const uint8_t CODEC_RESET = 0x08;
+const uint16_t CODEC_READY = 0x2401;
+const uint16_t CODEC_RESET_STATUS = 0x003f;
 const uint16_t dac_volume[16] = {
     65535,55142,46396,39037,32846,27636,23253,19565,
     16462,13851,11654,9806,8250,6942,5841,4915
@@ -53,13 +57,18 @@ void CROSSBAR::Clock::configure(uint64_t now, uint64_t num, uint64_t den, bool e
     if (!enabled || !den) { next = NEVER; numerator = num; denominator = den; return; }
     if (next != NEVER && numerator == num && denominator == den) return;
     numerator = num; denominator = den; fraction = den - 1; next = now;
+    interval = num / den;
+    remainder = num % den;
     advance();
 }
 void CROSSBAR::Clock::advance()
 {
-    const uint64_t total = numerator + fraction;
-    const uint64_t delay = total / denominator;
-    fraction = total % denominator;
+    uint64_t delay = interval;
+    fraction += remainder;
+    if (fraction >= denominator) {
+        ++delay;
+        fraction -= denominator;
+    }
     next = next > NEVER - delay ? NEVER : next + delay;
 }
 
@@ -89,11 +98,14 @@ void CROSSBAR::reset()
     extfreqdiv = intfreqdiv = rec_tracks = in_source = adc_input = gain = gpio_dir = gpio_data = 0;
     dma_slot = dsp_slot = adc_slot = 0;
     configured_tracks = 1;
+    dma_serial = adc_serial = false;
     rx_request = rx_master = tx_request = playback_was_active = false;
+    codec_status = CODEC_READY;
+    clocks_dirty = false;
     special_transfer = 0;
     dac = adc = Frame();
     last_ns = peripheral_clock_now_ns();
-    for (unsigned i = 0; i < 3; ++i) { clocks[i] = Clock(); clocks[i].next = NEVER; }
+    for (unsigned i = 0; i < CLOCK_COUNT; ++i) { clocks[i] = Clock(); clocks[i].next = NEVER; }
     SDL_LockAudio();
     pcm_read.store(0); pcm_write.store(0);
     SDL_UnlockAudio();
@@ -111,38 +123,46 @@ bool CROSSBAR::source_needed(unsigned source) const
 }
 void CROSSBAR::configuration_changed(uint64_t now)
 {
+    if (servicing)
+        clocks_dirty = true;
+    else
+        update_clocks(now);
+}
+void CROSSBAR::update_clocks(uint64_t now)
+{
+    clocks_dirty = false;
     const unsigned tracks = getAUDIODMA()->playback_tracks();
-    if (tracks != configured_tracks) {
-        dma_slot = dsp_slot = 0;
-        configured_tracks = tracks;
-    }
     const bool playing = getAUDIODMA()->playback_active();
-    if (playing && !playback_was_active) dma_slot = 0;
+    const bool recording = getAUDIODMA()->recording_active();
+    const bool serial_play = (output & 1) && (((input & 0xe0) == 0x80) ||
+        ((input & 6) == 0 && recording && rec_tracks + 1u > tracks));
+    if (serial_play != dma_serial || (!serial_play && (tracks != configured_tracks ||
+        (playing && !playback_was_active)))) dma_slot = 0;
+    dma_serial = serial_play;
     playback_was_active = playing;
-    const bool dma_needed = playing;
-    const bool dsp_needed = (output & 0x80) && source_needed(1);
-    const bool adc_needed = source_needed(3) || (in_source & 1);
-    const bool run25 = (dma_needed && source_clock(1) == 0) ||
-        (dsp_needed && source_clock(5) == 0) || adc_needed;
-    const bool run32 = intfreqdiv && ((dma_needed && source_clock(1) == 2) ||
-        (dsp_needed && source_clock(5) == 2));
-    uint64_t numerator;
-    uint64_t denominator25, denominator32;
-    if (!intfreqdiv) {
-        // STE master clock / (1280,640,320,160), preserving fractional clocks.
-        numerator = uint64_t(1000000000) * (1280u >> getAUDIODMA()->legacy_frequency());
-        denominator25 = uint64_t(8010613) * tracks * 2;
-        denominator32 = 1;
-    } else {
-        numerator = uint64_t(1000000000) * 256 * (intfreqdiv + 1);
-        denominator25 = uint64_t(25175040) * tracks * 2;
-        denominator32 = uint64_t(32000000) * tracks * 2;
-    }
-    clocks[0].configure(now, numerator, denominator25, run25);
-    clocks[1].configure(now, numerator, denominator32, run32);
-    // Host rendering samples the held codec output independently of source
-    // clocks. Stopping DMA must not discard its final stereo pair.
-    clocks[2].configure(now, 1000000000, conversion_valid ? host->audio.obtained.freq : 0, in_source != 0);
+    configured_tracks = tracks;
+
+    const bool serial_adc = (input & 0xe0) == 0xe0 ||
+        ((input & 6) == 6 && recording && rec_tracks != 0);
+    if (serial_adc != adc_serial) adc_slot = 0;
+    adc_serial = serial_adc;
+    const bool gated_tx = (input & 15) == 2;
+    const unsigned tx_words = gated_tx ? tracks * 2 : SSI_FRAME_WORDS;
+    if (dsp_slot >= tx_words) dsp_slot = 0;
+
+    const uint64_t period = intfreqdiv ? uint64_t(1000000000) * 256 * (intfreqdiv + 1) :
+        uint64_t(1000000000) * (1280u >> getAUDIODMA()->legacy_frequency());
+    const uint64_t rate25 = intfreqdiv ? 25175040 : 8010613;
+    const auto rate = [rate25](unsigned clock) -> uint64_t {
+        return clock == 0 ? rate25 : clock == 2 ? 32000000 : 0;
+    };
+    clocks[DSP_CLOCK].configure(now, period, rate(source_clock(5)) * tx_words, (output & 0x80) != 0);
+    clocks[DMA_CLOCK].configure(now, period, rate(source_clock(1)) *
+        (dma_serial ? SSI_FRAME_WORDS : tracks * 2), playing || dma_serial);
+    clocks[ADC_CLOCK].configure(now, period, rate25 * (adc_serial ? SSI_FRAME_WORDS : 2),
+        source_needed(3) || (in_source & 1));
+    clocks[HOST_CLOCK].configure(now, 1000000000, conversion_valid ? host->audio.obtained.freq : 0,
+        (in_source & 3) != 0);
 }
 
 void CROSSBAR::request_receive(void *opaque)
@@ -158,28 +178,31 @@ void CROSSBAR::request_transmit(void *opaque, uint32_t frame)
 void CROSSBAR::dma_transfer(uint64_t when)
 {
     const bool handshake = (input & 0xf0) == 0x80;
-    if (handshake && rx_master && !rx_request) return;
-    if (getAUDIODMA()->playback_frame_start()) dma_slot = 0;
-    int16_t sample;
-    if (!getAUDIODMA()->playback_word(dma_slot, sample, when)) return;
-    if (handshake && rx_master && source_clock(1) == 2) {
+    if (!dma_serial && handshake && rx_master && !rx_request) return;
+    const bool frame_start = getAUDIODMA()->playback_frame_start();
+    if (!dma_serial && frame_start) dma_slot = 0;
+    int16_t sample = 0;
+    if (dma_slot < configured_tracks * 2 && (!dma_serial || !frame_start || dma_slot == 0) &&
+        !getAUDIODMA()->playback_word(dma_slot, sample, when) && !dma_serial) return;
+    if (!dma_serial && handshake && rx_master && source_clock(1) == 2) {
         const uint16_t previous = special_transfer;
         special_transfer = uint16_t(sample);
         sample = int16_t((previous << 2) | ((uint16_t(sample) >> 14) & 3));
     }
     route(0, sample, dma_slot, when);
-    dma_slot = (dma_slot + 1) % (configured_tracks * 2);
+    dma_slot = (dma_slot + 1) % (dma_serial ? SSI_FRAME_WORDS : configured_tracks * 2);
 }
 void CROSSBAR::dsp_transfer(uint64_t when)
 {
-    if (!(output & 0x80) || !source_needed(1)) return;
+    if (!(output & 0x80)) return;
     const bool record_handshake = (input & 15) == 2;
     if (record_handshake && (!getAUDIODMA()->recording_active() || !tx_request)) return;
+    if (record_handshake && getAUDIODMA()->recording_frame_start()) dsp_slot = 0;
     if (!record_handshake) getDSP()->ssi_transmit_frame_at(dsp_slot == 0, when);
     const uint32_t sample = getDSP()->ssi_transmit_clock_at(when);
     if (record_handshake) tx_request = false;
     if (getDSP()->ssi_transmit_slot_active()) route(1, int16_t(sample), dsp_slot, when);
-    dsp_slot = (dsp_slot + 1) % (configured_tracks * 2);
+    dsp_slot = (dsp_slot + 1) % (record_handshake ? configured_tracks * 2 : SSI_FRAME_WORDS);
 }
 void CROSSBAR::route(unsigned source, int16_t value, unsigned slot, uint64_t when)
 {
@@ -187,26 +210,27 @@ void CROSSBAR::route(unsigned source, int16_t value, unsigned slot, uint64_t whe
         getAUDIODMA()->record_word(value, slot, rec_tracks + 1, when);
     if ((input & 0x80) && ((input >> 5) & 3) == source) {
         // A DSP-generated SC1 request already supplied its frame synchronization.
-        if (!rx_master || !rx_request) getDSP()->ssi_receive_frame_at(slot == 0, when);
+        if (source != 0 || dma_serial || !rx_master || !rx_request)
+            getDSP()->ssi_receive_frame_at(slot == 0, when);
         rx_request = false;
         getDSP()->ssi_receive_clock_at(uint32_t(int32_t(value)), when);
     }
     if (((input >> 13) & 3) == source && slot / 2 == getAUDIODMA()->monitor_track()) {
+        if ((in_source & 2) && intfreqdiv <= 11)
+            codec_status = CODEC_READY;
         const int scaled = source == 0 && getAUDIODMA()->eight_bit() ? int(value) * 256 : value;
         if (slot & 1) dac.right = int16_t(scaled); else dac.left = int16_t(scaled);
     }
 }
-void CROSSBAR::clock_tick(unsigned clock, uint64_t when)
+void CROSSBAR::adc_transfer(uint64_t when)
 {
-    if (source_clock(5) == clock) dsp_transfer(when);
-    if (source_clock(1) == clock) dma_transfer(when);
-    if (clock == 0 && (source_needed(3) || (in_source & 1))) {
-        // No host capture/PSG adapter is installed here; only supplied ADC samples are routed.
-        const int16_t sample = adc_slot & 1 ? ((adc_input & 1) ? 0 : adc.right) :
-            ((adc_input & 2) ? 0 : adc.left);
-        route(3, sample, adc_slot, when);
-        adc_slot ^= 1;
-    }
+    if (!(in_source & CODEC_RESET) && intfreqdiv <= 11)
+        codec_status = CODEC_READY;
+    int16_t sample = 0;
+    if (adc_slot == 0 && !(adc_input & 2)) sample = adc.left;
+    if (adc_slot == 1 && !(adc_input & 1)) sample = adc.right;
+    route(3, sample, adc_slot, when);
+    adc_slot = (adc_slot + 1) % (adc_serial ? SSI_FRAME_WORDS : 2);
 }
 void CROSSBAR::enqueue_output()
 {
@@ -229,25 +253,32 @@ void CROSSBAR::service(uint64_t now)
     if (servicing) return;
     servicing = true;
     if (now < last_ns) {
-        for (unsigned i = 0; i < 3; ++i) clocks[i].next = NEVER;
+        for (unsigned i = 0; i < CLOCK_COUNT; ++i) clocks[i].next = NEVER;
+        update_clocks(now);
     }
-    configuration_changed(last_ns = now);
+    last_ns = now;
     for (;;) {
         const uint64_t next = next_deadline_ns();
         if (next == NEVER || next > now) break;
         getDSP()->service(next);
-        for (unsigned i = 0; i < 3; ++i) {
+        for (unsigned i = 0; i < CLOCK_COUNT; ++i) {
             if (clocks[i].next != next) continue;
             clocks[i].advance();
-            if (i == 2) enqueue_output(); else clock_tick(i == 1 ? 2 : 0, next);
+            switch (i) {
+            case DSP_CLOCK: dsp_transfer(next); break;
+            case DMA_CLOCK: dma_transfer(next); break;
+            case ADC_CLOCK: adc_transfer(next); break;
+            case HOST_CLOCK: enqueue_output(); break;
+            }
         }
-        configuration_changed(next);
+        if (clocks_dirty) update_clocks(next);
     }
     servicing = false;
 }
 uint64_t CROSSBAR::next_deadline_ns() const
 {
-    return std::min(clocks[0].next, std::min(clocks[1].next, clocks[2].next));
+    return std::min(std::min(clocks[DSP_CLOCK].next, clocks[DMA_CLOCK].next),
+                    std::min(clocks[ADC_CLOCK].next, clocks[HOST_CLOCK].next));
 }
 void CROSSBAR::set_adc_samples(int16_t left, int16_t right)
 {
@@ -273,6 +304,7 @@ uae_u8 CROSSBAR::handleRead(uaecptr addr)
     case 6: return rec_tracks; case 7: return in_source;
     case 8: return adc_input; case 9: return gain;
     case 10: return attenuation >> 8; case 11: return attenuation;
+    case 12: return codec_status >> 8; case 13: return codec_status;
     case 17: return gpio_dir; case 19: return gpio_data;
     default: return 0;
     }
@@ -292,7 +324,20 @@ void CROSSBAR::handleWrite(uaecptr addr, uae_u8 value)
     case 4: extfreqdiv = value & 15; break;
     case 5: intfreqdiv = value & 15; break;
     case 6: rec_tracks = value & 3; break;
-    case 7: in_source = value & 3; break;
+    case 7:
+        if ((value & CODEC_RESET) && !(in_source & CODEC_RESET)) {
+            // Falcon sound reset clears the matrix and DMA mode, but leaves
+            // the DMA buffer addresses, DSP program and GPIOs in place.
+            input = output = attenuation = 0;
+            extfreqdiv = intfreqdiv = rec_tracks = adc_input = gain = 0;
+            dma_slot = dsp_slot = adc_slot = special_transfer = 0;
+            rx_request = rx_master = tx_request = false;
+            dac = Frame();
+            codec_status = CODEC_RESET_STATUS;
+            getAUDIODMA()->reset_sound(now);
+        }
+        in_source = (value & CODEC_RESET) ? CODEC_RESET : value & 3;
+        break;
     case 8: adc_input = value & 3; break;
     case 9: gain = value; break;
     case 10: attenuation = (attenuation & 0x00f0) | (uint16(value & 15) << 8); break;

@@ -180,6 +180,8 @@ class dll_image_t : public device_image_t
 #endif
 
 
+enum { ATA_MAX_MULTIPLE_SECTORS = 128 };
+
 typedef struct {
   struct {
     bool busy;
@@ -215,8 +217,9 @@ typedef struct {
     Bit16u   cylinder_no;
     Bit16u   byte_count;
   };
-  Bit8u    buffer[2048];
+  Bit8u    buffer[ATA_MAX_MULTIPLE_SECTORS * 512];
   Bit32u   buffer_index;
+  unsigned pio_block_bytes;
   Bit32u   drq_index;
   Bit8u    current_command;
   Bit8u    sectors_per_block;
@@ -320,6 +323,9 @@ private:
 
   BX_HD_SMF bool calculate_logical_address(Bit8u channel, off_t *sector);
   BX_HD_SMF void increment_address(Bit8u channel);
+  BX_HD_SMF void prepare_pio_block(Bit8u channel);
+  BX_HD_SMF bool transfer_pio_block(Bit8u channel, bool write);
+  BX_HD_SMF void complete_pio_block(Bit8u channel);
   BX_HD_SMF void identify_drive(Bit8u channel);
   BX_HD_SMF void identify_ATAPI_drive(Bit8u channel);
   BX_HD_SMF void command_aborted(Bit8u channel, unsigned command);

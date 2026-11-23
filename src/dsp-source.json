@@ -6,12 +6,12 @@
     "src/dsp_cpu.c": {
       "upstream_path": "src/falcon/dsp_cpu.c",
       "upstream_sha256": "1b5b9bfab8b4a45cf7018c04abd30860d05da3f7be7ca5538844055bcb4d34f2",
-      "adapted_sha256": "85bc5c1ad954c4591b0a0530a665e96fc67916278b30e8851518be189045b64a"
+      "adapted_sha256": "d15791609d8f3ff81ca652aac1b41041d313ce25a71fd5c168eabac52c4b16c3"
     },
     "src/dsp_core.c": {
       "upstream_path": "src/falcon/dsp_core.c",
       "upstream_sha256": "12097d28d38d33acc2b0f00e68993435b20bbea3b276a912b85f5cc26dfe8865",
-      "adapted_sha256": "14884952178dd8ff544632193d00b724fbb93db78767f2fd2019c9d882cb07f1"
+      "adapted_sha256": "b61093d27e2186f8dc40db2145debb64720730597ba44115067afc5447ac4cf9"
     },
     "src/dsp_disasm.c": {
       "upstream_path": "src/falcon/dsp_disasm.c",
@@ -26,7 +26,7 @@
     "src/include/dsp_core.h": {
       "upstream_path": "src/falcon/dsp_core.h",
       "upstream_sha256": "e84d34761633cc7cdc587747657d75de7c2d0149765f39b5ff1d6e422e022f02",
-      "adapted_sha256": "e309d48d1947a07f82312e20f6db45e24796ca78fcaec7a25c3237bc081f52ce"
+      "adapted_sha256": "be80bf34116104b49e8f997422cbc5f67d487731782bfe8ff9743d410f562848"
     },
     "src/include/dsp_disasm.h": {
       "upstream_path": "src/falcon/dsp_disasm.h",
@@ -36,19 +36,19 @@
     "src/audio_dma.cpp": {
       "upstream_path": "src/falcon/crossbar.c",
       "upstream_sha256": "67f842663afb509e741ebc8c718a20c24a52e9f7b7efbba96aacace0324158c7",
-      "adapted_sha256": "934573d09780b6de8166069624e630e508503ebbcad57652297f43c3f5ae719f"
+      "adapted_sha256": "d0d40ac13f04b0518327b8f3f18114ecd92c3bfb2930d95520f6535dbd40f5c1"
     },
     "src/audio_crossbar.cpp": {
       "upstream_path": "src/falcon/crossbar.c",
       "upstream_sha256": "67f842663afb509e741ebc8c718a20c24a52e9f7b7efbba96aacace0324158c7",
-      "adapted_sha256": "c7c918bf40cc7a6210f9dec0503de37d475ea537819da6ff34b160c3e70593e9"
+      "adapted_sha256": "4715365c66afa0847fef6642e5ca98017e331f376bb4c3a24e7d8aeab6bae87d"
     }
   },
   "adapter_files": {
     "src/dsp.cpp": "6c9c737d9ea688b9f68b48d9826cc2448de218d00633ba0c98e9fb47b0240ab4",
     "src/include/dsp.h": "a75796866d965f84cba470b3dff5dd678a52e78f2c7fa6ace5d88c5c5fa87ff8",
     "src/include/dsp_host.h": "7a30750749bedc9d2deec53565e806960d7aff1c8d84a7b9d2601bc7731d70ec",
-    "src/include/audio_dma.h": "bc8e7f728a23c51d6443c9a53132edae475249f095ab361d2021d3a780e3b240",
-    "src/include/audio_crossbar.h": "09a91de7877596c086bf76834b8140a780b7ba5ef1adb489a8404fe5dd8b4f3f"
+    "src/include/audio_dma.h": "79bab4c18375ae1810f4679305641ea08133c38eb3e70b2f7d61e343ddb51c26",
+    "src/include/audio_crossbar.h": "bc672ce14cc2334ac8509ec4cc8c26e062bb66343c5c07597046757b2451524b"
   }
 }

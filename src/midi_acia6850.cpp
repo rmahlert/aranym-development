@@ -260,6 +260,18 @@ void MidiAcia6850::modem_lines(bool cts_high, bool dcd_high, uint64_t now)
     update_irq();
 }
 
+void MidiAcia6850::resume_host_receive(uint64_t now)
+{
+    const uint64_t deadline=std::min(wire_next_,rx_next_);
+    if (deadline>=now) return;
+    const uint64_t overdue=now-deadline;
+    const uint64_t period=bit_period(0x15);
+    if (overdue<=period) return;
+    const uint64_t delay=overdue-period;
+    wire_next_=add_time(wire_next_,delay);
+    rx_next_=add_time(rx_next_,delay);
+}
+
 bool MidiAcia6850::queue_receive(uint8_t value, uint64_t start, uint8_t wire_format, uint8_t errors)
 {
     if (input_count_==input_capacity) {++input_drops_;return false;}
@@ -298,7 +310,7 @@ void MidiAcia6850::wire_tick()
         input_head_=(input_head_+1)%input_capacity;
         if (--input_count_) {
             const InputFrame &next=input_[input_head_];
-            wire_slot_=0;wire_next_=next.start;
+            wire_slot_=0;wire_next_=std::max(now_,next.start);
         }
         else {wire_next_=never;queued_end_=now_;}
     }

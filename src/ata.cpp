@@ -49,9 +49,6 @@ bx_hard_drive_c bx_hard_drive;
 #endif
 
 
-static unsigned max_multiple_sectors = 0;	// was 0x3f
-static unsigned curr_multiple_sectors = 0;	// was 0x3f
-
 // some packet handling macros
 #define EXTRACT_FIELD(arr,byte,start,num_bits) (((arr)[(byte)] >> (start)) & ((1 << (num_bits)) - 1))
 #define get_packet_field(c,b,s,n) (EXTRACT_FIELD((BX_SELECTED_CONTROLLER((c)).buffer),(b),(s),(n)))
@@ -201,7 +198,7 @@ void bx_hard_drive_c::init(void)
 			BX_CONTROLLER(channel, device).control.disable_irq = 0;
 			BX_CONTROLLER(channel, device).reset_in_progress = 0;
 
-			BX_CONTROLLER(channel, device).sectors_per_block = 0x80;
+			BX_CONTROLLER(channel, device).sectors_per_block = ATA_MAX_MULTIPLE_SECTORS;
 			BX_CONTROLLER(channel, device).lba_mode = 0;
 
 			BX_CONTROLLER(channel, device).features = 0;
@@ -387,22 +384,22 @@ Bit32u bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 			  (unsigned) BX_SELECTED_CONTROLLER(channel).current_command));
 		switch (BX_SELECTED_CONTROLLER(channel).current_command)
 		{
+		case 0xc4:						// READ MULTIPLE
 		case 0x20:						// READ SECTORS, with retries
 		case 0x21:						// READ SECTORS, without retries
-			if (io_len == 1)
+			if (io_len == 4 && BX_SELECTED_CONTROLLER(channel).buffer_index + 2 == BX_SELECTED_CONTROLLER(channel).pio_block_bytes)
 			{
-				panicbug("byte IO read from 0x%08x", (unsigned) address);
+				value32 = read_handler(this, address, 2) << 16;
+				return value32 | read_handler(this, address, 2);
 			}
-			if (BX_SELECTED_CONTROLLER(channel).buffer_index >= 512)
-			{
-				D(bug("IO read(0x%08x): buffer_index >= 512", address));
-			}
+			if (io_len != 2 && io_len != 4)
+				return 0;
 #ifdef BX_SupportRepeatSpeedups
 			if (BX_HD_THIS devices->bulkIOQuantumsRequested)
 			{
-				unsigned transferLen, uantumsMax;
+				unsigned transferLen, quantumsMax;
 
-				quantumsMax = (512 - BX_SELECTED_CONTROLLER(channel).buffer_index) / io_len;
+				quantumsMax = (BX_SELECTED_CONTROLLER(channel).pio_block_bytes - BX_SELECTED_CONTROLLER(channel).buffer_index) / io_len;
 				if (quantumsMax == 0)
 					D(panicbug("IO read(0x%08x): not enough space for read", address));
 				BX_HD_THIS devices->bulkIOQuantumsTransferred = BX_HD_THIS devices->bulkIOQuantumsRequested;
@@ -430,14 +427,14 @@ Bit32u bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 				case 4:
 					if (bs)
 					{
-						value32 |= BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index + 0] << 24;
+						value32 |= (Bit32u) BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index + 0] << 24;
 						value32 |= BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index + 1] << 16;
 						value32 |= BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index + 2] << 8;
 						value32 |= BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index + 3];
 						// value32 = ((value32 >> 16) & 0x0000ffff) | ((value32 & 0x0000ffff) << 16);	/* FALCON (word swap for long access to data register) */
 					} else
 					{
-						value32 |= BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index + 1] << 24;
+						value32 |= (Bit32u) BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index + 1] << 24;
 						value32 |= BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index + 0] << 16;
 						value32 |= BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index + 3] << 8;
 						value32 |= BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index + 2];
@@ -460,7 +457,7 @@ Bit32u bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 			}
 
 			// if buffer completely read
-			if (BX_SELECTED_CONTROLLER(channel).buffer_index >= 512)
+			if (BX_SELECTED_CONTROLLER(channel).buffer_index >= BX_SELECTED_CONTROLLER(channel).pio_block_bytes)
 			{
 				// update sector count, sector number, cylinder,
 				// drive, head, status
@@ -468,7 +465,7 @@ Bit32u bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 				//
 				BX_SELECTED_CONTROLLER(channel).buffer_index = 0;
 
-				increment_address(channel);
+				complete_pio_block(channel);
 
 				BX_SELECTED_CONTROLLER(channel).status.busy = 0;
 				BX_SELECTED_CONTROLLER(channel).status.drive_ready = 1;
@@ -485,37 +482,12 @@ Bit32u bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 					BX_SELECTED_CONTROLLER(channel).status.drq = 0;
 				} else
 				{						/* read next one into controller buffer */
-					off_t logical_sector;
-					off_t ret;
-
-					BX_SELECTED_CONTROLLER(channel).status.drq = 1;
 					BX_SELECTED_CONTROLLER(channel).status.seek_complete = 1;
-
-					if (!calculate_logical_address(channel, &logical_sector))
+					prepare_pio_block(channel);
+					if (!transfer_pio_block(channel, false))
 					{
-						bug("multi-sector read reached invalid sector %lu, aborting", (unsigned long) logical_sector);
-						command_aborted(channel, BX_SELECTED_CONTROLLER(channel).current_command);
 						GOTO_RETURN_VALUE;
 					}
-					ret = BX_SELECTED_DRIVE(channel).hard_drive->lseek(logical_sector * 512, SEEK_SET);
-					if (ret < 0)
-					{
-						bug("could not lseek() hard drive image file");
-						command_aborted(channel, BX_SELECTED_CONTROLLER(channel).current_command);
-						GOTO_RETURN_VALUE;
-					}
-					ret =
-						BX_SELECTED_DRIVE(channel).hard_drive->read((bx_ptr_t) BX_SELECTED_CONTROLLER(channel).buffer,
-																	512);
-					if (ret < 512)
-					{
-						bug("logical sector was %lu", (unsigned long) logical_sector);
-						bug("could not read() hard drive image file at byte %lu", (unsigned long) logical_sector * 512);
-						command_aborted(channel, BX_SELECTED_CONTROLLER(channel).current_command);
-						GOTO_RETURN_VALUE;
-					}
-
-					BX_SELECTED_CONTROLLER(channel).buffer_index = 0;
 					raise_interrupt(channel);
 				}
 			}
@@ -842,18 +814,8 @@ Bit32u bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 			bug("read cmd 0xC0 (CFA ERASE SECTORS) not supported");
 			command_aborted(channel, 0xC0);
 			break;
-		case 0xC4:
-			bug("read cmd 0xC4 (READ MULTIPLE) not supported");
-			command_aborted(channel, 0xC4);
-			break;
-		case 0xC5:
-			bug("read cmd 0xC5 (WRITE MULTIPLE) not supported");
-			command_aborted(channel, 0xC5);
-			break;
-		case 0xC6:
-			bug("read cmd 0xC6 (SET MULTIPLE MODE) not supported");
-			command_aborted(channel, 0xC6);
-			break;
+		case 0xc5:						// WRITE MULTIPLE has no input data for the host
+			return 0;
 		case 0xC7:
 			bug("read cmd 0xC7 (READ DMA QUEUED) not supported");
 			command_aborted(channel, 0xC7);
@@ -1115,8 +1077,6 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 #else
 	UNUSED(this_ptr);
 #endif // !BX_USE_HD_SMF
-	off_t logical_sector;
-	off_t ret;
 	bool prev_control_reset;
 
 	Bit8u channel = BX_MAX_ATA_CHANNEL;
@@ -1150,16 +1110,22 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 		}
 		switch (BX_SELECTED_CONTROLLER(channel).current_command)
 		{
+		case 0xc5:						// WRITE MULTIPLE
 		case 0x30:						// WRITE SECTORS
-			if (BX_SELECTED_CONTROLLER(channel).buffer_index >= 512)
-				panicbug("IO write(0x%08x): buffer_index >= 512", address);
-
+			if (!BX_SELECTED_CONTROLLER(channel).status.drq || (io_len != 2 && io_len != 4))
+				return;
+			if (io_len == 4 && BX_SELECTED_CONTROLLER(channel).buffer_index + 2 == BX_SELECTED_CONTROLLER(channel).pio_block_bytes)
+			{
+				write_handler(this, address, value >> 16, 2);
+				write_handler(this, address, value & 0xffff, 2);
+				return;
+			}
 #ifdef BX_SupportRepeatSpeedups
 			if (BX_HD_THIS devices->bulkIOQuantumsRequested)
 			{
 				unsigned transferLen, quantumsMax;
 
-				quantumsMax = (512 - BX_SELECTED_CONTROLLER(channel).buffer_index) / io_len;
+				quantumsMax = (BX_SELECTED_CONTROLLER(channel).pio_block_bytes - BX_SELECTED_CONTROLLER(channel).buffer_index) / io_len;
 				if (quantumsMax == 0)
 					BX_PANIC(("IO write(1f0): not enough space for write"));
 				BX_HD_THIS devices->bulkIOQuantumsTransferred = BX_HD_THIS devices->bulkIOQuantumsRequested;
@@ -1212,42 +1178,11 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 			}
 
 			/* if buffer completely writtten */
-			if (BX_SELECTED_CONTROLLER(channel).buffer_index >= 512)
+			if (BX_SELECTED_CONTROLLER(channel).buffer_index >= BX_SELECTED_CONTROLLER(channel).pio_block_bytes)
 			{
-				off_t logical_sector;
-				off_t ret;
-
-				if (!calculate_logical_address(channel, &logical_sector))
-				{
-					bug("write reached invalid sector %lu, aborting", (unsigned long) logical_sector);
-					command_aborted(channel, BX_SELECTED_CONTROLLER(channel).current_command);
+				if (!transfer_pio_block(channel, true))
 					return;
-				}
-				ret = BX_SELECTED_DRIVE(channel).hard_drive->lseek(logical_sector * 512, SEEK_SET);
-				if (ret < 0)
-				{
-					bug("could not lseek() hard drive image file at byte %lu", (unsigned long) logical_sector * 512);
-					command_aborted(channel, BX_SELECTED_CONTROLLER(channel).current_command);
-					return;
-				}
-				ret =
-					BX_SELECTED_DRIVE(channel).hard_drive->write((bx_ptr_t) BX_SELECTED_CONTROLLER(channel).buffer,
-																 512);
-				if (ret < 512)
-				{
-					bug("could not write() hard drive image file at byte %lu", (unsigned long) logical_sector * 512);
-					command_aborted(channel, BX_SELECTED_CONTROLLER(channel).current_command);
-					return;
-				}
-
-				BX_SELECTED_CONTROLLER(channel).buffer_index = 0;
-
-				/* update sector count, sector number, cylinder,
-				 * drive, head, status
-				 * if there are more sectors, read next one in...
-				 */
-
-				increment_address(channel);
+				complete_pio_block(channel);
 
 				/* When the write is complete, controller clears the DRQ bit and
 				 * sets the BSY bit.
@@ -1259,6 +1194,7 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 				{
 					BX_SELECTED_CONTROLLER(channel).status.busy = 0;
 					BX_SELECTED_CONTROLLER(channel).status.drive_ready = 1;
+					prepare_pio_block(channel);
 					BX_SELECTED_CONTROLLER(channel).status.drq = 1;
 					BX_SELECTED_CONTROLLER(channel).status.corrected_data = 0;
 					BX_SELECTED_CONTROLLER(channel).status.err = 0;
@@ -2003,55 +1939,18 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 			raise_interrupt(channel);
 			break;
 
-		case 0x20:						// READ MULTIPLE SECTORS, with retries
-		case 0x21:						// READ MULTIPLE SECTORS, without retries
-			/* update sector_no, always points to current sector
-			 * after each sector is read to buffer, DRQ bit set and issue IRQ
-			 * if interrupt handler transfers all data words into main memory,
-			 * and more sectors to read, then set BSY bit again, clear DRQ and
-			 * read next sector into buffer
-			 * sector count of 0 means 256 sectors
-			 */
-
-			if (!BX_SELECTED_IS_HD(channel))
+		case 0xc4:						// READ MULTIPLE
+		case 0x20:						// READ SECTORS, with retries
+		case 0x21:						// READ SECTORS, without retries
+			if (!BX_SELECTED_IS_HD(channel) || (value == 0xc4 && !BX_SELECTED_CONTROLLER(channel).sectors_per_block))
 			{
-				bug("read multiple issued to non-disk");
 				command_aborted(channel, value);
 				break;
 			}
-
 			BX_SELECTED_CONTROLLER(channel).current_command = value;
-
-			// Lose98 accesses 0/0/0 in CHS mode
-			if (!BX_SELECTED_CONTROLLER(channel).lba_mode &&
-				!BX_SELECTED_CONTROLLER(channel).head_no &&
-				!BX_SELECTED_CONTROLLER(channel).cylinder_no && !BX_SELECTED_CONTROLLER(channel).sector_no)
-			{
-				command_aborted(channel, value);
+			prepare_pio_block(channel);
+			if (!transfer_pio_block(channel, false))
 				break;
-			}
-
-			if (!calculate_logical_address(channel, &logical_sector))
-			{
-				bug("initial read from sector %lu out of bounds, aborting", (unsigned long) logical_sector);
-				command_aborted(channel, value);
-				break;
-			}
-			ret = BX_SELECTED_DRIVE(channel).hard_drive->lseek(logical_sector * 512, SEEK_SET);
-			if (ret < 0)
-			{
-				bug("could not lseek() hard drive image file, aborting");
-				command_aborted(channel, value);
-				break;
-			}
-			ret = BX_SELECTED_DRIVE(channel).hard_drive->read((bx_ptr_t) BX_SELECTED_CONTROLLER(channel).buffer, 512);
-			if (ret < 512)
-			{
-				bug("logical sector was %lu", (unsigned long) logical_sector);
-				bug("could not read() hard drive image file at byte %lu", (unsigned long) logical_sector * 512);
-				command_aborted(channel, value);
-				break;
-			}
 
 			BX_SELECTED_CONTROLLER(channel).error_register = 0;
 			BX_SELECTED_CONTROLLER(channel).status.busy = 0;
@@ -2064,23 +1963,19 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 			raise_interrupt(channel);
 			break;
 
-		case 0x30:						/* WRITE SECTORS, with retries */
-			/* update sector_no, always points to current sector
-			 * after each sector is read to buffer, DRQ bit set and issue IRQ
-			 * if interrupt handler transfers all data words into main memory,
-			 * and more sectors to read, then set BSY bit again, clear DRQ and
-			 * read next sector into buffer
-			 * sector count of 0 means 256 sectors
-			 */
-
-			if (!BX_SELECTED_IS_HD(channel))
-				panicbug("write multiple issued to non-disk");
-
+		case 0xc5:						// WRITE MULTIPLE
+		case 0x30:						// WRITE SECTORS
+			if (!BX_SELECTED_IS_HD(channel) || (value == 0xc5 && !BX_SELECTED_CONTROLLER(channel).sectors_per_block))
+			{
+				command_aborted(channel, value);
+				break;
+			}
 			if (BX_SELECTED_CONTROLLER(channel).status.busy)
 			{
 				panicbug("write command: BSY bit set");
 			}
 			BX_SELECTED_CONTROLLER(channel).current_command = value;
+			prepare_pio_block(channel);
 
 			// implicit seek done :^)
 			BX_SELECTED_CONTROLLER(channel).error_register = 0;
@@ -2221,25 +2116,25 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 			}
 			break;
 
-		case 0xc6:						// SET MULTIPLE MODE (mch)
-			if (BX_SELECTED_CONTROLLER(channel).sector_count != 128 &&
-				BX_SELECTED_CONTROLLER(channel).sector_count != 64 &&
-				BX_SELECTED_CONTROLLER(channel).sector_count != 32 &&
-				BX_SELECTED_CONTROLLER(channel).sector_count != 16 &&
-				BX_SELECTED_CONTROLLER(channel).sector_count != 8 &&
-				BX_SELECTED_CONTROLLER(channel).sector_count != 4 && BX_SELECTED_CONTROLLER(channel).sector_count != 2)
+		case 0xc6:						// SET MULTIPLE MODE
+		{
+			const unsigned count = BX_SELECTED_CONTROLLER(channel).sector_count;
+			if (!BX_SELECTED_IS_HD(channel) || count > ATA_MAX_MULTIPLE_SECTORS || (count & (count - 1)) != 0)
+			{
 				command_aborted(channel, value);
-
-			if (!BX_SELECTED_IS_HD(channel))
-				panicbug("set multiple mode issued to non-disk");
-
-			BX_SELECTED_CONTROLLER(channel).sectors_per_block = BX_SELECTED_CONTROLLER(channel).sector_count;
+				break;
+			}
+			BX_SELECTED_CONTROLLER(channel).sectors_per_block = count;
+			BX_SELECTED_CONTROLLER(channel).current_command = value;
+			BX_SELECTED_CONTROLLER(channel).error_register = 0;
 			BX_SELECTED_CONTROLLER(channel).status.busy = 0;
 			BX_SELECTED_CONTROLLER(channel).status.drive_ready = 1;
 			BX_SELECTED_CONTROLLER(channel).status.write_fault = 0;
 			BX_SELECTED_CONTROLLER(channel).status.drq = 0;
 			BX_SELECTED_CONTROLLER(channel).status.err = 0;
+			raise_interrupt(channel);
 			break;
+		}
 
 			// ATAPI commands
 		case 0xa1:						// IDENTIFY PACKET DEVICE
@@ -2342,6 +2237,7 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 		case 0x70:						// SEEK (cgs)
 			if (BX_SELECTED_IS_HD(channel))
 			{
+				off_t logical_sector;
 				D(bug("write cmd 0x70 (SEEK) executing"));
 				if (!calculate_logical_address(channel, &logical_sector))
 				{
@@ -2551,14 +2447,6 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 			bug("write cmd 0xC0 (CFA ERASE SECTORS) not supported");
 			command_aborted(channel, 0xC0);
 			break;
-		case 0xC4:
-			bug("write cmd 0xC4 (READ MULTIPLE) not supported");
-			command_aborted(channel, 0xC4);
-			break;
-		case 0xC5:
-			bug("write cmd 0xC5 (WRITE MULTIPLE) not supported");
-			command_aborted(channel, 0xC5);
-			break;
 		case 0xC7:
 			bug("write cmd 0xC7 (READ DMA QUEUED) not supported");
 			command_aborted(channel, 0xC7);
@@ -2712,7 +2600,7 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
 				BX_CONTROLLER(channel, id).current_command = 0x00;
 				BX_CONTROLLER(channel, id).buffer_index = 0;
 
-				BX_CONTROLLER(channel, id).sectors_per_block = 0x80;
+				BX_CONTROLLER(channel, id).sectors_per_block = ATA_MAX_MULTIPLE_SECTORS;
 				BX_CONTROLLER(channel, id).lba_mode = 0;
 
 				BX_CONTROLLER(channel, id).control.disable_irq = 0;
@@ -2782,31 +2670,65 @@ void bx_hard_drive_c::close_harddrive(void)
 
 bool bx_hard_drive_c::calculate_logical_address(Bit8u channel, off_t * sector)
 {
-	off_t logical_sector;
-
-	if (BX_SELECTED_CONTROLLER(channel).lba_mode)
+	const controller_t &controller = BX_SELECTED_CONTROLLER(channel);
+	const device_image_t *disk = BX_SELECTED_DRIVE(channel).hard_drive;
+	if (controller.lba_mode)
 	{
-		logical_sector = ((Bit32u) BX_SELECTED_CONTROLLER(channel).head_no) << 24 |
-			((Bit32u) BX_SELECTED_CONTROLLER(channel).cylinder_no) << 8 |
-			(Bit32u) BX_SELECTED_CONTROLLER(channel).sector_no;
+		*sector = ((Bit32u) controller.head_no << 24) |
+			((Bit32u) controller.cylinder_no << 8) | controller.sector_no;
 	} else
-		logical_sector =
-			((uint32) BX_SELECTED_CONTROLLER(channel).cylinder_no * BX_SELECTED_DRIVE(channel).hard_drive->heads *
-			 BX_SELECTED_DRIVE(channel).hard_drive->sectors) +
-			(Bit32u) (BX_SELECTED_CONTROLLER(channel).head_no * BX_SELECTED_DRIVE(channel).hard_drive->sectors) +
-			(BX_SELECTED_CONTROLLER(channel).sector_no - 1);
-
-	Bit32u sector_count =
-		(Bit32u) BX_SELECTED_DRIVE(channel).hard_drive->cylinders *
-		(Bit32u) BX_SELECTED_DRIVE(channel).hard_drive->heads * (Bit32u) BX_SELECTED_DRIVE(channel).hard_drive->sectors;
-
-	*sector = logical_sector;
-	if (logical_sector >= (off_t) sector_count)
+	{
+		*sector = ((off_t) controller.cylinder_no * disk->heads + controller.head_no) *
+			disk->sectors + controller.sector_no - 1;
+		if (!controller.sector_no || controller.sector_no > disk->sectors || controller.head_no >= disk->heads)
+			return false;
+	}
+	if (*sector < 0 || *sector >= (off_t) disk->cylinders * disk->heads * disk->sectors)
 	{
 		bug("calc_log_addr: out of bounds");
 		return false;
 	}
 	return true;
+}
+
+void bx_hard_drive_c::prepare_pio_block(Bit8u channel)
+{
+	controller_t &controller = BX_SELECTED_CONTROLLER(channel);
+	unsigned count = controller.sector_count ? controller.sector_count : 256;
+	unsigned limit = (controller.current_command == 0xc4 || controller.current_command == 0xc5)
+		? controller.sectors_per_block : 1;
+	controller.pio_block_bytes = (count < limit ? count : limit) * 512;
+	controller.buffer_index = 0;
+}
+
+bool bx_hard_drive_c::transfer_pio_block(Bit8u channel, bool write)
+{
+	controller_t &controller = BX_SELECTED_CONTROLLER(channel);
+	device_image_t *disk = BX_SELECTED_DRIVE(channel).hard_drive;
+	off_t first;
+	if (!calculate_logical_address(channel, &first) || disk->lseek(first * 512, SEEK_SET) < 0)
+	{
+		command_aborted(channel, controller.current_command);
+		return false;
+	}
+	off_t available = (off_t) disk->cylinders * disk->heads * disk->sectors - first;
+	unsigned bytes = controller.pio_block_bytes;
+	if (available < (off_t) (bytes / 512))
+		bytes = (unsigned) available * 512;
+	ssize_t done = write ? disk->write(controller.buffer, bytes) : disk->read(controller.buffer, bytes);
+	if (done == (ssize_t) controller.pio_block_bytes)
+		return true;
+	// Report the first incomplete sector and leave subsequent sectors pending.
+	for (ssize_t n = 512; n <= done; n += 512)
+		increment_address(channel);
+	command_aborted(channel, controller.current_command);
+	return false;
+}
+
+void bx_hard_drive_c::complete_pio_block(Bit8u channel)
+{
+	for (unsigned bytes = 0; bytes < BX_SELECTED_CONTROLLER(channel).pio_block_bytes; bytes += 512)
+		increment_address(channel);
 }
 
 void bx_hard_drive_c::increment_address(Bit8u channel)
@@ -2834,8 +2756,6 @@ void bx_hard_drive_c::increment_address(Bit8u channel)
 			{
 				BX_SELECTED_CONTROLLER(channel).head_no = 0;
 				BX_SELECTED_CONTROLLER(channel).cylinder_no++;
-				if (BX_SELECTED_CONTROLLER(channel).cylinder_no >= BX_SELECTED_DRIVE(channel).hard_drive->cylinders)
-					BX_SELECTED_CONTROLLER(channel).cylinder_no = BX_SELECTED_DRIVE(channel).hard_drive->cylinders - 1;
 			}
 		}
 	}
@@ -2981,7 +2901,7 @@ void bx_hard_drive_c::identify_drive(Bit8u channel)
 		BX_SELECTED_DRIVE(channel).id_drive[27 + i] = (model[i * 2] << 8) | model[i * 2 + 1];
 	}
 
-	BX_SELECTED_DRIVE(channel).id_drive[47] = 0x8080;	// multiple mode identification
+	BX_SELECTED_DRIVE(channel).id_drive[47] = 0x8000 | ATA_MAX_MULTIPLE_SECTORS;	// multiple mode identification
 	BX_SELECTED_DRIVE(channel).id_drive[48] = 0;
 	BX_SELECTED_DRIVE(channel).id_drive[49] = 0x0f01;
 
@@ -3145,7 +3065,7 @@ void bx_hard_drive_c::identify_drive(Bit8u channel)
 	//           7-0 00h= read/write multiple commands not implemented
 	//               xxh= maximum # of sectors that can be transferred
 	//                    per interrupt on read and write multiple commands
-	BX_SELECTED_DRIVE(channel).id_drive[47] = max_multiple_sectors;
+	BX_SELECTED_DRIVE(channel).id_drive[47] = 0x8000 | ATA_MAX_MULTIPLE_SECTORS;
 
 	// Word 48: 0000h = cannot perform dword IO
 	//          0001h = can    perform dword IO
@@ -3199,7 +3119,7 @@ void bx_hard_drive_c::identify_drive(Bit8u channel)
 	//             8 1=multiple sector setting is valid
 	//           7-0 current setting for number of sectors that can be
 	//               transferred per interrupt on R/W multiple commands
-	BX_SELECTED_DRIVE(channel).id_drive[59] = 0x0000 | curr_multiple_sectors;
+	BX_SELECTED_DRIVE(channel).id_drive[59] = 0x0100 | BX_SELECTED_CONTROLLER(channel).sectors_per_block;
 
 	// Word 60-61:
 	// If drive supports LBA Mode, these words reflect total # of user

@@ -1,4 +1,4 @@
-name: ARAnyM 1.2.0 Unofficial Beta 2 – Mac x86-64
+name: ARAnyM 1.2.0 Unofficial Beta 3 – Mac x86-64
 'on':
   workflow_dispatch:
   push:
@@ -77,12 +77,12 @@ jobs:
         python3 tools/check-macos-package.py build/macos-intel-package/ARAnyM-Unofficial.app --runtime --diagnostics build/macos-intel-package-checks
     - name: Archive application without a personal drive image
       run: |
-        tar -czf aranym-1.2.0-unofficial-beta2-macos-x86_64.tar.gz -C build/macos-intel-package .
-        shasum -a 256 aranym-1.2.0-unofficial-beta2-macos-x86_64.tar.gz
+        tar -czf aranym-1.2.0-unofficial-beta3-macos-x86_64.tar.gz -C build/macos-intel-package .
+        shasum -a 256 aranym-1.2.0-unofficial-beta3-macos-x86_64.tar.gz
     - uses: actions/upload-artifact@v4
       with:
         name: aranym-macos-x86_64-${{ github.sha }}
-        path: aranym-1.2.0-unofficial-beta2-macos-x86_64.tar.gz
+        path: aranym-1.2.0-unofficial-beta3-macos-x86_64.tar.gz
     - name: Retain Intel build diagnostics
       if: always()
       uses: actions/upload-artifact@v4

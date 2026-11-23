@@ -1,4 +1,4 @@
-name: ARAnyM 1.2.0 Unofficial Beta 2 – Mac ARM64 and Raspberry Pi ARM64
+name: ARAnyM 1.2.0 Unofficial Beta 3 – Mac ARM64 and Raspberry Pi ARM64
 'on':
   workflow_dispatch:
   push:
@@ -79,13 +79,13 @@ jobs:
       if: runner.os == 'macOS'
       run: |
         git archive --format=tar.gz -o build/arm-jit-package/aranym-source.tar.gz HEAD
-        tar -czf aranym-1.2.0-unofficial-beta2-macos-arm64.tar.gz -C build/arm-jit-package .
-        shasum -a 256 aranym-1.2.0-unofficial-beta2-macos-arm64.tar.gz
+        tar -czf aranym-1.2.0-unofficial-beta3-macos-arm64.tar.gz -C build/arm-jit-package .
+        shasum -a 256 aranym-1.2.0-unofficial-beta3-macos-arm64.tar.gz
     - uses: actions/upload-artifact@v4
       if: runner.os == 'macOS'
       with:
         name: aranym-macos-arm64-guest-jit-${{ github.sha }}
-        path: aranym-1.2.0-unofficial-beta2-macos-arm64.tar.gz
+        path: aranym-1.2.0-unofficial-beta3-macos-arm64.tar.gz
     - name: Retain integration diagnostics
       if: always()
       uses: actions/upload-artifact@v4
@@ -154,18 +154,18 @@ jobs:
         python3 tools/package-linux.py --portmidi-prefix "$RUNNER_TEMP/portmidi" --arm-fpu-jit --architecture arm64 --build-dir build/rpi64 --slirp-library "$RUNNER_TEMP/slirp/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --output build/rpi64-package
     - name: Install packaged application and inspect runtime dependencies
       run: |
-        apt-get install -y ./build/rpi64-package/aranym-1.2.0-unofficial-beta2-rpi-arm64.deb
+        apt-get install -y ./build/rpi64-package/aranym-1.2.0-unofficial-beta3-rpi-arm64.deb
         python3 tools/check-macos-package.py --installed-linux --runtime --diagnostics build/rpi64-package-checks
     - name: Archive Pi package and corresponding source
       run: |
-        tar -czf aranym-1.2.0-unofficial-beta2-rpi-arm64.tar.gz -C build/rpi64-package --exclude=deb-root --exclude=debian .
-        sha256sum aranym-1.2.0-unofficial-beta2-rpi-arm64.tar.gz
+        tar -czf aranym-1.2.0-unofficial-beta3-rpi-arm64.tar.gz -C build/rpi64-package --exclude=deb-root --exclude=debian .
+        sha256sum aranym-1.2.0-unofficial-beta3-rpi-arm64.tar.gz
     - uses: actions/upload-artifact@v4
       with:
         name: aranym-rpi-arm64-guest-jit-${{ github.sha }}
         path: |
-          aranym-1.2.0-unofficial-beta2-rpi-arm64.tar.gz
-          build/rpi64-package/aranym-1.2.0-unofficial-beta2-rpi-arm64.deb
+          aranym-1.2.0-unofficial-beta3-rpi-arm64.tar.gz
+          build/rpi64-package/aranym-1.2.0-unofficial-beta3-rpi-arm64.deb
     - uses: actions/upload-artifact@v4
       if: always()
       with:

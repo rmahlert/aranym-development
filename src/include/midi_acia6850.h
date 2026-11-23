@@ -30,6 +30,7 @@ public:
 
     bool queue_receive(uint8_t value, uint64_t start_ns,
                        uint8_t wire_format=0x15, uint8_t errors=0);
+    void resume_host_receive(uint64_t now_ns);
     void receive_line(bool high, uint64_t now_ns);
     void modem_lines(bool cts_high, bool dcd_high, uint64_t now_ns);
     bool irq() const { return irq_asserted_; }

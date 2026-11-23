@@ -27,7 +27,7 @@ struct NativeFpuOperand {
 static_assert(offsetof(NativeFpuOperand,sign_exponent)==8,"x87 exponent layout");
 
 enum class NativeFpuSource { Register, SingleDn, LongDn, SingleRam, DoubleRam, Immediate };
-enum class NativeFpuOperation { Move, Negate, Absolute, Test, Compare, Add, Subtract, SingleMultiply, SquareRoot, Multiply, StoreLong, StoreFloat };
+enum class NativeFpuOperation { Move, Negate, Absolute, Test, Compare, Add, Subtract, SingleMultiply, SquareRoot, Multiply, Divide, StoreLong, StoreFloat };
 
 struct NativeFpuInstruction {
     uae_u32 pc;
@@ -116,7 +116,13 @@ static ALWAYS_INLINE bool native_fpu_add(NativeFpuOperand a,NativeFpuOperand b,N
     if (!a.mantissa || !b.mantissa) { out=a.mantissa?a:b; return true; }
     if (a.exponent()<b.exponent() || (a.exponent()==b.exponent() && a.mantissa<b.mantissa)) std::swap(a,b);
     const unsigned distance=a.exponent()-b.exponent();
-    if (distance>63) return false;
+    if (distance>63) {
+        constexpr unsigned significand_bits=64;
+        if (distance<significand_bits+2) return false;
+        out=a;
+        inexact=true;
+        return true;
+    }
     using Wide=unsigned __int128;
     const Wide large=Wide(a.mantissa)<<distance;
     const Wide sum=a.negative()==b.negative()?large+b.mantissa:large-b.mantissa;
@@ -253,6 +259,9 @@ static uae_u32 REGPARAM2 native_fpu_execute(const NativeFpuInstruction *ins) {
             if constexpr (op==Op::Multiply) {
                 if (!native_fpu_multiply(destination,input,output,inexact)) return 0;
             }
+            if constexpr (op==Op::Divide) {
+                if (!native_fpu_divide(destination,input,output,inexact)) return 0;
+            }
             if constexpr (op==Op::Add || op==Op::Subtract) {
                 if constexpr (op==Op::Subtract) input.sign_exponent^=0x8000;
                 if (!native_fpu_add(destination,input,output,inexact)) return 0;
@@ -294,6 +303,7 @@ static NativeFpuHandler native_fpu_handler(unsigned extra) {
     case 0x38: return jit_disable.fcmp?nullptr:native_fpu_execute<Op::Compare,source>;
     case 0x22: return jit_disable.fadd?nullptr:native_fpu_execute<Op::Add,source>;
     case 0x23: return jit_disable.fmul?nullptr:native_fpu_execute<Op::Multiply,source>;
+    case 0x20: return jit_disable.fdiv?nullptr:native_fpu_execute<Op::Divide,source>;
     case 0x28: return jit_disable.fsub?nullptr:native_fpu_execute<Op::Subtract,source>;
     case 0x27: return jit_disable.fsglmul?nullptr:native_fpu_execute<Op::SingleMultiply,source>;
     default: return nullptr;

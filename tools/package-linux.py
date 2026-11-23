@@ -67,10 +67,10 @@ def main():
           "aranym-1.2.0-unofficial-arm-jit-test1-rpi-"+arch)
     backend={"amd64":"x86-64 modern040 JIT", "arm64":"ARM64 guest JIT", "armhf":"ARM32 guest JIT"}[arch]
     if args.x64_fpu_jit or args.arm_fpu_jit:
-        label = "Unofficial Beta 2"
-        version = "1.2.0~unofficial.release.beta2"
+        label = "Unofficial Beta 3"
+        version = "1.2.0~unofficial.release.beta3"
         platform_name = "linux-amd64" if arch == "amd64" else "rpi-" + arch
-        package_basename = "aranym-1.2.0-unofficial-beta2-" + platform_name
+        package_basename = "aranym-1.2.0-unofficial-beta3-" + platform_name
     if args.dsp_midi_preview:
         label="Unofficial DSP/MIDI Preview 2"
         version="1.2.0~unofficial.dspmidi.preview2"

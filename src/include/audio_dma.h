@@ -40,9 +40,11 @@ public:
     virtual uae_u8 handleRead(uaecptr addr);
     virtual void handleWrite(uaecptr addr, uae_u8 value);
     void updateMode();
+    void reset_sound(uint64_t when);
     bool playback_active() const { return play.running; }
     bool playback_frame_start() const { return play.frame_start; }
     bool recording_active() const { return record.running; }
+    bool recording_frame_start() const { return record.frame_start; }
     unsigned playback_tracks() const { return ((mode >> 8) & 3) + 1; }
     unsigned monitor_track() const { return (mode >> 12) & 3; }
     unsigned legacy_frequency() const { return mode & 3; }

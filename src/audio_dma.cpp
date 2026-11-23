@@ -43,6 +43,12 @@ void AUDIODMA::reset()
     play_line = record_line = true;
 }
 
+void AUDIODMA::reset_sound(uint64_t when)
+{
+    mode = 0;
+    changeControl(0, when);
+}
+
 void AUDIODMA::soundLine(bool recording, bool high, uint64_t when)
 {
     (recording ? record_line : play_line) = high;
@@ -92,6 +98,7 @@ void AUDIODMA::finish(Channel &channel, bool recording, uint64_t when)
     } else {
         channel.running = false;
         control &= ~enable;
+        if (getCROSSBAR()) getCROSSBAR()->configuration_changed(when);
     }
 }
 
@@ -164,6 +171,10 @@ bool AUDIODMA::playback_word(unsigned slot, int16_t &sample, uint64_t when)
 void AUDIODMA::record_word(int16_t sample, unsigned slot, unsigned tracks, uint64_t when)
 {
     if (!record.running || slot >= tracks * 2) return;
+    if (record.frame_start) {
+        if (slot != 0) return;
+        record.frame_start = false;
+    }
     // Falcon record transfers use words except in the eight-bit mono mode.
     const unsigned bytes = !(mode & 0x40) && (mode & 0x80) ? 1 : 2;
     if (record.current > STRAM_END - bytes || record.current + bytes > record.active_end) {

@@ -16,6 +16,14 @@ Credit for the original emulator belongs to the ARAnyM developers and contributo
 
 ## Recent updates
 
+- **Falcon audio and DSP.** Fixed left/right channel alignment when sound DMA
+  starts or restarts, and corrected frame sync on DSP serial receive overruns.
+  The emulator gives the 68k CPU time to run during heavy DSP processing.
+- **MIDI recording.** Improved input byte pacing when the host delivers
+  PortMidi events in batches.
+- **IDE and x86-64 FPU.** Added ATA multiple-sector transfers and extended
+  native JIT coverage for 68040 floating-point addition, subtraction and division.
+
 - **Falcon DSP56001.** Updated the emulator with work from Hatari, including DSP
   instruction timing and host-port transfers. Hardware timing comparisons are ongoing.
 - **MIDI.** Select separate input and output ports in Setup → MIDI, or list host
@@ -48,21 +56,21 @@ Credit for the original emulator belongs to the ARAnyM developers and contributo
 
 ## Latest testing downloads
 
-**Unofficial Beta 2** updates the emulator application. Keep your existing
+**Unofficial Beta 3** updates the emulator application. Keep your existing
 configuration, guest programs and boot drive.
 
 | Platform | Direct download |
 | --- | --- |
-| Windows x86-64 | [Installer (.exe)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-windows-x86_64-setup.exe) |
-| Linux x86-64 — Ubuntu 24.04 | [Debian package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-linux-amd64.deb) |
-| Mac Intel — macOS 15+ | [App bundle (.tar.gz)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-macos-x86_64.tar.gz) |
-| Mac Apple Silicon — macOS 15+ | [App bundle (.tar.gz)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-macos-arm64.tar.gz) |
-| Raspberry Pi 64-bit — Bookworm or newer | [arm64 package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-rpi-arm64.deb) |
-| Raspberry Pi 32-bit — Bookworm or newer | [armhf package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-rpi-armhf.deb) |
+| Windows x86-64 | [Installer (.exe)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta3/aranym-1.2.0-unofficial-beta3-windows-x86_64-setup.exe) |
+| Linux x86-64 — Ubuntu 24.04 | [Debian package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta3/aranym-1.2.0-unofficial-beta3-linux-amd64.deb) |
+| Mac Intel — macOS 15+ | [App bundle (.tar.gz)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta3/aranym-1.2.0-unofficial-beta3-macos-x86_64.tar.gz) |
+| Mac Apple Silicon — macOS 15+ | [App bundle (.tar.gz)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta3/aranym-1.2.0-unofficial-beta3-macos-arm64.tar.gz) |
+| Raspberry Pi 64-bit — Bookworm or newer | [arm64 package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta3/aranym-1.2.0-unofficial-beta3-rpi-arm64.deb) |
+| Raspberry Pi 32-bit — Bookworm or newer | [armhf package (.deb)](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta3/aranym-1.2.0-unofficial-beta3-rpi-armhf.deb) |
 
-[Release notes, portable packages, validation and checksums](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-beta2) ·
-[Matching source bundle](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta2/aranym-1.2.0-unofficial-beta2-source.tar.gz) ·
-[Platform status and known limitations](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-beta2)
+[Release notes, portable packages, validation and checksums](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-beta3) ·
+[Matching source bundle](https://github.com/rmahlert/aranym-development/releases/download/v1.2.0-unofficial-beta3/aranym-1.2.0-unofficial-beta3-source.tar.gz) ·
+[Platform status and known limitations](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-beta3)
 
 FPU JIT is off by default. To try it, set `JIT = Yes`, `JITSafe = Yes` and
 `JITFPU = Yes` in your existing `[JIT]` configuration. Set `JITFPU = No` to
@@ -82,7 +90,7 @@ remain available. Community Raspberry Pi 5 testing of the integer JIT reported
 a Kronos 2.50 CPU score of **6,238**, versus **1,567** for its stored
 “Rpi5 Std FVDI” reference (about **3.98×**). This is a setup-dependent CPU
 benchmark comparison. Current FPU measurements and their workload limits are
-in [the platform notes](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-beta2).
+in [the Beta 2 platform notes](https://github.com/rmahlert/aranym-development/releases/tag/v1.2.0-unofficial-beta2).
 
 ## Reporting issues
 

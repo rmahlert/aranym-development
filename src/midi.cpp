@@ -29,6 +29,7 @@
 #define DEBUG 0
 #include "debug.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -112,10 +113,16 @@ void MIDI::input_ready(void *)
 void MIDI::poll_host(uint64_t now)
 {
 	transport.service(now);
+	const bool portmidi=host_options.backend=="portmidi";
+	if (portmidi) device.resume_host_receive(now);
 	HostMidiByte incoming;
+	if (!device.can_receive() || !transport.poll_input(incoming)) return;
+	const uint64_t delay=portmidi && now>incoming.timestamp_ns ? now-incoming.timestamp_ns : 0;
 	unsigned int count=0;
-	while (count++<256 && device.can_receive() && transport.poll_input(incoming))
-		device.queue_receive(incoming.byte,incoming.timestamp_ns);
+	do {
+		const uint64_t shift=std::min(delay,MidiAcia6850::never-incoming.timestamp_ns);
+		device.queue_receive(incoming.byte,incoming.timestamp_ns+shift);
+	} while (++count<256 && device.can_receive() && transport.poll_input(incoming));
 }
 
 void MIDI::service(uint64_t now, bool poll)

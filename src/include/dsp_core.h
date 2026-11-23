@@ -203,6 +203,7 @@ struct dsp_core_ssi_s {
 	uint16_t crb_tie;
 	uint16_t crb_rie;
 
+	uint16_t rx_frame_sync;
 	uint32_t TX;
 	uint32_t RX;
 	uint32_t transmit_value;		/* DSP Transmit --> SSI */
@@ -211,7 +212,7 @@ struct dsp_core_ssi_s {
 	uint16_t skip_tx_slot;
 	uint16_t transmit_slot_active;
 	uint16_t waitFrameTX;
-	uint16_t waitFrameRX;
+	uint16_t rx_frame_state;
 	uint32_t dspPlay_handshakeMode_frame;
 };
 

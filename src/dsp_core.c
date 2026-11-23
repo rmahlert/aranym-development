@@ -645,13 +645,19 @@ void dsp_core_reset(void)
 	SSI INTERFACE processing
 */
 
+enum {
+	SSI_RX_ACTIVE,
+	SSI_RX_WAIT_FRAME,
+	SSI_RX_FINISH_WORD
+};
+
 /* Set PortC data register : send a frame order to the DMA in handshake mode */
 void dsp_core_setPortCDataRegister(uint32_t value)
 {
 	/* if DSP Record is in handshake mode with DMA Play */
 	if ((dsp_core.periph[DSP_SPACE_X][DSP_PCDDR] & 0x10) == 0x10) {
 		if ((value & 0x10) == 0x10) {
-			dsp_core.ssi.waitFrameRX = 0;
+			dsp_core.ssi.rx_frame_state = SSI_RX_ACTIVE;
 			DSP_SsiTransmit_SC1();
 			LOG_TRACE(TRACE_DSP_HOST_SSI, "Dsp record in handshake mode: SSI send SC1 to crossbar\n");
 		}
@@ -688,7 +694,8 @@ void dsp_core_ssi_reset(void)
 	dsp_core.periph[DSP_SPACE_X][DSP_SSI_SR] = 1u << DSP_SSI_SR_TDE;
 	dsp_core_ssi_configure(DSP_SSI_CRA, 0);
 	dsp_core_ssi_configure(DSP_SSI_CRB, 0);
-	dsp_core.ssi.waitFrameTX = dsp_core.ssi.waitFrameRX = 1;
+	dsp_core.ssi.waitFrameTX = 1;
+	dsp_core.ssi.rx_frame_state = SSI_RX_WAIT_FRAME;
 	dsp_set_interrupt_mask(DSP_INTER_SSI_RCV_DATA, 0);
 	dsp_set_interrupt_mask(DSP_INTER_SSI_RCV_DATA_E, 0);
 	dsp_set_interrupt_mask(DSP_INTER_SSI_TRX_DATA, 0);
@@ -748,13 +755,21 @@ uint32_t dsp_core_ssi_readRX(void)
 }
 
 
+static void dsp_core_ssi_update_rfs(void)
+{
+	uint32_t *status = &dsp_core.periph[DSP_SPACE_X][DSP_SSI_SR];
+	*status = (*status & ~(1u << DSP_SSI_SR_RFS)) | (dsp_core.ssi.rx_frame_sync << DSP_SSI_SR_RFS);
+}
+
 /**
  * SSI receive serial clock.
  *
  */
 void dsp_core_ssi_Receive_SC0(void)
 {
-	if (!dsp_core.ssi.crb_re || dsp_core.ssi.waitFrameRX)
+	if (dsp_core.ssi.rx_frame_state == SSI_RX_FINISH_WORD)
+		dsp_core.ssi.rx_frame_state = SSI_RX_WAIT_FRAME;
+	else if (!dsp_core.ssi.crb_re || dsp_core.ssi.rx_frame_state == SSI_RX_WAIT_FRAME)
 		return;
 	if (dsp_core.periph[DSP_SPACE_X][DSP_SSI_SR] & (1u << DSP_SSI_SR_RDF)) {
 		dsp_core.periph[DSP_SPACE_X][DSP_SSI_SR] |= 1u << DSP_SSI_SR_ROE;
@@ -763,6 +778,7 @@ void dsp_core_ssi_Receive_SC0(void)
 		if (dsp_core.ssi.crb_shifter)
 			value = dsp_core_ssi_reverse(value);
 		dsp_core.ssi.RX = value << (24 - dsp_core.ssi.cra_word_length);
+		dsp_core_ssi_update_rfs();
 		dsp_core.periph[DSP_SPACE_X][DSP_SSI_SR] |= 1u << DSP_SSI_SR_RDF;
 	}
 	dsp_core_ssi_update_interrupts();
@@ -775,20 +791,11 @@ void dsp_core_ssi_Receive_SC0(void)
  */
 void dsp_core_ssi_Receive_SC1(uint32_t value)
 {
-	/* SSI runs in network mode ? */
-	if (dsp_core.ssi.crb_mode) {
-		if (value) {
-			/* Beginning of a new frame */
-			dsp_core.periph[DSP_SPACE_X][DSP_SSI_SR] |= (1u<<DSP_SSI_SR_RFS);
-			dsp_core.ssi.waitFrameRX = 0;
-		}else{
-			dsp_core.periph[DSP_SPACE_X][DSP_SSI_SR] &= 0xff-(1u<<DSP_SSI_SR_RFS);
-		}
-	}else{
-		/* SSI runs in normal mode */
-		dsp_core.periph[DSP_SPACE_X][DSP_SSI_SR] |= (1u<<DSP_SSI_SR_RFS);
-		dsp_core.ssi.waitFrameRX = 0;
-	}
+	dsp_core.ssi.rx_frame_sync = !dsp_core.ssi.crb_mode || value != 0;
+	if (dsp_core.ssi.rx_frame_sync && dsp_core.ssi.crb_re)
+		dsp_core.ssi.rx_frame_state = SSI_RX_ACTIVE;
+	if (!(dsp_core.periph[DSP_SPACE_X][DSP_SSI_SR] & (1u << DSP_SSI_SR_RDF)))
+		dsp_core_ssi_update_rfs();
 
 	LOG_TRACE(TRACE_DSP_HOST_SSI, "Dsp SSI receive frame sync: 0x%01x\n", value);
 }
@@ -893,9 +900,12 @@ void dsp_core_ssi_configure(uint32_t address, uint32_t value)
 			if (crb_te == 0 && dsp_core.ssi.crb_te) {
 				dsp_core.ssi.waitFrameTX = 1;
 			}
-			if (crb_re == 0 && dsp_core.ssi.crb_re) {
-				dsp_core.ssi.waitFrameRX = 1;
-			}
+			/* Clearing RE lets the word already shifting into RX complete.
+			 * Re-enabling in network mode resumes at the next frame. */
+			if (crb_re && !dsp_core.ssi.crb_re && dsp_core.ssi.rx_frame_state == SSI_RX_ACTIVE)
+				dsp_core.ssi.rx_frame_state = SSI_RX_FINISH_WORD;
+			if (!crb_re && dsp_core.ssi.crb_re && dsp_core.ssi.rx_frame_state != SSI_RX_FINISH_WORD)
+				dsp_core.ssi.rx_frame_state = SSI_RX_WAIT_FRAME;
 
 			LOG_TRACE(TRACE_DSP_HOST_SSI, "Dsp SSI CRB write: 0x%06x\n", value);
 

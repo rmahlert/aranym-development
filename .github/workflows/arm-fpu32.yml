@@ -1,4 +1,4 @@
-name: ARAnyM 1.2.0 Unofficial Beta 2 – Raspberry Pi ARM32
+name: ARAnyM 1.2.0 Unofficial Beta 3 – Raspberry Pi ARM32
 'on':
   workflow_dispatch:
   push:
@@ -77,18 +77,18 @@ jobs:
         DEB_HOST_ARCH=armhf python3 tools/package-linux.py --portmidi-prefix "$RUNNER_TEMP/portmidi" --arm-fpu-jit --architecture armhf --cross-armhf --build-dir build/rpi32 --slirp-library "$RUNNER_TEMP/slirp-armhf/lib/libslirp.so.0" --slirp-source-archive build/dependency-source/libslirp-v4.9.1.tar.bz2 --emutos-source-archive build/dependency-source/emutos-source.tar.gz --output build/rpi32-package
     - name: Install packaged application and inspect runtime dependencies
       run: |
-        apt-get install -y ./build/rpi32-package/aranym-1.2.0-unofficial-beta2-rpi-armhf.deb
+        apt-get install -y ./build/rpi32-package/aranym-1.2.0-unofficial-beta3-rpi-armhf.deb
         python3 tools/check-macos-package.py --installed-linux --runtime --diagnostics build/rpi32-package-checks --qemu qemu-arm-static
     - name: Archive ARM32 package and corresponding source
       run: |
-        tar -czf aranym-1.2.0-unofficial-beta2-rpi-armhf.tar.gz -C build/rpi32-package --exclude=deb-root --exclude=debian .
-        sha256sum aranym-1.2.0-unofficial-beta2-rpi-armhf.tar.gz
+        tar -czf aranym-1.2.0-unofficial-beta3-rpi-armhf.tar.gz -C build/rpi32-package --exclude=deb-root --exclude=debian .
+        sha256sum aranym-1.2.0-unofficial-beta3-rpi-armhf.tar.gz
     - uses: actions/upload-artifact@v4
       with:
         name: aranym-rpi-armhf-guest-jit-${{ github.sha }}
         path: |
-          aranym-1.2.0-unofficial-beta2-rpi-armhf.tar.gz
-          build/rpi32-package/aranym-1.2.0-unofficial-beta2-rpi-armhf.deb
+          aranym-1.2.0-unofficial-beta3-rpi-armhf.tar.gz
+          build/rpi32-package/aranym-1.2.0-unofficial-beta3-rpi-armhf.deb
     - uses: actions/upload-artifact@v4
       if: always()
       with:

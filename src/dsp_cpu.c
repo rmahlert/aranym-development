@@ -72,6 +72,8 @@
 #endif
 
 #include <stdbool.h>
+#include <errno.h>
+#include <ctype.h>
 
 #include "dsp_host.h"
 #include "dsp_core.h"
@@ -111,6 +113,120 @@ static uint16_t access_to_ext_memory;
 /* If yes, stack overflow, underflow and illegal instructions messages are not displayed */
 static bool isDsp_in_disasm_mode;
 
+#define DSP_PCPROF_MAX 24
+static int dsp_pcprof_state = -1;
+static unsigned dsp_pcprof_count;
+static uint16_t dsp_pcprof_start;
+static struct {
+	uint16_t lo, hi;
+	uint64_t clocks, instructions;
+} dsp_pcprof[DSP_PCPROF_MAX];
+static uint32_t *dsp_pcprof_mask;
+static uint64_t dsp_pcprof_clocks, dsp_pcprof_instructions, dsp_pcprof_last_dump;
+static uint64_t dsp_pcprof_interval = 32000000;
+static FILE *dsp_pcprof_output;
+
+static uint64_t dsp_pcprof_add(uint64_t a, uint64_t b)
+{
+	return UINT64_MAX - a < b ? UINT64_MAX : a + b;
+}
+
+static void dsp_pcprof_dump(void)
+{
+	if (!dsp_pcprof_output) return;
+	if (dsp_pcprof_output != stderr) rewind(dsp_pcprof_output);
+	fprintf(dsp_pcprof_output, "DSP PC profile clocks=%20llu instructions=%20llu\n",
+		(unsigned long long)dsp_pcprof_clocks, (unsigned long long)dsp_pcprof_instructions);
+	for (unsigned i = 0; i < dsp_pcprof_count; ++i)
+		fprintf(dsp_pcprof_output, "DSP PC range %04x-%04x clocks=%20llu instructions=%20llu\n",
+			dsp_pcprof[i].lo, dsp_pcprof[i].hi,
+			(unsigned long long)dsp_pcprof[i].clocks,
+			(unsigned long long)dsp_pcprof[i].instructions);
+	fflush(dsp_pcprof_output);
+	dsp_pcprof_last_dump = dsp_pcprof_clocks;
+}
+
+static bool dsp_pcprof_address(const char *text, char **end, unsigned long *value)
+{
+	if (!isxdigit((unsigned char)*text)) return false;
+	errno = 0;
+	*value = strtoul(text, end, 16);
+	return !errno && *end != text && *value <= 0xffff;
+}
+
+static void dsp_pcprof_init(void)
+{
+	const char *env = getenv("ARANYM_DSP_PCPROF");
+	char *end;
+	unsigned long lo, hi;
+	dsp_pcprof_state = 0;
+	if (!env || !*env) return;
+	for (;;) {
+		if (dsp_pcprof_count == DSP_PCPROF_MAX ||
+		    !dsp_pcprof_address(env, &end, &lo) || *end != '-') goto invalid;
+		env = end + 1;
+		if (!dsp_pcprof_address(env, &end, &hi) || lo > hi || (*end && *end != ',')) goto invalid;
+		dsp_pcprof[dsp_pcprof_count].lo = lo;
+		dsp_pcprof[dsp_pcprof_count++].hi = hi;
+		if (!*end) break;
+		env = end + 1;
+	}
+	dsp_pcprof_state = 2;
+	env = getenv("ARANYM_DSP_PCPROF_START");
+	if (env && *env) {
+		if (!dsp_pcprof_address(env, &end, &lo) || *end) goto invalid;
+		dsp_pcprof_start = lo;
+		dsp_pcprof_state = 1;
+	}
+	env = getenv("ARANYM_DSP_PCPROF_EVERY");
+	if (env && *env) {
+		if (!isdigit((unsigned char)*env)) goto invalid;
+		errno = 0;
+		dsp_pcprof_interval = strtoull(env, &end, 0);
+		if (errno || *end || !dsp_pcprof_interval) goto invalid;
+	}
+	dsp_pcprof_mask = calloc(0x10000, sizeof(*dsp_pcprof_mask));
+	if (!dsp_pcprof_mask) goto invalid;
+	for (unsigned i = 0; i < dsp_pcprof_count; ++i)
+		for (uint32_t pc = dsp_pcprof[i].lo; pc <= dsp_pcprof[i].hi; ++pc)
+			dsp_pcprof_mask[pc] |= UINT32_C(1) << i;
+	env = getenv("ARANYM_DSP_PCPROF_OUT");
+	dsp_pcprof_output = env && *env ? fopen(env, "w") : stderr;
+	if (!dsp_pcprof_output) goto invalid;
+	if (atexit(dsp_pcprof_dump)) {
+		if (dsp_pcprof_output != stderr) fclose(dsp_pcprof_output);
+		dsp_pcprof_output = NULL;
+		goto invalid;
+	}
+	return;
+invalid:
+	free(dsp_pcprof_mask);
+	dsp_pcprof_mask = NULL;
+	dsp_pcprof_state = 0;
+	fprintf(stderr, "DSP PC profile disabled: invalid configuration or unavailable output\n");
+}
+
+static void dsp_pcprof_account(uint16_t pc, uint32_t clocks, uint64_t instructions)
+{
+	if (dsp_pcprof_state < 0) dsp_pcprof_init();
+	if (!dsp_pcprof_state) return;
+	if (dsp_pcprof_state == 1) {
+		if (pc != dsp_pcprof_start) return;
+		dsp_pcprof_state = 2;
+	}
+	const uint64_t total = clocks && instructions > UINT64_MAX / clocks ?
+		UINT64_MAX : instructions * clocks;
+	dsp_pcprof_clocks = dsp_pcprof_add(dsp_pcprof_clocks, total);
+	dsp_pcprof_instructions = dsp_pcprof_add(dsp_pcprof_instructions, instructions);
+	for (uint32_t mask = dsp_pcprof_mask[pc], i = 0; mask; mask >>= 1, ++i) {
+		if (mask & 1) {
+			dsp_pcprof[i].clocks = dsp_pcprof_add(dsp_pcprof[i].clocks, total);
+			dsp_pcprof[i].instructions = dsp_pcprof_add(dsp_pcprof[i].instructions, instructions);
+		}
+	}
+	if (dsp_pcprof_clocks - dsp_pcprof_last_dump >= dsp_pcprof_interval) dsp_pcprof_dump();
+}
+
 /* Disasm mode : buffer for memory change */
 /* 12 slots are needed when tracing RESET instruction (it can change up to 12 addresses at once) */
 static char   str_disasm_memory[12][50];
@@ -124,7 +240,7 @@ static uint16_t disasm_memory_ptr;		/* Pointer for memory change in disasm mode 
 typedef void (*dsp_emul_t)(void);
 
 static void dsp_postexecute_update_pc(void);
-static void dsp_postexecute_interrupts(void);
+static inline void dsp_postexecute_interrupts(void);
 static void dsp_wake_wait(void);
 
 static void dsp_setInterruptIPL(uint32_t value);
@@ -864,6 +980,7 @@ void dsp56k_execute_instruction(void)
 	}
 
 
+
 #if DSP_COUNT_IPS
 	++num_inst;
 	if ((num_inst & 63) == 0) {
@@ -1009,44 +1126,45 @@ static void dsp_setInterruptIPL(uint32_t value)
 	}
 }
 
-static void dsp_postexecute_interrupts(void)
+static bool dsp_advance_interrupt_pipeline(void)
 {
-	int i;
-	uint32_t interrupt, inter;
-	uint32_t priority_list_start;
 	uint32_t instr;
-	int32_t ipl_sr;
+	switch (dsp_core.interrupt_pipeline_count) {
+		case 5:
+			dsp_core.interrupt_pipeline_count --;
+			return true;
+		case 4:
+			/* Prefetch interrupt instruction 1 */
+			dsp_core.interrupt_save_pc = dsp_core.pc;
+			dsp_core.pc = dsp_core.interrupt_instr_fetch;
 
+			/* is it a LONG interrupt ? */
 
-	/* REP is not interruptible */
-	if (dsp_core.loop_rep) {
-		return;
-	}
+			/* Extract from Motorola doc
+			   A long interrupt is formed if one of the interrupt instructions fetched is a JSR instruction.
+			   The PC is immediately released, the SR and the PC are saved in the stack, and the jump instruction
+			   controls where the next instruction is fetched from. While either an unconditional jump or
+			   conditional jump can be used to form a long interrupt, they do not store the PC on the stack;
+			   therefore, there is no return path.
+			*/
 
-	/* A fast interrupt can not be interrupted. */
-	if (dsp_core.interrupt_state == DSP_INTERRUPT_DISABLED) {
-
-		switch (dsp_core.interrupt_pipeline_count) {
-			case 5:
-				dsp_core.interrupt_pipeline_count --;
-				return;
-			case 4:
-				/* Prefetch interrupt instruction 1 */
-				dsp_core.interrupt_save_pc = dsp_core.pc;
-				dsp_core.pc = dsp_core.interrupt_instr_fetch;
-
-				/* is it a LONG interrupt ? */
-
-				/* Extract from Motorola doc
-				   A long interrupt is formed if one of the interrupt instructions fetched is a JSR instruction.
-				   The PC is immediately released, the SR and the PC are saved in the stack, and the jump instruction
-				   controls where the next instruction is fetched from. While either an unconditional jump or
-				   conditional jump can be used to form a long interrupt, they do not store the PC on the stack;
-				   therefore, there is no return path.
-				*/
-
-				instr = read_memory_p(dsp_core.interrupt_instr_fetch);
-				// JSR or JMP ?
+			instr = read_memory_p(dsp_core.interrupt_instr_fetch);
+			// JSR or JMP ?
+			if ( ((instr & 0xfff000) == 0x0d0000) || ((instr & 0xffc0ff) == 0x0bc080) ||		/* JSR pattern */
+			     ((instr & 0xfff000) == 0x0c0000) || ((instr & 0xffc0ff) == 0x0ac080) ) {		/* JMP pattern */
+				dsp_core.interrupt_state = DSP_INTERRUPT_LONG;
+				dsp_stack_push(dsp_core.interrupt_save_pc, dsp_core.registers[DSP_REG_SR], 0);
+				dsp_core.registers[DSP_REG_SR] &= BITMASK(16)-((1u<<DSP_SR_LF)|(1u<<DSP_SR_T)  |
+										(1u<<DSP_SR_S1)|(1u<<DSP_SR_S0) |
+										(1u<<DSP_SR_I0)|(1u<<DSP_SR_I1));
+				dsp_core.registers[DSP_REG_SR] |= dsp_core.interrupt_IplToRaise<<DSP_SR_I0;
+			}
+			dsp_core.interrupt_pipeline_count --;
+			return true;
+		case 3:
+			/* Prefetch interrupt instruction 2, if first one was single word */
+			if (dsp_core.pc == dsp_core.interrupt_instr_fetch+1) {
+				instr = read_memory_p(dsp_core.pc);
 				if ( ((instr & 0xfff000) == 0x0d0000) || ((instr & 0xffc0ff) == 0x0bc080) ||		/* JSR pattern */
 				     ((instr & 0xfff000) == 0x0c0000) || ((instr & 0xffc0ff) == 0x0ac080) ) {		/* JMP pattern */
 					dsp_core.interrupt_state = DSP_INTERRUPT_LONG;
@@ -1057,69 +1175,55 @@ static void dsp_postexecute_interrupts(void)
 					dsp_core.registers[DSP_REG_SR] |= dsp_core.interrupt_IplToRaise<<DSP_SR_I0;
 				}
 				dsp_core.interrupt_pipeline_count --;
-				return;
-			case 3:
-				/* Prefetch interrupt instruction 2, if first one was single word */
-				if (dsp_core.pc == dsp_core.interrupt_instr_fetch+1) {
-					instr = read_memory_p(dsp_core.pc);
-					if ( ((instr & 0xfff000) == 0x0d0000) || ((instr & 0xffc0ff) == 0x0bc080) ||		/* JSR pattern */
-					     ((instr & 0xfff000) == 0x0c0000) || ((instr & 0xffc0ff) == 0x0ac080) ) {		/* JMP pattern */
-						dsp_core.interrupt_state = DSP_INTERRUPT_LONG;
-						dsp_stack_push(dsp_core.interrupt_save_pc, dsp_core.registers[DSP_REG_SR], 0);
-						dsp_core.registers[DSP_REG_SR] &= BITMASK(16)-((1u<<DSP_SR_LF)|(1u<<DSP_SR_T)  |
-												(1u<<DSP_SR_S1)|(1u<<DSP_SR_S0) |
-												(1u<<DSP_SR_I0)|(1u<<DSP_SR_I1));
-						dsp_core.registers[DSP_REG_SR] |= dsp_core.interrupt_IplToRaise<<DSP_SR_I0;
-					}
-					dsp_core.interrupt_pipeline_count --;
-					return;
-				}
-				dsp_core.interrupt_pipeline_count --;
-				/* First instruction was 2 word. Fall through */
-			case 2:
-				/* 1 instruction executed after interrupt */
-				/* before re enable interrupts */
-				/* Was it a FAST interrupt ? */
-				if (dsp_core.pc == dsp_core.interrupt_instr_fetch+2) {
-					dsp_core.pc = dsp_core.interrupt_save_pc;
-				}
-				dsp_core.interrupt_pipeline_count --;
-				return;
-			case 1:
-				/* Last instruction executed after interrupt */
-				/* before re enable interrupts */
-				dsp_core.interrupt_pipeline_count --;
-				return;
-			case 0:
-				/* Re enable interrupts */
-				/* All 6 instruction are done, Interrupts can be enabled again */
-				dsp_core.interrupt_save_pc = -1;
-				dsp_core.interrupt_instr_fetch = -1;
-				dsp_core.interrupt_state = DSP_INTERRUPT_NONE;
-				break;
-		}
+				return true;
+			}
+			dsp_core.interrupt_pipeline_count --;
+			/* First instruction was 2 word. Fall through */
+		case 2:
+			/* 1 instruction executed after interrupt */
+			/* before re enable interrupts */
+			/* Was it a FAST interrupt ? */
+			if (dsp_core.pc == dsp_core.interrupt_instr_fetch+2) {
+				dsp_core.pc = dsp_core.interrupt_save_pc;
+			}
+			dsp_core.interrupt_pipeline_count --;
+			return true;
+		case 1:
+			/* Last instruction executed after interrupt */
+			/* before re enable interrupts */
+			dsp_core.interrupt_pipeline_count --;
+			return true;
+		case 0:
+			/* Re enable interrupts */
+			/* All 6 instruction are done, Interrupts can be enabled again */
+			dsp_core.interrupt_save_pc = -1;
+			dsp_core.interrupt_instr_fetch = -1;
+			dsp_core.interrupt_state = DSP_INTERRUPT_NONE;
+			break;
 	}
+	return false;
+}
+
+static void dsp_accept_interrupt(uint32_t pending)
+{
+	int i;
+	uint32_t interrupt, priority_list_start;
+	int32_t ipl_sr;
 
 	/* See if there is an interrupt pending */
-	if (dsp_core.interrupt_status & DSP_INTER_NMI_MASK) {
-		interrupt = dsp_core.interrupt_status & DSP_INTER_NMI_MASK;
+	if (pending & DSP_INTER_NMI_MASK) {
+		interrupt = pending & DSP_INTER_NMI_MASK;
 		dsp_core.interrupt_IplToRaise = 3;
 		priority_list_start = DSP_INTER_RESET;
 	} else {
 		interrupt = 0;
-		inter = dsp_core.interrupt_status & dsp_core.interrupt_enable & dsp_core.interrupt_mask;
-
-		/* If there is no enabled interrupt, stop here */
-		if (!inter) {
-			return;
-		}
 
 		/* Find out the interrupt priority level */
 		ipl_sr = (dsp_core.registers[DSP_REG_SR]>>DSP_SR_I0) & BITMASK(2);
 		for (i = 2; i >= ipl_sr; i--) {
-			if (inter & dsp_core.interrupt_mask_level[i]) {
+			if (pending & dsp_core.interrupt_mask_level[i]) {
 				dsp_core.interrupt_IplToRaise = i+1;
-				interrupt = inter & dsp_core.interrupt_mask_level[i];
+				interrupt = pending & dsp_core.interrupt_mask_level[i];
 				break;
 			}
 		}
@@ -1164,6 +1268,18 @@ static void dsp_postexecute_interrupts(void)
 	dsp_core.interrupt_instr_fetch = interrupt * 2;
 	if (synchronous_swi)
 		dsp_postexecute_interrupts();
+}
+
+static inline void dsp_postexecute_interrupts(void)
+{
+	if (dsp_core.loop_rep)
+		return;
+	if (dsp_core.interrupt_state == DSP_INTERRUPT_DISABLED && dsp_advance_interrupt_pipeline())
+		return;
+	const uint32_t pending = dsp_core.interrupt_status &
+		(DSP_INTER_NMI_MASK | (dsp_core.interrupt_enable & dsp_core.interrupt_mask));
+	if (pending)
+		dsp_accept_interrupt(pending);
 }
 
 int dsp56k_interrupt_pending(void)
@@ -1232,7 +1348,10 @@ static bool dsp_idle_branch(uint16_t pc)
 		!dsp_core.interrupt_pipeline_count && !dsp56k_interrupt_pending();
 }
 
-uint64_t dsp56k_run_cycles(uint64_t cycles)
+#if defined(__GNUC__)
+__attribute__((__noinline__))
+#endif
+static uint64_t dsp_run_cycles(uint64_t cycles, bool profiling)
 {
 	uint64_t instructions = 0;
 	if (!dsp_core.running) {
@@ -1270,12 +1389,15 @@ uint64_t dsp56k_run_cycles(uint64_t cycles)
 			dsp_core.cycle_credit = 0;
 			break;
 		}
+		if (profiling && executing) dsp_pcprof_account(pc, dsp_core.instr_cycle, 1);
 		dsp_core.cycle_credit -= dsp_core.instr_cycle;
 		if (executing)
 			++instructions;
 		if (dsp_core.cycle_credit > 0 && dsp_idle_branch(pc)) {
 			const int64_t credit = dsp_core.cycle_credit - 1;
-			instructions += 1 + credit / dsp_core.instr_cycle;
+			const uint64_t repeats = 1 + credit / dsp_core.instr_cycle;
+			if (profiling) dsp_pcprof_account(pc, dsp_core.instr_cycle, repeats);
+			instructions += repeats;
 			dsp_core.cycle_credit = credit % dsp_core.instr_cycle + 1 - dsp_core.instr_cycle;
 		}
 		if (dsp_core.halt_state != DSP_HALT_NONE) {
@@ -1287,6 +1409,13 @@ uint64_t dsp56k_run_cycles(uint64_t cycles)
 		}
 	}
 	return instructions;
+}
+
+uint64_t dsp56k_run_cycles(uint64_t cycles)
+{
+	if (dsp_pcprof_state < 0) dsp_pcprof_init();
+	if (dsp_pcprof_state) return dsp_run_cycles(cycles, true);
+	return dsp_run_cycles(cycles, false);
 }
 
 /**********************************
@@ -1496,11 +1625,9 @@ static void write_memory_raw(int space, uint16_t address, uint32_t value)
 					/* Read only */
 					break;
 				case DSP_SSI_CRA:
-					dsp_core.periph[DSP_SPACE_X][address-0xffc0] = value;
 					dsp_core_ssi_configure(address-0xffc0, value);
 					break;
 				case DSP_SSI_CRB:
-					dsp_core.periph[DSP_SPACE_X][address-0xffc0] = value;
 					dsp_core_ssi_configure(address-0xffc0, value);
 					dsp_set_interrupt_mask(DSP_INTER_SSI_RCV_DATA_E, dsp_core.periph[DSP_SPACE_X][DSP_SSI_CRB]&(1u<<DSP_SSI_CRB_RIE));
 					dsp_set_interrupt_mask(DSP_INTER_SSI_RCV_DATA, dsp_core.periph[DSP_SPACE_X][DSP_SSI_CRB]&(1u<<DSP_SSI_CRB_RIE));
@@ -1843,17 +1970,17 @@ static void dsp_update_rn_bitreverse(uint32_t numreg, uint32_t reg_value, int16_
 
 static void dsp_update_rn_modulo(uint32_t numreg, uint32_t reg_value, int16_t reg_mofifier, uint16_t reg_modulo)
 {
-	uint16_t bufsize, bufmask, modulo, abs_modifier;
+	uint16_t bufmask, modulo, abs_modifier;
 	uint32_t r_reg, lobound, hibound;
 
 	r_reg = reg_value|0x10000;
 	modulo = reg_modulo+1;
 
-	bufsize = 1;
-	while (bufsize < modulo) {
-		bufsize <<= 1;
-	}
-	bufmask = bufsize - 1;
+	bufmask = reg_modulo;
+	bufmask |= bufmask >> 1;
+	bufmask |= bufmask >> 2;
+	bufmask |= bufmask >> 4;
+	bufmask |= bufmask >> 8;
 
 
 	lobound = r_reg - (r_reg&bufmask);
@@ -4427,64 +4554,13 @@ static uint16_t dsp_sub56(uint32_t *source, uint32_t *dest)
 
 static void dsp_mul56(uint32_t source1, uint32_t source2, uint32_t *dest, uint8_t signe)
 {
-	uint32_t part[4], zerodest[3], value;
-
-	/* Multiply: D = S1*S2 */
-	if (source1 & (1u<<23)) {
-		signe ^= 1;
-		source1 = (1u<<24) - source1;
-	}
-	if (source2 & (1u<<23)) {
-		signe ^= 1;
-		source2 = (1u<<24) - source2;
-	}
-
-	/* bits 0-11 * bits 0-11 */
-	part[0]=(source1 & BITMASK(12))*(source2 & BITMASK(12));
-	/* bits 12-23 * bits 0-11 */
-	part[1]=((source1>>12) & BITMASK(12))*(source2 & BITMASK(12));
-	/* bits 0-11 * bits 12-23 */
-	part[2]=(source1 & BITMASK(12))*((source2>>12)  & BITMASK(12));
-	/* bits 12-23 * bits 12-23 */
-	part[3]=((source1>>12) & BITMASK(12))*((source2>>12) & BITMASK(12));
-
-	/* Calc dest 2 */
-	dest[2] = part[0];
-	dest[2] += (part[1] & BITMASK(12)) << 12;
-	dest[2] += (part[2] & BITMASK(12)) << 12;
-
-	/* Calc dest 1 */
-	dest[1] = (part[1]>>12) & BITMASK(12);
-	dest[1] += (part[2]>>12) & BITMASK(12);
-	dest[1] += part[3];
-
-	/* Calc dest 0 */
-	dest[0] = 0;
-
-	/* Add carries */
-	value = (dest[2]>>24) & BITMASK(8);
-	if (value) {
-		dest[1] += value;
-		dest[2] &= BITMASK(24);
-	}
-	value = (dest[1]>>24) & BITMASK(8);
-	if (value) {
-		dest[0] += value;
-		dest[1] &= BITMASK(24);
-	}
-
-	/* Get rid of extra sign bit */
-	dsp_asl56(dest);
-
-	if (signe) {
-		zerodest[0] = zerodest[1] = zerodest[2] = 0;
-
-		dsp_sub56(dest, zerodest);
-
-		dest[0] = zerodest[0];
-		dest[1] = zerodest[1];
-		dest[2] = zerodest[2];
-	}
+	const int32_t left = (int32_t)((source1 ^ 0x800000u) & 0xffffffu) - 0x800000;
+	const int32_t right = (int32_t)((source2 ^ 0x800000u) & 0xffffffu) - 0x800000;
+	const int64_t product = (int64_t)left * right * 2;
+	const uint64_t result = (uint64_t)(signe ? -product : product);
+	dest[0] = (result >> 48) & 0xff;
+	dest[1] = (result >> 24) & 0xffffff;
+	dest[2] = result & 0xffffff;
 }
 
 static void dsp_rnd56(uint32_t *dest)

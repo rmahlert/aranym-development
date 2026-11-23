@@ -90,12 +90,12 @@ def main():
     info.update({
         "CFBundleExecutable": "aranym",
         "CFBundleName": "ARAnyM Unofficial",
-        "CFBundleDisplayName": "ARAnyM 1.2.0 Unofficial Beta 2" if fpu_jit else "ARAnyM Unofficial ARM64 JIT Integration" if guest_jit else "ARAnyM 1.2.0 Unofficial Beta 1 ARM64 Interpreter",
+        "CFBundleDisplayName": "ARAnyM 1.2.0 Unofficial Beta 3" if fpu_jit else "ARAnyM Unofficial ARM64 JIT Integration" if guest_jit else "ARAnyM 1.2.0 Unofficial Beta 1 ARM64 Interpreter",
         "CFBundleIdentifier": "org.aranym.unofficial." + architecture,
         "CFBundleShortVersionString": "1.2.0",
-        "CFBundleVersion": "1.2.0",
+        "CFBundleVersion": "1.2.3" if fpu_jit else "1.2.0",
         "ARAnyMSourceCommit": sha,
-        "ARAnyMBuildLabel": "1.2.0 Unofficial Beta 2" if fpu_jit else architecture + " JIT integration" if guest_jit else "1.2.0 Unofficial Beta 1",
+        "ARAnyMBuildLabel": "1.2.0 Unofficial Beta 3" if fpu_jit else architecture + " JIT integration" if guest_jit else "1.2.0 Unofficial Beta 1",
         "ARAnyMGuestJIT": guest_jit,
         "ARAnyMFPUJITAvailable":fpu_jit,
         "ARAnyMArchitecture": architecture,
@@ -273,7 +273,7 @@ def main():
     introduction = ("ARAnyM " + architecture + " JIT integration build; guest correctness gates remain required. SLIRP is included.\n" if guest_jit else
                     "ARAnyM 1.2.0 Unofficial Beta 1 - ARM64 interpreter.\nGuest ARM64 JIT is not connected in this baseline. SLIRP is included.\n")
     if fpu_jit:
-        introduction = f"ARAnyM 1.2.0 Unofficial Beta 2 for macOS {architecture}.\n"
+        introduction = f"ARAnyM 1.2.0 Unofficial Beta 3 for macOS {architecture}.\n"
     (output / "README.txt").write_text(
         introduction +
         ("Intel FPU JIT: opt in with JITFPU = Yes and JITSafe = Yes. The x86-64 JIT uses extended precision with a pinned SoftFloat fallback. Enabled FPSP arithmetic exception continuation remains unsupported.\n" if args.x64_fpu_jit else "")+

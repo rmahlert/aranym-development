@@ -59,4 +59,31 @@ static ALWAYS_INLINE bool native_fpu_sqrt(NativeFpuOperand input,
     return true;
 }
 
+static ALWAYS_INLINE bool native_fpu_divide(NativeFpuOperand a,NativeFpuOperand b,
+        NativeFpuOperand &out,bool &inexact) {
+    if (!a.supported() || !b.supported() || !b.mantissa) return false;
+    const unsigned sign=(a.sign_exponent^b.sign_exponent)&0x8000;
+    if (!a.mantissa) { out={0,uae_u16(sign)}; return true; }
+    const bool normalize=a.mantissa<b.mantissa;
+    const unsigned __int128 dividend=static_cast<unsigned __int128>(a.mantissa)<<(63+normalize);
+    const uae_u64 high=dividend>>64;
+    // Normalization gives a 64-bit quotient. Check the hardware division
+    // bound explicitly so unsupported inputs cannot raise a host divide fault.
+    if (high>=b.mantissa) return false;
+    uae_u64 quotient,remainder;
+    __asm__("divq %4":"=a"(quotient),"=d"(remainder)
+        :"0"(uae_u64(dividend)),"1"(high),"r"(b.mantissa):"cc");
+    int exponent=int(a.exponent())-int(b.exponent())+16383-normalize;
+    inexact=remainder!=0;
+    // Compare against half the divisor without overflowing twice the remainder.
+    const uae_u64 complement=b.mantissa-remainder;
+    if ((remainder>complement || (remainder==complement && (quotient&1))) && ++quotient==0) {
+        quotient=uae_u64(1)<<63;
+        ++exponent;
+    }
+    if (exponent<=0 || exponent>=0x7fff) return false;
+    out={quotient,uae_u16(sign|exponent)};
+    return true;
+}
+
 #endif
