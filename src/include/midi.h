@@ -53,6 +53,9 @@ class MIDI: public ACIA
 		void service(uint64_t now_ns, bool poll=true);
 		uint64_t next_deadline_ns() const;
 		bool receive_byte(uint8_t value, uint64_t start_ns, uint8_t errors=0);
+		bool live_portmidi_input() const {
+			return host_options.backend == "portmidi" && !host_options.input.empty() && transport.active();
+		}
 		bool host_active() const { return transport.active(); }
 		std::string host_error() const { return transport.error(); }
 		uint64_t input_drops() const { return device.input_drops(); }
