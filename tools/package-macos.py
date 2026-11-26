@@ -258,9 +258,13 @@ def main():
         raise RuntimeError("Mac networking package requires a linked and bundled libslirp")
     if not any(name.startswith("libportmidi") for name in copied):
         raise RuntimeError("Mac MIDI package requires a linked and bundled PortMidi runtime")
-    entitlements = "src/gui-osx/jit-arm64.entitlements.plist" if architecture == "arm64" else "src/gui-osx/jit-x86_64.entitlements.plist"
-    signing_args = ["--entitlements", str(ROOT / entitlements)] if guest_jit else []
-    run("codesign", "--force", "--sign", "-", "--options", "runtime", *signing_args, str(app))
+    # Ad-hoc code has no Team ID, so the hardened runtime's library validation
+    # makes dyld refuse the bundled libraries; every entitlements file turns it off.
+    entitlements = ("src/gui-osx/adhoc.entitlements.plist" if not guest_jit else
+                    "src/gui-osx/jit-arm64.entitlements.plist" if architecture == "arm64" else
+                    "src/gui-osx/jit-x86_64.entitlements.plist")
+    run("codesign", "--force", "--sign", "-", "--options", "runtime",
+        "--entitlements", str(ROOT / entitlements), str(app))
     run("codesign", "--verify", "--deep", "--strict", str(app))
     manifest = {"release": info["ARAnyMBuildLabel"], "source_commit": sha, "architecture": architecture, "guest_jit": guest_jit,
                 "fpu_jit_available":fpu_jit,"fpu_jit_default":False,
