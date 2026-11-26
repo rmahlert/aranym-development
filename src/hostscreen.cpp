@@ -53,6 +53,9 @@
 
 #define DEBUG 0
 #include "debug.h"
+#ifdef ENABLE_MCP
+#include "aranym_mcp.h"
+#endif
 
 
 void HostScreen::SetWMIcon(void)
@@ -709,6 +712,10 @@ void HostScreen::refresh(void)
 		makeSnapshot();
 		do_screenshot = false;
 	}
+
+#ifdef ENABLE_MCP
+	aranym_mcp_frame(screen);	// the MCP tools' picture
+#endif
 
 	refreshScreen();
 

@@ -38,6 +38,9 @@
 #include "input.h"
 #include "vm_alloc.h"
 #include "hardware.h"
+#ifdef ENABLE_MCP
+#include "aranym_mcp.h"
+#endif
 #include "parameters.h"
 #include "newcpu.h"
 #if defined _WIN32 || defined(OS_cygwin)
@@ -675,6 +678,11 @@ void guialert(const char *fmt, ...)
  */
 int main(int argc, char **argv)
 {
+#ifdef ENABLE_MCP
+	// "aranym -mcp-bridge": the MCP server an agent starts, not a VM
+	if (argc >= 2 && (strcmp(argv[1], "-mcp-bridge") == 0 || strcmp(argv[1], "--mcp-bridge") == 0))
+		return aranym_mcp_bridge_main(argc, argv);
+#endif
 #if defined _WIN32 || defined(OS_cygwin)
 	SDL_SetMainReady();
 #endif
@@ -748,6 +756,10 @@ int main(int argc, char **argv)
 		QuitEmulator();
 	D(bug("Initialization complete"));
 
+#ifdef ENABLE_MCP
+	aranym_mcp_init();	// the MCP server for agents (ARANYM_MCP=0 turns it off)
+#endif
+
 	install_sigsegv();
 	D(bug("Sigsegv handler installed"));
 	if (!install_signal_handler(false))
@@ -779,6 +791,10 @@ int main(int argc, char **argv)
 void QuitEmulator(int exitcode)
 {
 	D(bug("QuitEmulator"));
+
+#ifdef ENABLE_MCP
+	aranym_mcp_done();
+#endif
 
 #if EMULATED_68K
 	// Exit 680x0 emulation

@@ -1192,6 +1192,73 @@ static void send_wheeldown(bool clicked)
 }
 
 
+#ifdef ENABLE_MCP
+/* For the MCP tools (src/mcp): the mouse through fVDI, and the wheel, as
+ * the host's mouse does it. The main thread only. */
+static NF_Base *mcp_fvdi(void)
+{
+#ifdef NFVDI_SUPPORT
+	if (!fvdi)
+		fvdi = NFGetDriver("fVDI");
+	return fvdi;
+#else
+	return NULL;
+#endif
+}
+
+bool input_mcp_fvdi_events(int *x, int *y)
+{
+#ifdef NFVDI_SUPPORT
+	VdiDriver *v = static_cast<VdiDriver *>(mcp_fvdi());
+	if (!v || !v->hasEvents())
+		return false;
+	if (x)
+		*x = v->eventMouseX();
+	if (y)
+		*y = v->eventMouseY();
+	return true;
+#else
+	(void)x;
+	(void)y;
+	return false;
+#endif
+}
+
+bool input_mcp_mouse_abs(int x, int y, int buttons)
+{
+#ifdef NFVDI_SUPPORT
+	NF_Base *f = mcp_fvdi();
+	if (!f)
+		return false;
+	uint32 ux = std::min(0x7fff, std::max(0, x));
+	uint32 uy = std::min(0x7fff, std::max(0, y));
+	static int last_buttons = -1;
+	if (f->dispatch(0x80008000u | (ux << 16) | uy) != 0)
+		return false;
+	if (buttons != last_buttons && f->dispatch(0xb0000000 | buttons) == 0)
+		last_buttons = buttons;
+	return true;
+#else
+	(void)x;
+	(void)y;
+	(void)buttons;
+	return false;
+#endif
+}
+
+void input_mcp_wheel(int dir)
+{
+	mcp_fvdi();
+	if (dir < 0) {
+		send_wheelup(true);
+		send_wheelup(false);
+	} else {
+		send_wheeldown(true);
+		send_wheeldown(false);
+	}
+}
+#endif /* ENABLE_MCP */
+
 static void process_mouse_event(const SDL_Event &event)
 {
 	HostScreen *video;

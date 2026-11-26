@@ -273,6 +273,7 @@ AC_ARG_ENABLE(jit-fpu,
 AC_ARG_ENABLE(jit-debug,       [AS_HELP_STRING([--enable-jit-debug],[activate native code disassemblers (default=no)])], [WANT_JIT_DEBUG=$enableval], [WANT_JIT_DEBUG=no])
 
 AC_ARG_ENABLE(ethernet,        [AS_HELP_STRING([--enable-ethernet],[enable ethernet card emulation (default=yes)])], [WANT_ETHERNET=$enableval], [WANT_ETHERNET=yes])
+AC_ARG_ENABLE(mcp,             [AS_HELP_STRING([--enable-mcp],[serve MCP (Model Context Protocol) so an AI agent can drive the VM: screen, keys, mouse, serial, debugger; needs zlib and Unix sockets (default=auto)])], [WANT_MCP=$enableval], [WANT_MCP=auto])
 AC_ARG_ENABLE(slirp,           [AS_HELP_STRING([--enable-slirp],[enable user-mode SLIRP networking on Windows/macOS/Linux (default=auto)])], [WANT_SLIRP=$enableval], [WANT_SLIRP=auto])
 
 AC_ARG_ENABLE(bpf-ethernet,    [AS_HELP_STRING([--enable-bpf-ethernet],[enable ethernet card emulation using BPF (default=no)])], [WANT_BFP_ETHERNET=$enableval], [WANT_BFP_ETHERNET=no])
@@ -2151,6 +2152,36 @@ else
 	have_zlib="not required"
 fi
 
+dnl MCP server: Unix sockets and threads, and zlib for its PNG screenshots
+case "$host_os" in
+	mingw* | cygwin*)
+		if test "$WANT_MCP" = "yes"; then
+			AC_MSG_ERROR([--enable-mcp needs Unix domain sockets])
+		fi
+		WANT_MCP=no
+		;;
+esac
+if test "$WANT_MCP" != "no"; then
+	if test "$have_zlib" != "yes"; then
+		have_zlib=no
+		if test "x$PKG_CONFIG" != "x"; then
+			PKG_CHECK_MODULES([ZLIB], [zlib], [have_zlib=yes], [have_zlib=no])
+		fi
+		if test "$have_zlib" = "no"; then
+			AC_CHECK_LIB(z, compress2, [have_zlib=yes; ZLIB_LIBS="$ZLIB_LIBS -lz"], [have_zlib=no])
+		fi
+	fi
+	if test "$have_zlib" = "yes"; then
+		WANT_MCP=yes
+		AC_DEFINE([ENABLE_MCP], 1, [Define to serve MCP (Model Context Protocol) for AI agents])
+	elif test "$WANT_MCP" = "yes"; then
+		AC_MSG_ERROR([--enable-mcp needs zlib])
+	else
+		WANT_MCP=no
+	fi
+fi
+AM_CONDITIONAL([ENABLE_MCP], test "$WANT_MCP" = "yes")
+
 dnl Check for libusb-1.0
 WITH_USBHOST="no"
 if test "x$WANT_USBHOST" = "xyes"; then
@@ -2590,6 +2621,7 @@ echo "OpenGL ................................. : $WANT_OPENGL"
 echo "Linux-m68k loader ...................... : $WANT_LILO"
 echo "NetBSD-m68k loader ..................... : $WANT_NETBSD"
 echo "Zlib ................................... : $have_zlib"
+echo "MCP server for AI agents ............... : $WANT_MCP"
 echo "libusb-1.0.............................. : $WITH_USBHOST"
 echo "NatFeat CD-ROM driver .................. : $NFCDROM_DRIVER"
 echo "NatFeat PCI driver ..................... : $WANT_NFPCI"

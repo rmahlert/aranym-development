@@ -11,6 +11,10 @@
 #import <sys/param.h> /* for MAXPATHLEN */
 #import <unistd.h>
 #import "parameters.h"
+#import <string.h>
+#ifdef ENABLE_MCP
+#import "aranym_mcp.h"
+#endif
 
 static int gArgc;
 static char **gArgv;
@@ -278,6 +282,11 @@ static int IsFinderLaunch(int argc, char **argv)
 /* Main entry point to executable - should *not* be SDL_main! */
 int main (int argc, char **argv)
 {
+#ifdef ENABLE_MCP
+	/* "aranym -mcp-bridge": the MCP server an agent starts, not a VM */
+	if (argc >= 2 && (strcmp(argv[1], "-mcp-bridge") == 0 || strcmp(argv[1], "--mcp-bridge") == 0))
+		return aranym_mcp_bridge_main(argc, argv);
+#endif
 	/* Copy the arguments into a global variable */
 	/* This is passed if we are launched by double-clicking */
 	if (IsFinderLaunch(argc, argv))

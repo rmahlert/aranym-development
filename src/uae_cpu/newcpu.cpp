@@ -49,6 +49,9 @@
 #if defined(EXPERIMENTAL_MODERN040) || defined(EXPERIMENTAL_UPSTREAM_MODERN040)
 #include "../modern040/adapter.h"
 #endif
+#ifdef ENABLE_MCP
+#include "aranym_mcp.h"
+#endif
 #include "disasm-glue.h"
 #include "nf_objs.h"
 
@@ -1521,6 +1524,10 @@ void m68k_do_execute (void)
     uae_u32 pc;
     uae_u32 opcode;
     for (;;) {
+#ifdef ENABLE_MCP
+	if (aranym_mcp_dbg_active)
+	    aranym_mcp_dbg_check(m68k_getpc());	// an MCP breakpoint or step
+#endif
 	regs.fault_pc = pc = m68k_getpc();
 #ifdef FULL_HISTORY
 #ifdef NEED_TO_DEBUG_BADLY

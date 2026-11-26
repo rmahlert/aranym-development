@@ -82,6 +82,7 @@ public:
 	virtual uint8 handleRead(memptr);
 	virtual void handleWrite(memptr, uint8);
 	void IRQ(int, int count);
+	void mcpSerialPoll();	// the MCP tools' serial input (ENABLE_MCP)
 	void setGPIPbit(int mask, int value);
 	void setGPIPbit_at(int mask, int value, std::uint64_t when_ns);
 	int doInterrupt(void);

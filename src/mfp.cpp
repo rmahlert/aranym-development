@@ -35,6 +35,15 @@
 #define DEBUG 0
 #include "debug.h"
 
+#ifdef ENABLE_MCP
+#include "aranym_mcp.h"
+/* The USART is not emulated, but while the MCP server runs, its data
+ * register (UDR) carries the MCP serial tools' bytes: Modem 1, BIOS device
+ * 6, which EmuTOS drives on ARAnyM (it does not drive the SCC here). */
+#define MFP_INT_RCV_FULL	12
+#define MFP_INT_XMIT_EMPTY	10
+#endif
+
 /*************************************************************************/
 
 MFP::MFP(memptr addr, uint32 size) : BASE_IO(addr, size)
@@ -142,6 +151,23 @@ uint8 MFP::handleRead(memptr addr)
 						
 		case 0x2d:	value = 0x80;	// for Linux/m68k
 					break;
+
+#ifdef ENABLE_MCP
+		case 0x2b:	// RSR: receiver enabled, and buffer full while the tools have input
+					value = 0;
+					if (aranym_mcp_on())
+						value = 0x01 | (aranym_mcp_serial_pending(ARANYM_MCP_SERIAL_MFP) > 0 ? 0x80 : 0);
+					break;
+
+		case 0x2f:	// UDR
+					value = 0;
+					if (aranym_mcp_serial_pending(ARANYM_MCP_SERIAL_MFP) > 0) {
+						value = aranym_mcp_serial_rx();
+						if (aranym_mcp_serial_pending(ARANYM_MCP_SERIAL_MFP) > 0)
+							IRQ(MFP_INT_RCV_FULL, 1);	// the next byte
+					}
+					break;
+#endif
 
 		default: value = 0;
 	};
@@ -328,15 +354,36 @@ void MFP::handleWrite(memptr addr, uint8 value) {
 		case 0x25:	D.setData(value);
 					break;
 					
+#ifdef ENABLE_MCP
+		case 0x2f:	// UDR: a byte for the MCP serial tools; sent at once
+			if (aranym_mcp_on()) {
+				aranym_mcp_serial_tx(ARANYM_MCP_SERIAL_MFP, value);
+				IRQ(MFP_INT_XMIT_EMPTY, 1);
+			}
+			break;
+#endif
 		case 0x27:
 		case 0x29:
 		case 0x2b:
 		case 0x2d:
+#ifndef ENABLE_MCP
 		case 0x2f:
+#endif
 		default:
 			break;
 	};
 	update_irq();
+}
+
+/* Called at every VBL: input for the guest raises the receive interrupt. */
+void MFP::mcpSerialPoll()
+{
+#ifdef ENABLE_MCP
+	const unsigned bit = 1u << MFP_INT_RCV_FULL;
+	if (!(irq_pending & bit) && !(irq_inservice & bit) &&
+	    aranym_mcp_serial_pending(ARANYM_MCP_SERIAL_MFP) > 0)
+		IRQ(MFP_INT_RCV_FULL, 1);
+#endif
 }
 
 /*
