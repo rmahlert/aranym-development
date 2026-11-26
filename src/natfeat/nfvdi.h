@@ -125,6 +125,10 @@ public:
 	HostSurface *getSurface(void) { return surface; }
 	SDL_Cursor *mouseCursor() const { return cursor; }
 	bool mouseCursorVisible() const { return cursorVisible; }
+	// whether the guest's fVDI takes mouse events, and its last position
+	bool hasEvents() const { return events != 0; }
+	int eventMouseX() const { return mouse_x; }
+	int eventMouseY() const { return mouse_y; }
 
 protected:
 	HostSurface *surface;

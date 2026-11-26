@@ -164,6 +164,9 @@ where TOS/GEM applications could continue to live forever.
    - Native CD-ROM access (under Linux, other OS: audio CD only), without
      scsi/ide/whatsoever emulation
    - USB and PCI NatFeat support for developing Atari drivers on ARAnyM
+   - a built-in MCP server, so an AI agent can drive the machine: screen,
+     keyboard, mouse, serial, floppy and a 68040 debugger
+     (see [doc/MCP.md](doc/MCP.md))
 
 Important: ARAnyM is not finished. Consider this to be a beta version
 and a work-in-progress. Sorry for incomplete and confusing documentation.

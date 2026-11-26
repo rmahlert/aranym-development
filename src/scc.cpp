@@ -37,6 +37,49 @@
 #define DEBUG 0
 #include "debug.h"
 
+#ifdef ENABLE_MCP
+#include "aranym_mcp.h"
+
+/*
+ * The MCP serial tools on channel B: a tee in front of the configured
+ * backend. The guest's output goes to both; the tools' input comes first.
+ * While the MCP server runs, the line is always ready (TBE, CTS, DCD), so
+ * the guest can write to Modem 2 without a serial port configured.
+ */
+class McpSerial : public Serial {
+	Serial *inner;
+public:
+	McpSerial(Serial *s) : inner(s) {}
+	virtual ~McpSerial() { delete inner; }
+	virtual void reset() { inner->reset(); }
+	virtual uint8 getData() {
+		if (aranym_mcp_serial_pending(ARANYM_MCP_SERIAL_SCC) > 0)
+			return aranym_mcp_serial_rx();
+		return inner->getData();
+	}
+	virtual void setData(uint8 value) {
+		aranym_mcp_serial_tx(ARANYM_MCP_SERIAL_SCC, value);
+		inner->setData(value);
+	}
+	virtual void setBaud(uint32 value) { inner->setBaud(value); }
+	virtual uint16 getStatus(int &charcount) {
+		uint16 v = inner->getStatus(charcount);
+		if (!aranym_mcp_on())
+			return v;
+		v |= SCC_TBE | SCC_CTS | SCC_DCD;
+		int n = aranym_mcp_serial_pending(ARANYM_MCP_SERIAL_SCC);
+		if (n > 0) {
+			v |= (SCCB_RCV_INT << 8) | SCC_RCA;
+			charcount += n;
+		}
+		return v;
+	}
+	virtual void setRTS(bool value) { inner->setRTS(value); }
+	virtual void setDTR(bool value) { inner->setDTR(value); }
+	virtual uint16 getTBE() { return inner->getTBE() | (aranym_mcp_on() ? SCC_TBE : 0); }
+};
+#endif
+
 
 SCC::SCC(memptr addr, uint32 size):BASE_IO(addr, size)
 {
@@ -51,6 +94,9 @@ SCC::SCC(memptr addr, uint32 size):BASE_IO(addr, size)
 	{
 		serial = new Serial;
 	}
+#ifdef ENABLE_MCP
+	serial = new McpSerial(serial);
+#endif
 	reset();
 }
 

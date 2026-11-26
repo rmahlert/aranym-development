@@ -9,6 +9,10 @@
 #import <unistd.h>
 
 #import "host.h"
+#import <string.h>
+#ifdef ENABLE_MCP
+#import "aranym_mcp.h"
+#endif
 
 
 
@@ -260,6 +264,11 @@ static int IsFinderLaunch(int argc, char **argv)
 
 //	Main entry point to executable.
 int main (int argc, char **argv) {
+#ifdef ENABLE_MCP
+	//	"aranym -mcp-bridge": the MCP server an agent starts, not a VM.
+	if (argc >= 2 && (strcmp(argv[1], "-mcp-bridge") == 0 || strcmp(argv[1], "--mcp-bridge") == 0))
+		return aranym_mcp_bridge_main(argc, argv);
+#endif
 	//	Copy the arguments into a global variable.
 
 	//	This is passed if we are launched by double-clicking.

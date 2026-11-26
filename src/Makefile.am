@@ -198,6 +198,20 @@ libaranym_a_CXXFLAGS = $(CFLAGS_NOWARN) $(CFLAGS_NOREDZONE)
 
 aranym_LDADD = libaranym.a
 
+if ENABLE_MCP
+# The MCP server for AI agents (see doc/MCP.md). schema_data.h is made
+# from tools.json and instructions.txt by mcp/embed.sh.
+aranym_SOURCES += \
+	mcp/server.c mcp/bridge.c mcp/tools.c mcp/keys.c mcp/json.c mcp/png.c \
+	mcp/schemas.c mcp/machine.cpp \
+	mcp/mcp.h mcp/json.h mcp/machine.h mcp/schema_data.h \
+	include/aranym_mcp.h
+EXTRA_DIST += mcp/tools.json mcp/instructions.txt mcp/embed.sh
+
+$(srcdir)/mcp/schema_data.h: $(srcdir)/mcp/tools.json $(srcdir)/mcp/instructions.txt $(srcdir)/mcp/embed.sh
+	sh $(srcdir)/mcp/embed.sh > $@.tmp && mv $@.tmp $@
+endif
+
 if MODERN040_CORE
 # Link the independently built/pinned C-ABI core through the ordinary build.
 # Do not mutate libaranym.a with externally injected objects.

@@ -61,6 +61,10 @@
 # include "sdlgui.h"
 #endif
 
+#ifdef ENABLE_MCP
+# include "aranym_mcp.h"
+#endif
+
 //For starting debugger
 #ifdef OS_irix
 void setactvdebug()
@@ -141,6 +145,10 @@ void do_vbl_irq()
 	check_event();		// process keyboard and mouse events
 
 	host->video->refresh();
+
+#ifdef ENABLE_MCP
+	aranym_mcp_vbl();	// the MCP tools: input, calls, pause
+#endif
 }
 
 /*
