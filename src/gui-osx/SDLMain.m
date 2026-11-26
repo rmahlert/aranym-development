@@ -126,6 +126,9 @@ char gAranymFilesDirectory[MAXPATHLEN];	 // Path to the "AranymFiles" folder
 	NSDictionary *infoDict = [bundle infoDictionary];
 	
 	NSArray* searchPaths = [infoDict objectForKey: @"AranymHomeDirectories"];
+	if (![searchPaths isKindOfClass: [NSArray class]] || [searchPaths count] == 0)
+		//	 a bundle without the key, such as the one make builds: the defaults
+		searchPaths = [NSArray arrayWithObjects: @"Aranym_files", @"~/Documents/Aranym_files", nil];
 	
 	//	 helper to check existence
 	NSFileManager* fileManager = [NSFileManager defaultManager];
