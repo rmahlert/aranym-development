@@ -741,6 +741,8 @@ EXTRA_DIST += gui-osx/jit-arm64.entitlements.plist
 
 EXTRA_DIST += gui-osx/jit-x86_64.entitlements.plist
 
+EXTRA_DIST += gui-osx/adhoc.entitlements.plist
+
 EXTRA_DIST += include/peripheral_clock.h include/mfp_timer.h include/midi_acia6850.h include/host_midi.h include/dsp_host.h
 
 EXTRA_DIST += dsp-source.json
