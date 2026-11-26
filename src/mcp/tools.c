@@ -388,7 +388,7 @@ static wait_result wait_screen_core(call *c, int until, long stable_ms, long tim
 		bool running = mcp_cpu_running_locked();
 		pthread_mutex_unlock(&mcp_mu);
 		double now = wall_now();
-		rect box;
+		rect box = {0, 0, 0, 0};
 		int d = cur == ref ? 0 : frame_diff(ref, cur, region, ign, n_ign, &box);
 		if (d >= min_px) {
 			bool repeat = false;
@@ -1112,7 +1112,7 @@ static bool tool_mouse_button(call *c, const json *a)
 static bool tool_mouse_drag(call *c, const json *a)
 {
 	bool h1, h2;
-	long x, y, tx, ty;
+	long x = 0, y = 0, tx = 0, ty = 0;
 	int button;
 	then_t t;
 	if (!get_xy(c, a, "x", "y", &h1, &x, &y) || !get_xy(c, a, "to-x", "to-y", &h2, &tx, &ty) ||
