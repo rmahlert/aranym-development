@@ -392,9 +392,13 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 
 	SDL_DisplayMode mode, oldmode;
 
-	if (window)
+	/* the window's own size: SDL_GetWindowDisplayMode() gives the closest
+	   display mode, which may already match while the window is smaller */
+	int win_w = 0, win_h = 0;
+	if (window) {
 		SDL_GetWindowDisplayMode(window, &oldmode);
-	else
+		SDL_GetWindowSize(window, &win_w, &win_h);
+	} else
 		memset(&oldmode, 0, sizeof(oldmode));
 	
 	mode.w = width;
@@ -422,7 +426,8 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 	if (window == NULL ||
 		width != oldmode.w ||
 		height != oldmode.h ||
-		mode.format != oldmode.format)
+		mode.format != oldmode.format ||
+		(!bx_options.video.fullscreen && (width != win_w || height != win_h)))
 	{
 #ifdef USE_FIXED_CONSOLE_FBVIDEOMODE
 // Raspberry doesn't allow switching video mode. Keep current mode
