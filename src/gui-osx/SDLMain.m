@@ -301,6 +301,20 @@ int main (int argc, char **argv)
 		gFinderLaunch = NO;
 	}
 
+	if ([[NSBundle mainBundle] objectForInfoDictionaryKey: @"NSMainNibFile"] == nil)
+	{
+		/* No bundle (the bare binary): no nib makes the delegate, so make it
+		 * here, and be a normal app with a Dock icon and keyboard focus. */
+		NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+		NSApplication *app = [NSApplication sharedApplication];
+		if ([app respondsToSelector: @selector(setActivationPolicy:)])
+			[app setActivationPolicy: NSApplicationActivationPolicyRegular];
+		[app setDelegate: (id)[[SDLMain alloc] init]];
+		[pool release];
+		[app run];
+		return 0;
+	}
+
 	NSApplicationMain (argc, (const char **)argv);
 
 	return 0;
